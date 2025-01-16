@@ -1,7 +1,7 @@
 from constants import *
 from constants import seasonInfo as si
-from espn_api.basketball import *
-# from yfpy import YahooFantasySportsQuery
+from espn_fr.basketball import *
+# from yfpy_fr import YahooFantasySportsQuery
 from Draft import *
 from seasons import regSeason, poSeason
 from TeamManager import *

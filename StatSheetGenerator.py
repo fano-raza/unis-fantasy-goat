@@ -1,8 +1,8 @@
 from constants import *
 import csv
-from espn_api.basketball import League
+from espn_fr.basketball import League
 from constants import *
-from yfpy import YahooFantasySportsQuery
+from yfpy_fr import YahooFantasySportsQuery
 
 def genStatDict(startYear, endYear=0):
     if endYear==0:

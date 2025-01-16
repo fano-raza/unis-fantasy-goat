@@ -1,5 +1,5 @@
-from espn_api.basketball import league
-from yfpy.query import YahooFantasySportsQuery
+from espn_fr.basketball import league
+from yfpy_fr.query import YahooFantasySportsQuery
 from constants import *
 import csv
 

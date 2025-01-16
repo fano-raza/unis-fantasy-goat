@@ -1,6 +1,6 @@
 import csv
-from espn_api.basketball import League
-from yfpy import YahooFantasySportsQuery
+from espn_fr.basketball import League
+from yfpy_fr import YahooFantasySportsQuery
 from constants import *
 import gspread as gs
 import datetime

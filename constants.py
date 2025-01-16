@@ -1,6 +1,6 @@
 import gspread as gs
 import math
-from espn_api.basketball.constant import STATS_MAP
+from espn_fr.basketball.constant import STATS_MAP
 
 
 ## ESPN league/login info
