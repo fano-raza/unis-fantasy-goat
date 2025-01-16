@@ -5,7 +5,7 @@ import csv
 from espn_fr.basketball.league import League
 # from espn_fr.basketball.box_score import H2HCategoryBoxScore
 from yfpy_fr.query import YahooFantasySportsQuery
-from yfpy.models import YahooFantasyObject
+from yfpy_fr.models import YahooFantasyObject
 from constants import *
 
 # from espn_api.basketball.constant import

@@ -1,10 +1,10 @@
 __author__ = "Wren J. R. (uberfastman)"
 __email__ = "uberfastman@uberfastman.dev"
 
-from yfpy.data import Data
-from yfpy.exceptions import YahooFantasySportsException, YahooFantasySportsDataNotFound
-from yfpy.logger import get_logger
-from yfpy.models import (
+from yfpy_fr.data import Data
+from yfpy_fr.exceptions import YahooFantasySportsException, YahooFantasySportsDataNotFound
+from yfpy_fr.logger import get_logger
+from yfpy_fr.models import (
     User,
     Game,
     GameWeek,
@@ -50,4 +50,4 @@ from yfpy.models import (
     SelectedPosition,
     TransactionData
 )
-from yfpy.query import YahooFantasySportsQuery
+from yfpy_fr.query import YahooFantasySportsQuery
