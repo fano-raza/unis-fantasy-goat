@@ -1,5 +1,5 @@
 from .constant import NINE_CAT_STATS, POSITION_MAP, PRO_TEAM_MAP, STATS_MAP, STAT_ID_MAP
-from espn_api.utils.utils import json_parsing
+from espn_fr.utils.utils import json_parsing
 from datetime import datetime
 from functools import cached_property
 

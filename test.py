@@ -49,45 +49,45 @@ def espn():
     #     print(key)
 
     sched = league_data.get("schedule")
-    # print(type(sched))
+    print(sched)
     # print(len(sched))
     # print(sched[0].get('matchupPeriodId'))
-    print(sched[0].get('away').get('cumulativeScore').get('scoreByStat').get)
+    # print(sched[0].get('away').get('cumulativeScore').get('scoreByStat').get)
     # for key in league_data["teams"]:
         # print(key)
     # print(league_data['members'][0])
     # print(league_data['teams'][0])
 
     # FIGURE OUT ESPN TEAM IDS
-    csvList = []
-    for year in range(2019,2024):
-        espnLeague = League(espn_leagueID, year, espn_s2, espn_swid)
-        league_data = espnLeague._fetch_league()
-        memberDict = {}
-        for member in league_data.get('members'):
-            memberDict[member.get('id')] = member.get('firstName')
-        print (memberDict)
-
-        for team in league_data['teams']:
-            name = team['name']
-            abbrev = team['abbrev']
-            teamID = team.get('id')
-            # ownerCode = str(team.get('owners')[0]) if type(team.get('owners')[0]) is list else team.get('owners')
-            print(team.get('owners'))
-            try:
-                ownerCode = team.get('owners')[0]
-            except:
-                ownerCode = 'N/A'
-            owner = memberDict.get(ownerCode)
-
-            csvList.append([owner, ownerCode, teamID, abbrev, name, year])
-
-    pathname = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/espn team codes.csv"
-    with open(pathname, 'w') as csvfile:
-        header = ['owner', 'ownerCode', 'teamID', 'abb', 'teamName', 'year']
-        writer = csv.writer(csvfile)
-        writer.writerow(header)
-        writer.writerows(csvList)
+    # csvList = []
+    # for year in range(2019,2024):
+    #     espnLeague = League(espn_leagueID, year, espn_s2, espn_swid)
+    #     league_data = espnLeague._fetch_league()
+    #     memberDict = {}
+    #     for member in league_data.get('members'):
+    #         memberDict[member.get('id')] = member.get('firstName')
+    #     print (memberDict)
+    #
+    #     for team in league_data['teams']:
+    #         name = team['name']
+    #         abbrev = team['abbrev']
+    #         teamID = team.get('id')
+    #         # ownerCode = str(team.get('owners')[0]) if type(team.get('owners')[0]) is list else team.get('owners')
+    #         print(team.get('owners'))
+    #         try:
+    #             ownerCode = team.get('owners')[0]
+    #         except:
+    #             ownerCode = 'N/A'
+    #         owner = memberDict.get(ownerCode)
+    #
+    #         csvList.append([owner, ownerCode, teamID, abbrev, name, year])
+    #
+    # pathname = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/espn team codes.csv"
+    # with open(pathname, 'w') as csvfile:
+    #     header = ['owner', 'ownerCode', 'teamID', 'abb', 'teamName', 'year']
+    #     writer = csv.writer(csvfile)
+    #     writer.writerow(header)
+    #     writer.writerows(csvList)
 
 
 
@@ -221,5 +221,5 @@ def yahoo():
 
 if __name__ == '__main__':
     # gdoc()
-    # espn()
-    yahoo()
+    espn()
+    # yahoo()
