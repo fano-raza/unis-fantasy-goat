@@ -4,11 +4,9 @@ import pandas as pd
 import csv
 from espn_api.basketball.league import League
 # from espn_api.basketball.box_score import H2HCategoryBoxScore
-from yfpy.query import YahooFantasySportsQuery
+from yfpy_fr.query import YahooFantasySportsQuery
 from yfpy.models import YahooFantasyObject
 from constants import *
-import requests
-import json
 
 # from espn_api.basketball.constant import
 

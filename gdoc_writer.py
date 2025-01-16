@@ -1,7 +1,7 @@
 import csv
 from espn_api.basketball import League
-from pip.constants import *
 from yfpy import YahooFantasySportsQuery
+from constants import *
 import gspread as gs
 import datetime
 import time
@@ -189,7 +189,6 @@ def makeRestOfSheets(year, startWeek = 1):
         except: ## Most errors will be that the API read request/min limit has been reached.
             print("Waiting on Google Docs")
             time.sleep(5)
-
 
 def updateCurrentSheet(year):
     calPath = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/{year}/{year}_matchup_cal.csv"
