@@ -11,8 +11,8 @@ espn_swid = '{F1B30D95-9F03-4CA9-BE62-D89858BE885E}'
 ## Yahoo league/login info
 yKey = "dj0yJmk9S0hLcFVjVVZtd2ZMJmQ9WVdrOWVqUk9XazV4YW1zbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PTQ3"
 ySec = "f98bfdf3286771e0b58de7b4062a59b0f867f467"
-yTok = ".GdtU2GZ51hrVk80XOBbis0afJ1bdDKBFA.SFatClK5dwQ4u1rDoCCDN61MfyRmgEoyeiijZt3GDzFECBXBysVJGvFJIthzQZDJqnnB0ispBSBUlDfOc2pGuz7oVmIzfB2h_zWkPa5V0lg76dt5nTGrJYftvKw55rHHEaIdss2fXGC178S1ES9zgn6cwWkRV0vjSRFZQzQ0qCvRkCUpsS.Kn5HgY3shM9SwGWCyLRnwIMxcQv2ySwc_tuBXmsJBToVVjlZuADDo2Lj7WeQxXWSQLnBHJQAwt60fklT.TOnZyBdkMfQKWv1jEKUoyqfHeZ.FnkjrSQfDVo24rxusvpgN0mBsq8CHr1rq8raHJn7dMoVu1MoB5VYo2g.Qz94qqaNv1h.tpnGC0ews8ABLJxND0nf8l02M4HQ31JsLO6wOyBgm9yXLZzFL8oCM5ajWA8cPd0C_cLlCxqC4DPG7lGhhG87BZvRVwzPv7Xl5E4EKiknjV_VcQysrQj39.hoqFznYmkpAdcMA.M1eKgqoFwjMP17SJwt5j2OZfckN7NxGvRuWAv0029Vz9a_wUCcU3.XdoiLNp3ol83Bs.2KGlTePODW4eFIxIdIaX.hF29Rg8wu87Tw2PoTp4njwenB__zROg8X2lrqV1R4leXoiKj1.qOX3Ubc6w2h6yArkF4D0zkeP0PQXGgzC78yyyPRvJkecU48t7JybdCoYzPtQt1i8HDUQV2db3JRpCO4XHB8AOuj3a_dgvmLXM_rc3D.6MbD8wCkhSOVF7v.kNj4jIxRH1q3NB_K2eUbZsf.tuSUOHYffHu7yMypHNMc21.PYCZKRZZESrLVBEGafL8O0xW3AMmXGC5s7lpIoEj8TuRRRRrkuI6bSr3Pl0PK1Vs4rXK4vWjnzi5Doow7FA1zHkhs9SKTZ2XISScyfHgXFqjj6VDJh0FwgCebEFUSXbgOosBu_QUiYUeuFAK_JadqP4DCeWIpMkPtVxAmMYjdf_r8UgGZNc38vR.fDK"
-
+yTok = "uB0jRRyZ51jlQNiz47T97fln1VPV73fMQHr6EiZOLHq31g20X4pPKGU8dS4vAuDfRV1L1jWSvtuI57mrYF5Gvj1C75qjhbv4yjtrICnLapQ7IqnpjS1cdqXzhK2PG.EeRBAHBt0qE29gg6lUqX5HPFD0IddWjj6PEmbB8tZkJRfEefC1R8uvcyu97E545TbBaR8Aox1FGxReq6IVe_q4knZJ1vJVSxMY2xPgZNT6YrD.DK1vNakcsWys8FSPjOpGt0CdxSntrBXCOmENcjjPjbX7x47MHU1zckZoxmulP312SlcyrOYGZm3Ut5TZVL9dQM9BdAyFXzRkxnVPH0qdt6N1GuuSJ.RdNoTtku7Y5sL_ow..JtrwcXCm05zxsjx9wnyx9Cy_GGUc5EQqfY87a8GwBQN4I3zG2OkYAk7DsA9DFHq5mOTHxazAaTHem2YRaECRr9yxlRckzkcanjXl4Jwb_dvJxaPlXiq2ULhEJj0PGFulmgrpcIkemZL5cjDOYbjL99cSrtsIElNlUDihAgo7jvNflaYoQDSVqYdusIOn1eCjknFv_B72xGyjH9mwjr.mFKSN1GmG7lpBTJjLzAWt9DW6EhoPWI.4Im4Z5dllgTBTrpvy3Bw8CEff0pwhYIMJcx8VoX2m4P8GtR9bDHyMay6ltiurCdOi4C4TkKyCXmb_Svt3p4kpIxjABYK.LIUKC3mktTWMs2dhRUYdfENiZyVI.8SJZlkHp2B9rmgv3e2BLHILKqeZt4bh7cuggPMOpLKUcmwhqGotsBXD1gknm2prbQ5jcTPvT5HE2YKkk4gM3xZPpxs4q8gz3U98ugiH5B1swIyCB4hBHDmPGJ05RtntSYs4Z_FKoumR4j7jKmlLpd4kjuAumHz5LPFx.XEqILuabedRdTBvYA2BNteGtIMCDzfZxszEJMDTm2KaBYclZLLSCXZrl0JNPCGmT889BOK6W7Wu0BaVsALsM8aNSQBZyLeKV3uCa0K7REczBKZ1nRUacU8-"
+yRefTok = 'AFRlfGYz42hqZri9tJIlY6d1og_S~000~bkow8_Z7ijMknqCgEQhHIinloToXvkYm'
 
 yLeagueIDs = {
     2024:138772,
@@ -123,7 +123,9 @@ yStatMap = {
             }
 
 ## GOOGLE DOC SPECIFIC INFO ##
-gc = gs.service_account("/Users/fano/Library/Caches/JetBrains/PyCharmCE2024.1/demo/PyCharmLearningProject/venv/lib/python3.12/site-packages/gspread/fantasy-goat-306ebfffe1c2.json")
+gc = gs.service_account(
+        "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gspread/fantasy-goat-306ebfffe1c2.json"
+    )
 
 ## Spreadsheet Names ##
 gDocNames = {
@@ -135,6 +137,9 @@ gDocNames = {
     2024:"23/24 Rankings (The Numbers)",
     2025:"24/25 Rankings (The Numbers)"
 }
+
+# the categories and order they appear on the gdocs
+gDocStatCats = ['FG%', 'FT%', '3PTM', 'PTS', 'REB', 'AST', 'STL', 'BLK', 'TO']
 
 ## are the actual stats the top rows? ##
 stat24 = True

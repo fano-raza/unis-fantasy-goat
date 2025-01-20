@@ -7,8 +7,19 @@ import datetime
 import time
 from Matchup import matchup
 import csv
-from gdoc_writer import bs_calList, genWeekStats
 from StatSheetGenerator import genStatDict
+
+def bs_calList(day, calList): #binary search to find what week/matchup "day" is in
+    if len(calList) == 1:
+        return calList[0][0]
+
+    midInd = len(calList)//2
+    if day < calList[midInd][1]: ## if today is before the start date of the middle week
+        return bs_calList(day, calList[:midInd])
+    elif day > calList[midInd][2]:
+        return bs_calList(day, calList[midInd+1:])
+    else:
+        return calList[midInd][0]
 
 class regSeason:
     def __init__(self, year, extStatDict = None):

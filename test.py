@@ -7,6 +7,9 @@ from espn_fr.basketball.league import League
 from yfpy_fr.query import YahooFantasySportsQuery
 from yfpy_fr.models import YahooFantasyObject
 from constants import *
+from League import fantasyLeague
+from TeamManager import *
+import requests
 
 # from espn_api.basketball.constant import
 
@@ -114,32 +117,15 @@ def espn():
 
 ## YAHOO YAHOO YAHOO
 def yahoo():
-    year = 2024
+    year = 2025
     yQuery = YahooFantasySportsQuery('',str(yLeagueIDs[year]),'nba',yGameIDs[year],False,False,yKey,ySec)
+    print(yQuery.get_all_yahoo_fantasy_game_keys())
     # leagueKey = yQuery.get_league_key()
 
     # print(yQuery.get_team_stats_by_week(1, 2))
 
-    print(yQuery.get_all_team_stats_by_week(2))
-
-    # LEAGUE_KEY = "428.l.138772"
-    # BASE_URL = "https://fantasysports.yahooapis.com/fantasy/v2"
-    # TEAM_KEYS = [f"{LEAGUE_KEY}.t.{i}" for i in range(1,4)]
-    # WEEK = 1
-    # TOKEN = yTok
-    #
-    # headers = {"Authorization": f"Bearer {TOKEN}"}
-    # team_keys = ",".join(TEAM_KEYS)
-    # url = f"{BASE_URL}/teams;team_keys={team_keys}/stats;type=week;week={WEEK}?format=json"
-    # # url = f"{BASE_URL}/teams;team_keys={TEAM_KEYS[0]}/stats;type=week;week=1,2,3?format=json"
-    #
-    # response = requests.get(url, headers=headers)
-    # if response.status_code == 200:
-    #     data = response.json()
-    #     # print(response.text)  # Process the response manually
-    #     # print(data['fantasy_content']['teams']['0'].keys())
-    # else:
-    #     print(f"Error: {response.status_code}, {response.text}")
+    # print(yQuery.get_all_team_stats_by_week(2))
+    # print([player.player_key for player in yQuery.get_team_roster_player_info_by_week(1,2)[0:2]])
 
     # print(yQuery.get_league_matchups_by_week(2))
     # print(yQuery.get_league_scoreboard_by_week(1))
@@ -221,5 +207,9 @@ def yahoo():
 
 if __name__ == '__main__':
     # gdoc()
-    espn()
-    # yahoo()
+    # espn()
+    yahoo()
+
+    # x = teamManager('Fano')
+    # x.get_career_PO_totals()
+    # print(x.career_PO_totals)

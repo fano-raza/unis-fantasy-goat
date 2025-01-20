@@ -2821,6 +2821,115 @@ class YahooFantasySportsQuery(object):
                 Player
             )
 
+    def get_player_rank(self, player_keys: List[str]) -> List:
+        """Retrieve player stats by player_key and by date for chosen league.
+
+        Note:
+            This applies to MLB, NBA, and NHL leagues, but does NOT apply to NFL leagues.
+            This query will FAIL if you pass it an INVALID date string!
+
+        Args:
+            player_key (str): The player key of chosen player (example: 331.p.7200 - <game_id>.p.<player_id>).
+            chosen_date (str): Selected date for which to retrieve data. REQUIRED FORMAT: YYYY-MM-DD (Ex. 2011-05-01)
+            limit_to_league_stats (bool): Boolean (default: True) to limit the retrieved player stats to those for the
+                selected league. When set to False, query retrieves all player stats for the game (NFL, NHL, NBA, MLB).
+
+        Examples:
+            >>> from pathlib import Path
+            >>> from yfpy_fr.query import YahooFantasySportsQuery
+            >>> query = YahooFantasySportsQuery(Path("/path/to/auth/directory"), league_id="######", game_code="nfl")
+            >>> query.get_player_stats_by_date("nhl.p.4588", "2011-05-01")
+            Player({
+              "display_position": "G",
+              "editorial_player_key": "nhl.p.4588",
+              "editorial_team_abbr": "Was",
+              "editorial_team_full_name": "Washington Capitals",
+              "editorial_team_key": "nhl.t.23",
+              "eligible_positions": {
+                "position": "G"
+              },
+              "has_player_notes": 1,
+              "headshot": {
+                "size": "small",
+                "url": "https://s.yimg.com/iu/api/res/1.2/CzntDh_d59voTqU6fhQy3g--~C/YXBwaWQ9eXNwb3J0cztjaD0yMzM2O2
+                NyPTE7Y3c9MTc5MDtkeD04NTc7ZHk9MDtmaT11bGNyb3A7aD02MDtxPTEwMDt3PTQ2/https://s.yimg.com/
+                xe/i/us/sp/v/nhl_cutout/players_l/10182019/4588.png"
+              },
+              "is_undroppable": "0",
+              "name": {
+                "ascii_first": "Braden",
+                "ascii_last": "Holtby",
+                "first": "Braden",
+                "full": "Braden Holtby",
+                "last": "Holtby"
+              },
+              "player_id": "4588",
+              "player_key": "303.p.4588",
+              "player_notes_last_timestamp": 1574133600,
+              "player_stats": {
+                "coverage_type": "date",
+                "stats": [
+                  {
+                    "stat": {
+                      "stat_id": "19",
+                      "value": "1"
+                    }
+                  },
+                  {
+                    "stat": {
+                      "stat_id": "22",
+                      "value": "1"
+                    }
+                  },
+                  {
+                    "stat": {
+                      "stat_id": "23",
+                      "value": "1.00"
+                    }
+                  },
+                  {
+                    "stat": {
+                      "stat_id": "25",
+                      "value": "29"
+                    }
+                  },
+                  {
+                    "stat": {
+                      "stat_id": "24",
+                      "value": "30"
+                    }
+                  },
+                  {
+                    "stat": {
+                      "stat_id": "26",
+                      "value": ".967"
+                    }
+                  },
+                  {
+                    "stat": {
+                      "stat_id": "27",
+                      "value": "0"
+                    }
+                  }
+                ]
+              },
+              "position_type": "G",
+              "primary_position": "G",
+              "uniform_number": "70"
+            })
+
+        Returns:
+            Player: YFPY Player instnace containing attribute "player_stats".
+
+        """
+
+        return self.query(
+            f"https://fantasysports.yahooapis.com/fantasy/v2/league/{self.get_league_key()}/players;"
+            f"sort=OR",
+            ["league", "players", "0", "player"],
+            Player
+        )
+
     def get_player_ownership(self, player_key: str) -> Player:
         """Retrieve ownership of specific player by player_key for chosen league.
 

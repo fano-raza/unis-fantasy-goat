@@ -4,6 +4,8 @@ from flask import Flask
 from gdoc_writer import *
 import datetime
 import pandas as pd
+from League import fantasyLeague
+from AllTimeGDoc import *
 
 app = Flask(__name__)
 
@@ -37,6 +39,14 @@ def run_script():
             time.sleep(120)
 
         else:
+            league = fantasyLeague()
+            updateCarTotals(league)
+            updateRSTotals(league)
+            updatePOTotals(league)
+            updateCarAVGs(league)
+            updateRSAVGs(league)
+            updatePOAVGs(league)
+            
             target_time = datetime.time(18,00)
             delta = datetime.datetime.combine(today, target_time) - datetime.datetime.combine(today, current_time)
             time.sleep(delta.total_seconds())

@@ -11,11 +11,15 @@ class fantasyLeague():
     def __init__(self):
         self.seasons = [leagueSeason(year) for year in si]
 
+        # create dictionary of draftResults for every year so that they don't have to be recreated
+        # when new instances of teamSeasons are initialized
+        self.drafts = {season.year: season.draft.draftResults for season in self.seasons}
+
         # create dictionary of statDicts for every year so that they don't have to be recreated
         # when new instances of seasons are initialized
         self.statDicts = {season.year : season.regSsn.statDict for season in self.seasons}
 
-        self.historicalMembers = [teamManager(team, self.statDicts) for team in allMembers]
+        self.historicalMembers = [teamManager(team, self.statDicts, self.drafts) for team in allMembers]
 
         self.statCats = ['FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PTS']
 
@@ -37,6 +41,7 @@ class leagueSeason:
         self.regSsn = regSeason(self.year)
         self.statDict = self.regSsn.statDict
         self.playoffs = poSeason(self.year, self.statDict)
+        self.teamDrafts = [teamDraft(name, self.year, self.draft.draftResults) for name in self.teams]
         self.teamRegSeasons = [team_reg_season(name, self.year, self.statDict) for name in self.teams]
         if self.playoffs.PO_time:
             self.teamPlayoffs = [team_PO_season(name, self.year, self.statDict) for name in self.playoffs.PO_teams]

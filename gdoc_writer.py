@@ -2,13 +2,13 @@ import csv
 from espn_fr.basketball import League
 from yfpy_fr import YahooFantasySportsQuery
 from constants import *
-import gspread as gs
 import datetime
 import time
-
+from League import fantasyLeague
+from seasons import bs_calList
 
 def genWeekStats(year, week):
-    stats = ['FG%', 'FT%', '3PTM', 'PTS', 'REB', 'AST', 'STL', 'BLK', 'TO']
+    stats = gDocStatCats
     statList = []
 
     ## If the year was on ESPN
@@ -79,20 +79,19 @@ def nthLetter(n):
 
 
 def write_gDoc_stats(year, week):
-    gc = gs.service_account(
-        "/Users/fano/Library/Caches/JetBrains/PyCharmCE2024.1/demo/PyCharmLearningProject/venv/lib/python3.12/site-packages/gspread/fantasy-goat-306ebfffe1c2.json")
     worksheet = gc.open(gDocNames[year]).worksheet(f"M{week}")
 
     statUpdate = genWeekStats(year, week)
     firstRow = 7
     worksheet.update(statUpdate,f"A{firstRow}:J{firstRow+(teamCount[year]-teamCount[year]%2)-1}")
 
+    writeUpdateTime(year, week, "L2")
+
+def writeUpdateTime(year, week, cell):
     now = datetime.datetime.now()
     displayTime = f"{now.month}/{now.day}/{now.year - 2000} {now.hour}:{now.minute:02}"
 
-    write_gDoc(year, week, f"UPDATED {displayTime}", "L2", bold=True)
-
-    pass
+    write_gDoc(year, week, f"UPDATED {displayTime}", cell, bold=True)
 
 def genSched(year):
     teams = sorted(seasonInfo[year][0])
@@ -137,35 +136,17 @@ def genSched(year):
             line = [Opps[team] for team in teams]
             schedule.append(line)
 
-    gc = gs.service_account(
-        "/Users/fano/Library/Caches/JetBrains/PyCharmCE2024.1/demo/PyCharmLearningProject/venv/lib/python3.12/site-packages/gspread/fantasy-goat-306ebfffe1c2.json")
     worksheet = gc.open(gDocNames[year]).worksheet(f"Matchups")
 
     worksheet.update(teams, f"B1:K1")
     worksheet.update(schedule, f"B{2+weekCountDict[year]+3}:K{2+2*weekCountDict[year]+2}")
 
 def createWeekSheet(year, week, copy = 1):
-    gc = gs.service_account(
-        "/Users/fano/Library/Caches/JetBrains/PyCharmCE2024.1/demo/PyCharmLearningProject/venv/lib/python3.12/site-packages/gspread/fantasy-goat-306ebfffe1c2.json")
     sheet = gc.open(gDocNames[year])
     worksheet_to_copy = gc.open(gDocNames[year]).worksheet(f"M{copy}")
     worksheet_to_copy.duplicate(insert_sheet_index = week-1, new_sheet_name=f"M{week}")
 
-def bs_calList(day, calList): #binary search to find what week/matchup "day" is in
-    if len(calList) == 1:
-        return calList[0][0]
-
-    midInd = len(calList)//2
-    if day < calList[midInd][1]: ## if today is before the start date of the middle week
-        return bs_calList(day, calList[:midInd])
-    elif day > calList[midInd][2]:
-        return bs_calList(day, calList[midInd+1:])
-    else:
-        return calList[midInd][0]
-
 def write_gDoc(year, week, text, cell, bold = False, italic = False, underline = False):
-    gc = gs.service_account(
-        "/Users/fano/Library/Caches/JetBrains/PyCharmCE2024.1/demo/PyCharmLearningProject/venv/lib/python3.12/site-packages/gspread/fantasy-goat-306ebfffe1c2.json")
     worksheet = gc.open(gDocNames[year]).worksheet(f"M{week}")
 
     worksheet.update([[text],[""]], f"{cell}:{cell[0]}{int(cell[1])+1}")
@@ -203,6 +184,7 @@ def updateCurrentSheet(year):
 
     write_gDoc_stats(year, currentWeek)
 
+
 if __name__ == '__main__':
     year = 2025
     week = 11
@@ -218,6 +200,5 @@ if __name__ == '__main__':
     updateCurrentSheet(year)
 
     # genSched(2024)
-
 
 

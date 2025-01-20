@@ -7,7 +7,7 @@ import datetime
 import time
 
 class teamManager():
-    def __init__(self, name, extStats = None):
+    def __init__(self, name, extStats = None, extDraft = {1996: None}):
         self.name = name
         self.yearsPlayed = []
         for year in si:
@@ -21,7 +21,7 @@ class teamManager():
             extStatDict = None if not extStats else extStats[year]
             self.regSeasons[year] = team_reg_season(self.name, year, extStatDict)
             self.playOffs[year] = team_PO_season(self.name, year, self.regSeasons[year].statDict)
-            self.draftInfo[year] = teamDraft(self.name, year)
+            self.draftInfo[year] = teamDraft(self.name, year, extDraft.get(year))
         
         self.get_career_draft_score()
         self.total_career_matchups = self.get_career_matchups_played()
@@ -133,13 +133,11 @@ class teamManager():
                 pass
 
         statsByCat = list(zip(*yearTotals.values()))
+        # print(statsByCat)
 
         self.career_PO_totals = {}
         self.career_PO_averages = {}
-        rounds_played_in_year = []
-        for year in range(startYear, endYear+1):
-            if self.playOffs.get(year).getRoundsPlayed() > 0:
-                rounds_played_in_year.append(self.playOffs.get(year).getRoundsPlayed())
+        rounds_played_in_year = [self.playOffs.get(year).getRoundsPlayed() for year in range(startYear, endYear+1)]
 
         for category in statCats:
             if len(statsByCat) == 0:
@@ -149,7 +147,6 @@ class teamManager():
                 try:
                     self.career_PO_totals[category] = sum(statsByCat[statCats.index('FGM')]) / sum(statsByCat[statCats.index('FGA')])
                 except (TypeError, IndexError, ZeroDivisionError):
-                    # print(statsByCat)
                     if sum(rounds_played_in_year) == 0:
                         self.career_PO_totals[category] = 0
                     else:
@@ -163,7 +160,7 @@ class teamManager():
                     if sum(rounds_played_in_year) == 0:
                         self.career_PO_totals[category] = 0
                     else:
-                        FT_sumproduct = sum(x * y for x, y in zip(rounds_played_in_year, statsByCat[statCats.index('FG%')]))
+                        FT_sumproduct = sum(x * y for x, y in zip(rounds_played_in_year, statsByCat[statCats.index('FT%')]))
                         self.career_PO_totals[category] = FT_sumproduct / sum(rounds_played_in_year)
                 self.career_PO_averages[category] = self.career_PO_totals[category]
             else:
@@ -849,7 +846,7 @@ class team_PO_season(poSeason):
         statCats = ['Opp', 'FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK',
                     'TO', 'PTS', 'FGM', 'FGA', 'FTM', 'FTA', '3PTA', '3PT%']
         if not self.PO_time:
-            return {stat:0 for stat in statCats[1:]}
+            return {cat:0 for cat in statCats[1:]}
 
         self.teamTotals = {}
         self.teamAverages = {}
@@ -863,7 +860,7 @@ class team_PO_season(poSeason):
 
         for week in range(self.RSweekCount+1,self.RSweekCount+1+self.rounds):
             for matchup_obj in self.POmatchupsByWeek[week]:
-                if matchup_obj.team1 == self.name or matchup_obj.team2 == self.name:
+                if matchup_obj.team1 == self.name or matchup_obj.team2 == self.name and matchup_obj.count:
                     teamStats[week] = list(self.statDict[week][self.name].values())
 
         if teamStats == {}:
@@ -906,7 +903,7 @@ class team_PO_season(poSeason):
 
 ## TESTING TESTING TESTING
 if __name__ == '__main__':
-    testName = 'Fano'
+    testName = 'Rohil'
     testNames = allMembers
 
     start = 0
@@ -916,11 +913,12 @@ if __name__ == '__main__':
     endW = 0
     year = 2024
 
-    y = team_reg_season(testName, 2024)
-    print(y.getTotals(startW, endW))
+    y = team_PO_season(testName, 2024)
+    print(y.get_PO_totals())
+    # print(y.get_PO_totals())
 
-    x = teamManager("Fano")
-    print(x.get_avg_rating(2023))
+    # x = teamManager("Fano")
+    # print(x.get_career_PO_totals())
     # print(y.getLeagueRecordWL())
     # print(y.getLeagueRecordCats())
 
