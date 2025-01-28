@@ -118,8 +118,8 @@ def espn():
 ## YAHOO YAHOO YAHOO
 def yahoo():
     year = 2025
-    yQuery = YahooFantasySportsQuery('',str(yLeagueIDs[year]),'nba',yGameIDs[year],False,False,yKey,ySec)
-    print(yQuery.get_all_yahoo_fantasy_game_keys())
+    # yQuery = YahooFantasySportsQuery('',str(yLeagueIDs[year]),'nba',yGameIDs[year],False,False,yKey,ySec)
+    # print(yQuery.get_all_yahoo_fantasy_game_keys())
     # leagueKey = yQuery.get_league_key()
 
     # print(yQuery.get_team_stats_by_week(1, 2))
@@ -208,8 +208,24 @@ def yahoo():
 if __name__ == '__main__':
     # gdoc()
     # espn()
-    yahoo()
+    # yahoo()
 
-    # x = teamManager('Fano')
-    # x.get_career_PO_totals()
-    # print(x.career_PO_totals)
+    # a = fantasyLeague()
+    # for season in a.seasons:
+    #     print(season.regSsn)
+    #     print(season.playoffs)
+    #     print(season.playoffs.getWinner())
+
+    x = teamManager('Juan')
+    x.get_career_PO_totals()
+    print(x.career_PO_totals)
+
+    for playoff in x.playOffs.values():
+        print(playoff.year, playoff.get_team_PO_totals())
+
+    # y = teamManager('Fano')
+    # y.get_career_PO_totals()
+    # print(y.career_PO_totals)
+    #
+    # for playoff in y.playOffs.values():
+    #     print(playoff.year, playoff.get_PO_totals())

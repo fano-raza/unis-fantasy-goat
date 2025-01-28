@@ -23,23 +23,30 @@ currentYear = 2025
 
 ## ALL MEMBERS EVER
 allMembers = sorted(['Jesse', 'Ange', 'Juan', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Amil', 'Sama', 'Sai'])
+abbMembers = {member:
+    member[:2] if member.startswith('A') else
+    member[:3] if member.startswith('S') else
+    member[0] for member in allMembers
+}
+
+mainCats = ['FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PTS']
+statCats = ['FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PTS', 'FGM', 'FGA', 'FTM', 'FTA', '3PTA', '3PT%']
 
 ## season info dict has tuple as value for each key
 ## each tuple will contain ((team1, team2, ...), is ESPN (T/F), is W/L scoring (T/F))
-statCats = ['FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PTS', 'FGM', 'FGA', 'FTM', 'FTA', '3PTA', '3PT%']
-
 seasonInfo = {
-    2019: (('Jesse', 'Ange', 'Juan', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir'),True,True),
-    2020: (('Jesse', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir'),True,True),
-    2021: (('Amil', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir'),True,True),
-    2022: (('Amil', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Sai'),True,True),
-    2023: (('Amil', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Sai'),True,True),
-    2024: (('Amil', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Sai'),False,False),
-    2025: (('Amil', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Sai'),False,True)
+    2019: (sorted(('Jesse', 'Ange', 'Juan', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir')),True,True),
+    2020: (sorted(('Jesse', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir')),True,True),
+    2021: (sorted(('Amil', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir')),True,True),
+    2022: (sorted(('Amil', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Sai')),True,True),
+    2023: (sorted(('Amil', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Sai')),True,True),
+    2024: (sorted(('Amil', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Sai')),False,False),
+    2025: (sorted(('Amil', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Sai')),False,True)
 }
 
-seasonInfo2 = {
-    year: {'teams': seasonInfo[year][0], 'is_espn': seasonInfo[year][1], 'W/L': seasonInfo[year][1]} for year in seasonInfo
+# was too lazy to rewrite seasonInfo as a dict
+seasonInfoDict = {
+    year: {'teams': seasonInfo[year][0], 'is_espn': seasonInfo[year][1], 'is_WL': seasonInfo[year][1]} for year in seasonInfo
 }
 
 teamCount = {year : len(seasonInfo[year][0]) for year in seasonInfo}

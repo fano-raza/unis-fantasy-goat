@@ -1,5 +1,5 @@
 from constants import *
-from constants import seasonInfo as si
+from constants import seasonInfoDict as si
 from espn_fr.basketball import *
 from yfpy_fr import YahooFantasySportsQuery
 import math
@@ -26,24 +26,23 @@ class regSeason:
         ## Basic Variables
         self.year = year
 
-        self.teams = si[year][0]
+        self.teams = si[year]['teams']
         self.teamCount = len(self.teams)
-        self.is_espn = si[year][1]
-        self.is_WL = si[year][2]
+        self.is_espn = si[year]['is_espn']
+        self.is_WL = si[year]['is_WL']
 
         self.statCats = ['FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PTS']
         self.RSweekCount = weekCountDict[self.year] # from constants
 
         if self.year == currentYear:
+            today = datetime.date.today()
             calPath = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/{self.year}/{self.year}_matchup_cal.csv"
-
             with open(calPath, 'r') as csvfile:
                 reader = csv.reader(csvfile, delimiter=',')
                 next(reader)
                 calList = [[int(week[0]), datetime.date(int(week[1]), int(week[2]), int(week[3])),
                             datetime.date(int(week[4]), int(week[5]), int(week[6]))]
                            for week in reader]
-            today = datetime.date.today()
             self.currentWeek = min(bs_calList(today, calList), self.RSweekCount)
         else:
             self.currentWeek = self.RSweekCount
@@ -51,16 +50,21 @@ class regSeason:
         self.statCSV = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/ref/{self.year}_CompStats.csv"
         self.statDict = {} if not extStatDict else extStatDict
         if len(self.statDict)==0:
-            self.makeStatDict()
+            self.make_stat_dict()
 
         self.matchups = []
-        self.makeMatchups()
+        self.make_matchups()
         if self.is_WL:
-            self.RS_champ = self.get_rsWinnerWL()
+            self.RS_champ = self.get_RSwinner_WL()
         else:
-            self.RS_champ = self.get_rsWinnerCats()
+            self.RS_champ = self.get_RSwinner_Cats()
 
-    def makeStatDict(self):
+        self.status = "Active" if self.currentWeek<self.RSweekCount else "Complete"
+
+    def __repr__(self):
+        return f"Regular Season({self.year}, Status: {self.status})"
+
+    def make_stat_dict(self):
 
         # Try to find CompStat csv for that year
         try:
@@ -88,10 +92,10 @@ class regSeason:
 
         # If CompStat csv doesn't exist (takes longer, esp w Yahoo)
         except FileNotFoundError:
-            print(f"creating statDict...make take some time")
+            print(f"Creating stat database for {self.year} season...make take some time")
             self.statDict = genStatDict(self.year)[self.year]
 
-    def makeMatchups(self):
+    def make_matchups(self):
 
         for week in range(1, self.currentWeek+1):
             # print(week, self.year)
@@ -148,7 +152,7 @@ class regSeason:
         else:
             return recDict
 
-    def getCatStandings(self, week = 0, sortedReturn = True):
+    def get_Cats_standings(self, week = 0, sortedReturn = True):
         recDict = {}
         if week <= 0 or week > self.currentWeek:
             week = self.currentWeek
@@ -185,14 +189,13 @@ class regSeason:
         else:
             return recDict
 
-    def get_rsWinnerWL(self):
+    def get_RSwinner_WL(self):
         return self.get_WL_standings()[1][0]
 
-    def get_rsWinnerCats(self):
-        return self.getCatStandings()[1][0]
+    def get_RSwinner_Cats(self):
+        return self.get_Cats_standings()[1][0]
 
-    def getWeekRankings(self, week, sortedRetrun = True):
-    ## returns dictionary of
+    def get_week_cat_rankings(self, week):
         if week <= 0 or week > self.currentWeek:
             print("Invalid Week Input")
             return None
@@ -217,13 +220,26 @@ class regSeason:
             weightedCatRanks[team] = {}
             for cat in self.statCats:
                 if cat != 'TO':
-                    weightedCatRanks[team][cat] = ((max(statsByCat[self.statCats.index(cat)])-statsByCat[self.statCats.index(cat)][teams.index(team)])/
-                                                (max(statsByCat[self.statCats.index(cat)])-min(statsByCat[self.statCats.index(cat)]))) * (self.teamCount-1)+1
+                    weightedCatRanks[team][cat] = ((max(statsByCat[self.statCats.index(cat)]) -
+                                                    statsByCat[self.statCats.index(cat)][teams.index(team)]) /
+                                                   (max(statsByCat[self.statCats.index(cat)]) - min(
+                                                       statsByCat[self.statCats.index(cat)]))) * (
+                                                              self.teamCount - 1) + 1
                 ##
-                else: ## if cat IS TO
-                    weightedCatRanks[team][cat] = ((min(statsByCat[self.statCats.index(cat)]) - statsByCat[self.statCats.index(cat)][teams.index(team)]) /
-                                                   (min(statsByCat[self.statCats.index(cat)]) - max(statsByCat[self.statCats.index(cat)]))) * (self.teamCount-1) + 1
-        # print(weightedCatRanks)
+                else:  ## if cat IS TO
+                    weightedCatRanks[team][cat] = ((min(statsByCat[self.statCats.index(cat)]) -
+                                                    statsByCat[self.statCats.index(cat)][teams.index(team)]) /
+                                                   (min(statsByCat[self.statCats.index(cat)]) - max(
+                                                       statsByCat[self.statCats.index(cat)]))) * (
+                                                              self.teamCount - 1) + 1
+        return weightedCatRanks
+
+    def get_week_rankings(self, week, sortedRetrun = True) -> dict[str, dict]:
+        if week <= 0 or week > self.currentWeek:
+            print("Invalid Week Input")
+            return None
+
+        weightedCatRanks = self.get_week_cat_rankings(week)
 
         weightedCatsAVG = {}
         for team in weightedCatRanks:
@@ -247,7 +263,7 @@ class regSeason:
         else:
             return weightedRanks
 
-    def getSeasonRankings(self, startWeek = 0, endWeek = 0, sortedReturn = True):
+    def get_season_rankings(self, startWeek = 0, endWeek = 0, sortedReturn = True):
         rankingsDict = {}
         averageRankDict = {}
         rankedDict = {}
@@ -261,7 +277,7 @@ class regSeason:
             rankingsDict[team] = []
             for week in range(startWeek, endWeek+1):
                 try:
-                    rankingsDict[team].append(self.getWeekRankings(week, False)[team])
+                    rankingsDict[team].append(self.get_week_rankings(week, False)[team])
                 except KeyError:
                     pass
 
@@ -279,12 +295,37 @@ class regSeason:
         else:
             return averageRankDict
 
-    def getOppWeekRankings(self, week = 0, sortedReturn = True):
+    def get_avg_cat_rankings(self, startWeek = 0, endWeek = 0):
+        if endWeek <= 0 or endWeek > self.currentWeek:
+            endWeek = self.currentWeek
+        if startWeek <= 0:
+            startWeek = 1
+
+        avgCatRankDict = {team: {cat: 0 for cat in mainCats} for team in self.teams}
+
+        # have to build this separately to accomodate exception for when team has a BYE week
+        # and doesn't appear in avgCatRankDict
+        for team in avgCatRankDict:
+            weeksPlayed = 0
+            for week in range(startWeek, endWeek + 1):
+                try:
+                    for cat in mainCats:
+                        avgCatRankDict[team][cat] += self.get_week_cat_rankings(week)[team][cat]
+                    weeksPlayed += 1
+                except KeyError:
+                    pass
+
+            for cat in mainCats:
+                avgCatRankDict[team][cat] /= weeksPlayed
+
+        return avgCatRankDict
+
+    def get_opp_week_rankings(self, week = 0, sortedReturn = True):
         if week <= 0 or week > self.currentWeek:
             print("Invalid Week Input")
             return None
 
-        weekRankings = self.getWeekRankings(week, False)
+        weekRankings = self.get_week_rankings(week, False)
         oppWeekRankings = {team: weekRankings[self.statDict[week][team]["Opp"]] for team in weekRankings}
 
         sortedOppWeightedRank = sorted(oppWeekRankings, key=lambda k: oppWeekRankings[k])
@@ -297,7 +338,7 @@ class regSeason:
         else:
             return oppWeekRankings
 
-    def getOppSeasonRankings(self, startWeek = 0, endWeek = 0, sortedReturn = True):
+    def get_opp_season_rankings(self, startWeek = 0, endWeek = 0, sortedReturn = True):
         if endWeek <= 0 or endWeek > self.currentWeek:
             endWeek = self.currentWeek
         if startWeek <=0:
@@ -309,7 +350,7 @@ class regSeason:
             OppRankings[team] = []
             for week in range(startWeek, endWeek+1):
                 try:
-                    OppRankings[team].append(self.getOppWeekRankings(week,False)[team])
+                    OppRankings[team].append(self.get_opp_week_rankings(week, False)[team])
                 except KeyError:
                     pass
 
@@ -325,7 +366,7 @@ class regSeason:
         else:
             return OppAvgRankings
 
-    def getLeagueTotals(self, startWeek = 0, endWeek = 0):
+    def get_league_totals(self, startWeek = 0, endWeek = 0):
         if endWeek <= 0 or endWeek > self.currentWeek:
             endWeek = self.currentWeek
         if startWeek <=0:
@@ -338,24 +379,24 @@ class regSeason:
             catTotals['FTM'] = 0
             catTotals['FTA'] = 0
         for week in range(startWeek,endWeek+1):
-            theWeek = self.statDict[week]
-            for team in theWeek:
-                if theWeek[team]['Opp'] != 'BYE' and team != 'BYE':
+            weekDict = self.statDict[week]
+            for team in weekDict:
+                if weekDict[team]['Opp'] != 'BYE' and team != 'BYE':
                     for cat in catTotals:
                         if cat == 'FG%':
                             try:
-                                catTotals['FGM'] += theWeek[team]['FGM']
-                                catTotals['FGA'] += theWeek[team]['FGA']
+                                catTotals['FGM'] += weekDict[team]['FGM']
+                                catTotals['FGA'] += weekDict[team]['FGA']
                             except KeyError:
-                                catTotals[cat] += theWeek[team][cat]/(self.currentWeek*math.floor(len(self.teams)/2)*2)
+                                catTotals[cat] += weekDict[team][cat]/(self.currentWeek*math.floor(len(self.teams)/2)*2)
                         elif cat == 'FT%':
                             try:
-                                catTotals['FTM'] += theWeek[team]['FTM']
-                                catTotals['FTA'] += theWeek[team]['FTA']
+                                catTotals['FTM'] += weekDict[team]['FTM']
+                                catTotals['FTA'] += weekDict[team]['FTA']
                             except KeyError:
-                                catTotals[cat] += theWeek[team][cat]/(self.currentWeek*math.floor(len(self.teams)/2)*2)
+                                catTotals[cat] += weekDict[team][cat]/(self.currentWeek*math.floor(len(self.teams)/2)*2)
                         else:
-                            catTotals[cat]+=theWeek[team][cat]
+                            catTotals[cat]+=weekDict[team][cat]
 
         if catTotals['FG%']==0:
             catTotals['FG%'] = catTotals['FGM']/catTotals['FGA']
@@ -363,20 +404,62 @@ class regSeason:
 
         return catTotals
 
-    def getLeagueAvgs(self, startWeek = 0, endWeek = 0):
+    def get_league_avgs(self, startWeek = 0, endWeek = 0):
         if endWeek <= 0 or endWeek > self.currentWeek:
             endWeek = self.currentWeek
         if startWeek <=0:
             startWeek = 1
 
-        catTotals = self.getLeagueTotals(startWeek,endWeek)
+        catTotals = self.get_league_totals(startWeek, endWeek)
         catAvgs = {cat: catTotals[cat]/(self.currentWeek * math.floor(len(self.teams)/2)*2) for cat in catTotals}
         catAvgs['FG%'] = catTotals['FG%']
         catAvgs['FT%'] = catTotals['FT%']
 
         return catAvgs
 
-    def getLeagueWinsStandingsWL(self, startWeek = 0, endWeek = 0):
+    def get_league_cat_totals(self, startWeek = 0, endWeek = 0):
+        # print(self.year)
+        if endWeek <= 0 or endWeek > self.currentWeek:
+            endWeek = self.currentWeek
+        if startWeek <=0:
+            startWeek = 1
+
+        catTotals = {cat: 0 for cat in self.statCats}
+        if self.is_espn:
+            catTotals['FGM'] = 0
+            catTotals['FGA'] = 0
+            catTotals['FTM'] = 0
+            catTotals['FTA'] = 0
+        for week in range(startWeek, endWeek + 1):
+            weekDict = self.statDict[week]
+            for team in weekDict:
+                if weekDict[team]['Opp'] != 'BYE' and team != 'BYE':
+                    for cat in catTotals:
+                        if cat == 'FG%':
+                            try:
+                                catTotals['FGM'] += weekDict[team]['FGM']
+                                catTotals['FGA'] += weekDict[team]['FGA']
+                            except KeyError:
+                                catTotals[cat] += weekDict[team][cat] / (
+                                            self.currentWeek * math.floor(len(self.teams) / 2) * 2)
+                        elif cat == 'FT%':
+                            try:
+                                catTotals['FTM'] += weekDict[team]['FTM']
+                                catTotals['FTA'] += weekDict[team]['FTA']
+                            except KeyError:
+                                catTotals[cat] += weekDict[team][cat] / (
+                                            self.currentWeek * math.floor(len(self.teams) / 2) * 2)
+                        else:
+                            catTotals[cat] += weekDict[team][cat]
+
+        if catTotals['FG%'] == 0:
+            catTotals['FG%'] = catTotals['FGM'] / catTotals['FGA']
+            catTotals['FT%'] = catTotals['FTM'] / catTotals['FTA']
+
+        return catTotals
+
+    #TODO: write this function and league wins for Cats
+    def get_league_wins_standings_WL(self, startWeek = 0, endWeek = 0):
         if endWeek <= 0 or endWeek > self.currentWeek:
             endWeek = self.currentWeek
         if startWeek <=0:
@@ -389,8 +472,11 @@ class poSeason(regSeason):
             self.rounds = int(playoffTeamCount[self.year]/2) # from constants
         except TypeError:
             self.rounds = 0
+        # print(f"{self.year}: {self.rounds}")
+
         self.PO_weeks = self.RSweekCount+self.rounds
-        
+
+        today = datetime.date.today()
         if self.year == currentYear:
             calPath = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/{self.year}/{self.year}_matchup_cal.csv"
 
@@ -400,19 +486,20 @@ class poSeason(regSeason):
                 calList = [[int(week[0]), datetime.date(int(week[1]), int(week[2]), int(week[3])),
                             datetime.date(int(week[4]), int(week[5]), int(week[6]))]
                            for week in reader]
-            today = datetime.date.today()
             self.PO_currentWeek = min(bs_calList(today, calList), self.PO_weeks)
         else:
             self.PO_currentWeek = self.PO_weeks
 
         self.PO_time = False if self.PO_currentWeek <= self.RSweekCount else True
+        self.PO_teams = []
+        self.POseeding = {}
+        self.POmatchupsByWeek = {"Final":None,"3rd Place":None}
+        self.PO_champ = None
+        self.PO_results = {}
+        self.PO_standings = {}
 
         if self.PO_time:
-            self.makeMatchups()
-            self.PO_teams = []
-            self.POseeding = {}
-            self.POmatchupsByWeek = {"Final":None,"3rd Place":None}
-            self.PO_champ = None
+            self.make_matchups()
 
             if self.rounds > 0:
                 for i in range(1,playoffTeamCount[self.year]+1):
@@ -420,14 +507,22 @@ class poSeason(regSeason):
                         self.PO_teams.append(self.get_WL_standings()[i][0])
                         self.POseeding[i] = self.get_WL_standings()[i][0]
                     else:
-                        self.PO_teams.append(self.getCatStandings()[i][0])
-                        self.POseeding[i] = self.getCatStandings()[i][0]
+                        self.PO_teams.append(self.get_Cats_standings()[i][0])
+                        self.POseeding[i] = self.get_Cats_standings()[i][0]
 
-                self.make_PO_Matchups()
-                self.runPlayoffs()
-                self.PO_champ = self.getWinner()
+                self.make_PO_matchups()
+                self.run_playoffs()
+                self.PO_champ = self.get_PO_winner()
 
-    def make_PO_Matchups(self):
+        self.status = \
+            "Not Active" if not self.PO_time else \
+            "Active" if self.PO_time and not self.get_PO_winner() else \
+            "Complete"
+
+    def __repr__(self):
+        return f"Playoff({self.year}, Status: {self.status})"
+
+    def make_PO_matchups(self):
         if playoffTeamCount[self.year] == 'N/A':
             pass
 
@@ -450,18 +545,17 @@ class poSeason(regSeason):
                     except AttributeError:
                         pass
 
-    def runPlayoffs(self):
+    def run_playoffs(self):
         ## if year didn't have playoffs (e.g. 2020 season)
-        if playoffTeamCount[self.year] == 0 or self.POmatchupsByWeek['Final']==None:
-            # print("passed")
+        if playoffTeamCount[self.year] == 0:
+            print("Playoffs Skipped")
             return None
 
         else:
             elimTeams = []
             thirdPlace = []
-            self.PO_results = {}
 
-            print(self.year, self.POmatchupsByWeek)
+            # print(self.year, self.POmatchupsByWeek)
 
             for week in range(self.RSweekCount + 1, self.RSweekCount + self.rounds + 1):
                 # print(f"eliminated teams: {elimTeams}")
@@ -504,31 +598,35 @@ class poSeason(regSeason):
                             pass
 
             # if self.POmatchupsByWeek['Final']:
-            self.PO_champ = self.getWinner()
-            self.PO_standings = {1: self.PO_champ,
-                                2: self.POmatchupsByWeek['Final'].loser,
-                                3: self.POmatchupsByWeek['3rd Place'].winner,
-                                4: self.POmatchupsByWeek['3rd Place'].loser}
+            self.PO_champ = self.get_PO_winner()
+            self.PO_standings = {
+                1: self.PO_champ,
+                2: self.POmatchupsByWeek['Final'].loser,
+                3: self.POmatchupsByWeek['3rd Place'].winner,
+                4: self.POmatchupsByWeek['3rd Place'].loser
+            }
 
             for standing in self.PO_standings:
                 self.PO_results[self.PO_standings[standing]] = standing
 
-    def getWinner(self):
+    def get_PO_winner(self):
         if playoffTeamCount[self.year] == 0 or self.POmatchupsByWeek['Final']==None:
             # print(f"the {year - 1}/{year} season did not have any Playoffs\nThe Regular Season Champ was {self.get_rsWinnerWL()}")
             return None
         else:
             return self.POmatchupsByWeek['Final'].winner
 
-    def getFinalStandings(self):
+    def get_final_PO_standings(self):
         if playoffTeamCount[self.year] == 'N/A':
-            return f"the {year-1}/{year} season did not have any Playoffs\nThe Regular Season Standings were: {self.get_WL_standings()}"
+            print(f"the {year - 1}/{year} season did not have any Playoffs\nThe Regular Season Standings were: {self.get_WL_standings()}")
+            return None
         else:
             return self.PO_standings
 
-    def getFinalResults(self, team = None):
+    def get_final_PO_results(self, team = None):
         if playoffTeamCount[self.year] == 'N/A':
-            return f"the {year - 1}/{year} season did not have any Playoffs\nThe Regular Season Standings were: {self.get_WL_standings()}"
+            print(f"the {year - 1}/{year} season did not have any Playoffs\nThe Regular Season Standings were: {self.get_WL_standings()}")
+            return None
         else:
             if team == None:
                 return self.PO_results
@@ -537,10 +635,15 @@ class poSeason(regSeason):
 
 ## TESTING ##
 if __name__ == '__main__':
-    x = regSeason(2025)
+    x = regSeason(2020)
     # print(x.statDict)
     # print(x.matchups)
-    print(x.getCatStandings())
-    print(x.getCatStandings(x.currentWeek-1))
-    # print(x.getLeagueTotals())
+    # print(x.getCatStandings())
+    # print(x.getCatStandings(x.currentWeek-1))
+    # print(x.get_league_totals())
     # print(x.getLeagueAvgs())
+    # print(x.get_week_cat_rankings(3))
+    # print(x.get_league_cat_totals())
+    print(x.get_week_cat_rankings(3))
+    print(x.get_avg_cat_rankings())
+    # print(x.teams)

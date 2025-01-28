@@ -104,8 +104,8 @@ def genStatList(startYear, endYear):
     return csvList
 
 if __name__ == '__main__':
-    startYear = 2021
-    endYear = 2021
+    startYear = 2025
+    endYear = 2025
     stats = ['FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PTS', 'FGM', 'FGA', 'FTM', 'FTA', '3PTA', '3PT%']
 
     print(f"\nGenerating stats for all players from the {startYear - 1}/{startYear} season\n"

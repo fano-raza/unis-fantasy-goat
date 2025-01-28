@@ -1,5 +1,5 @@
 from constants import *
-from constants import seasonInfo as si
+from constants import seasonInfoDict as si
 from Draft import Draft, teamDraft
 from seasons import *
 from Matchup import matchup
@@ -7,11 +7,12 @@ import datetime
 import time
 
 class teamManager():
-    def __init__(self, name, extStats = None, extDraft = {1996: None}):
+    # TODO figure out include and exclude
+    def __init__(self, name, extStats = None, extDraft = {1996: None}, includeYear = [], excludeYear = []):
         self.name = name
         self.yearsPlayed = []
         for year in si:
-            if self.name in si[year][0]:
+            if self.name in si[year]['teams']:
                 self.yearsPlayed.append(year)
         self.regSeasons = {}
         self.playOffs = {}
@@ -27,6 +28,9 @@ class teamManager():
         self.total_career_matchups = self.get_career_matchups_played()
         self.total_RS_matchups = self.get_career_matchups_played(0,0,'RS')
         self.total_PO_matchups = self.get_career_matchups_played(0,0,'PO')
+
+        self.career_RS_totals = self.get_career_RS_totals()
+        self.career_PO_totals = self.get_career_PO_totals()
 
         self.PO_chips = sum(self.get_PO_chips().values())
         self.PO_years_won = [year for year in self.get_PO_chips().keys() if self.get_PO_chips()[year] == 1]
@@ -48,8 +52,8 @@ class teamManager():
         RS_matchups_played, PO_matchups_played = 0, 0
 
         for year in range(startYear, endYear+1):
-            RS_matchups_played += self.regSeasons[year].getWeeksPlayed()
-            PO_matchups_played += self.playOffs[year].getRoundsPlayed()
+            RS_matchups_played += self.regSeasons[year].get_team_weeks_played()
+            PO_matchups_played += self.playOffs[year].get_team_rounds_played()
 
         total_matchups_played = RS_matchups_played + PO_matchups_played
 
@@ -71,8 +75,8 @@ class teamManager():
         weeks_played_in_year = []
         for year in range(startYear, endYear+1):
             # print(f"year: {year}")
-            yearTotals[year] = list(self.regSeasons[year].getTotals().values())
-            weeks_played_in_year.append(self.regSeasons[year].getWeeksPlayed())
+            yearTotals[year] = list(self.regSeasons[year].get_team_totals().values())
+            weeks_played_in_year.append(self.regSeasons[year].get_team_weeks_played())
 
         # print(f"yearTotals: {yearTotals}")
 
@@ -128,7 +132,7 @@ class teamManager():
         for year in range(startYear, endYear + 1):
             # print(f"year: {year}")
             try:
-                yearTotals[year] = list(self.playOffs[year].get_PO_totals().values())
+                yearTotals[year] = list(self.playOffs[year].get_team_PO_totals().values())
             except AttributeError:
                 pass
 
@@ -137,7 +141,7 @@ class teamManager():
 
         self.career_PO_totals = {}
         self.career_PO_averages = {}
-        rounds_played_in_year = [self.playOffs.get(year).getRoundsPlayed() for year in range(startYear, endYear+1)]
+        rounds_played_in_year = [self.playOffs.get(year).get_team_rounds_played() for year in range(startYear, endYear + 1)]
 
         for category in statCats:
             if len(statsByCat) == 0:
@@ -193,12 +197,12 @@ class teamManager():
 
         for year in range(startYear, endYear + 1):
             # print(f"year: {year}")
-            yearTotals[year] = list(self.regSeasons[year].getTotals().values())
-            RS_weeks_played_in_year.append(self.regSeasons[year].getWeeksPlayed())
+            yearTotals[year] = list(self.regSeasons[year].get_team_totals().values())
+            RS_weeks_played_in_year.append(self.regSeasons[year].get_team_weeks_played())
 
         for year in range(startYear, endYear+1):
-            if self.playOffs.get(year).getRoundsPlayed() > 0:
-                PO_rounds_played_in_year.append(self.playOffs.get(year).getRoundsPlayed())
+            if self.playOffs.get(year).get_team_rounds_played() > 0:
+                PO_rounds_played_in_year.append(self.playOffs.get(year).get_team_rounds_played())
 
         self.get_career_RS_totals(startYear, endYear)
         self.get_career_PO_totals(startYear, endYear)
@@ -217,10 +221,10 @@ class teamManager():
                     FGs = []
                     matchups = []
                     for year in range(startYear, endYear+1):
-                        FGs.append(self.regSeasons[year].getTotals()['FG%'])
-                        FGs.append(self.playOffs[year].get_PO_totals()['FG%'])
-                        matchups.append(self.regSeasons[year].getWeeksPlayed())
-                        matchups.append(self.playOffs[year].getRoundsPlayed())
+                        FGs.append(self.regSeasons[year].get_team_totals()['FG%'])
+                        FGs.append(self.playOffs[year].get_team_PO_totals()['FG%'])
+                        matchups.append(self.regSeasons[year].get_team_weeks_played())
+                        matchups.append(self.playOffs[year].get_team_rounds_played())
 
                         FG_sumproduct = sum(x * y for x, y in zip(FGs, matchups))
                         self.career_totals[category] = FG_sumproduct/sum(matchups)
@@ -234,10 +238,10 @@ class teamManager():
                     FTs = []
                     matchups = []
                     for year in range(startYear, endYear + 1):
-                        FTs.append(self.regSeasons[year].getTotals()['FT%'])
-                        FTs.append(self.playOffs[year].get_PO_totals()['FT%'])
-                        matchups.append(self.regSeasons[year].getWeeksPlayed())
-                        matchups.append(self.playOffs[year].getRoundsPlayed())
+                        FTs.append(self.regSeasons[year].get_team_totals()['FT%'])
+                        FTs.append(self.playOffs[year].get_team_PO_totals()['FT%'])
+                        matchups.append(self.regSeasons[year].get_team_weeks_played())
+                        matchups.append(self.playOffs[year].get_team_rounds_played())
 
                         FT_sumproduct = sum(x * y for x, y in zip(FTs, matchups))
                         self.career_totals[category] = FT_sumproduct / sum(matchups)
@@ -367,9 +371,9 @@ class teamManager():
         for year in range(startYear, endYear+1):
             # try:
             # print(self.regSeasons[year].get_Cats_standings(0,False))
-            self.careerWinsCats += self.regSeasons[year].getCatStandings(0,False)[self.name]['wins']
-            self.careerTiesCats += self.regSeasons[year].getCatStandings(0,False)[self.name]['ties']
-            self.careerLossesCats += self.regSeasons[year].getCatStandings(0,False)[self.name]['losses']
+            self.careerWinsCats += self.regSeasons[year].get_Cats_standings(0, False)[self.name]['wins']
+            self.careerTiesCats += self.regSeasons[year].get_Cats_standings(0, False)[self.name]['ties']
+            self.careerLossesCats += self.regSeasons[year].get_Cats_standings(0, False)[self.name]['losses']
             # except KeyError:
             #     pass
 
@@ -396,9 +400,9 @@ class teamManager():
         for year in range(startYear, endYear+1):
             try:
                 if self.regSeasons[year].is_WL:
-                    seasons[year] = self.regSeasons[year].getPositionWL()
+                    seasons[year] = self.regSeasons[year].get_team_position_Cats()
                 else:
-                    seasons[year] = self.regSeasons[year].getPositionCats()
+                    seasons[year] = self.regSeasons[year].get_team_position_Cats()
             except KeyError:
                 # print("pass")
                 pass
@@ -425,7 +429,7 @@ class teamManager():
         yearlyWeightedRatings = []
         for year in range(startYear, endYear+1):
             season = self.regSeasons[year]
-            yearlyWeightedRatings.append(season.getAvgRating()*season.getWeeksPlayed())
+            yearlyWeightedRatings.append(season.get_team_avg_rating() * season.get_team_weeks_played())
 
         return sum(yearlyWeightedRatings)/self.get_career_matchups_played(startYear, endYear, "RS")
 
@@ -435,10 +439,10 @@ class teamManager():
         if startYear == 0 or startYear < min(self.yearsPlayed):
             startYear = min(self.yearsPlayed)
 
-        oppRatings_weighted = sum([self.regSeasons[year].getAvgOppRating()*self.regSeasons[year].getWeeksPlayed()
-                               for year in range(startYear,endYear+1)])
+        oppRatings_weighted = sum([self.regSeasons[year].get_team_avg_opp_rating() * self.regSeasons[year].get_team_weeks_played()
+                                   for year in range(startYear,endYear+1)])
 
-        weeksPlayed = sum(self.regSeasons[year].getWeeksPlayed() for year in range(startYear, endYear + 1))
+        weeksPlayed = sum(self.regSeasons[year].get_team_weeks_played() for year in range(startYear, endYear + 1))
 
         return oppRatings_weighted/weeksPlayed
 
@@ -456,7 +460,7 @@ class teamManager():
             for week in range(1,season.RSweekCount+1):
                 opp = season.teamStatDict[week]['Opp']
                 if opp != 'BYE':
-                    oppRatings[opp].append(season.getOppRating(week))
+                    oppRatings[opp].append(season.get_team_opp_week_rating(week))
 
         oppAvgRatings = {team: sum(oppRatings[team])/len(oppRatings[team]) for team in oppRatings
                          if len(oppRatings[team]) != 0}
@@ -575,19 +579,23 @@ class team_reg_season(regSeason):
         self.teamMatchups = [matchup_obj for matchup_obj in self.matchups if matchup_obj.team1 == self.name
                              or matchup_obj.team2 == self.name]
 
-        self.recordWL = self.getRecordWL()
-        self.positionWL = self.getPositionWL()
+        self.recordWL = self.get_team_record_WL()
+        self.positionWL = self.get_team_position_Cats()
 
-        self.recordCats = self.getRecordCats()
-        self.positionCats = self.getPositionCats()
+        self.recordCats = self.get_team_record_Cats()
+        self.positionCats = self.get_team_position_Cats()
 
     def __repr__(self):
         if self.is_WL:
-            return f"{self.name}({self.year}, Pos: {self.getPositionWL()}, {self.getRecordWL()})"
+            record = self.get_team_record_WL()
+            return (f"{self.name}({self.year}, Pos: {self.get_team_position_Cats()}, "
+                    f"{record["wins"]}W-{record["losses"]}L-{record["ties"]}D)")
         else:
-            return f"{self.name}({self.year}, Pos: {self.getPositionCats()}, {self.getRecordCats()})"
+            record = self.get_team_record_Cats()
+            return (f"{self.name}({self.year}, Pos: {self.get_team_position_Cats()}, "
+                    f"{record["wins"]}W-{record["losses"]}L-{record["ties"]}D)")
 
-    def getWeeksPlayed(self):
+    def get_team_weeks_played(self):
         weeksPlayed = 0
         for week in range(self.currentWeek + 1):
             if self.teamStatDict.get(week):
@@ -595,15 +603,15 @@ class team_reg_season(regSeason):
                     weeksPlayed += 1
         return weeksPlayed
 
-    def getWeekStats(self, week):
+    def get_team_week_stats(self, week):
         ## get the full stat line of the team for the specified week
         return self.statDict[week][self.name]
 
-    def getWeekCatStat(self, week, cat):
+    def get_team_week_cat_stat(self, week, cat):
         ## get the value of the specified category for the specified week (for the team)
         return self.statDict[week][self.name].get(cat)
 
-    def getRecordWL(self, upToWeek = 0, format = 'r'):
+    def get_team_record_WL(self, upToWeek = 0, format ='r'):
         ## get the WL record of the team (at the specified week (if specified))
         if upToWeek == 0:
             upToWeek = self.currentWeek
@@ -618,21 +626,21 @@ class team_reg_season(regSeason):
         else:
             return {'wins': self.winsWL, 'ties': self.tiesWL, 'losses': self.lossesWL}
 
-    def getPositionWL(self, upToWeek = 0):
+    def get_team_position_WL(self, upToWeek = 0):
         ## get the WL standings position of the team (at the specified week (if specified))
         if upToWeek == 0:
             upToWeek = self.currentWeek
 
         return self.get_WL_standings(upToWeek, False)[self.name]['position']
 
-    def getRecordCats(self, upToWeek=0, format = 'r'):
+    def get_team_record_Cats(self, upToWeek=0, format ='r'):
         ## get the Category-WL record of the team (at the specified week (if specified))
         if upToWeek == 0:
             upToWeek = self.currentWeek
 
-        self.winsCats = self.getCatStandings(upToWeek, False)[self.name]['wins']
-        self.lossesCats = self.getCatStandings(upToWeek, False)[self.name]['losses']
-        self.tiesCats = self.getCatStandings(upToWeek, False)[self.name]['ties']
+        self.winsCats = self.get_Cats_standings(upToWeek, False)[self.name]['wins']
+        self.lossesCats = self.get_Cats_standings(upToWeek, False)[self.name]['losses']
+        self.tiesCats = self.get_Cats_standings(upToWeek, False)[self.name]['ties']
         self.percentCats = (self.winsCats+0.49*self.tiesCats)/sum((self.winsCats,self.tiesCats,self.lossesCats))
 
         if format == 'p' or format == '%':
@@ -640,14 +648,14 @@ class team_reg_season(regSeason):
         else:
             return {'wins': self.winsCats, 'ties': self.tiesCats, 'losses': self.lossesCats}
 
-    def getPositionCats(self, upToWeek = 0):
+    def get_team_position_Cats(self, upToWeek = 0):
         ## get the Category-Cats standings position of the team (at the specified week (if specified))
         if upToWeek == 0:
             upToWeek = self.currentWeek
 
-        return self.getCatStandings(upToWeek, False)[self.name]['position']
+        return self.get_Cats_standings(upToWeek, False)[self.name]['position']
 
-    def getTotals(self, startWeek = 0, endWeek = 0):
+    def get_team_totals(self, startWeek = 0, endWeek = 0):
         ## get the totals of all available categories (up to speicified week (if specified))
         if endWeek <= 0 or endWeek > self.currentWeek:
             endWeek = self.currentWeek
@@ -699,16 +707,16 @@ class team_reg_season(regSeason):
         # print(self.teamTotals)
         return self.teamTotals
 
-    def getAverages(self, startWeek = 0, endWeek = 0):
-        self.getTotals(startWeek, endWeek)
+    def get_team_averages(self, startWeek = 0, endWeek = 0):
+        self.get_team_totals(startWeek, endWeek)
         return self.teamAverages
 
-    def getDraftResults(self):
+    def get_team_draft_results(self):
         if len(self.draftResults) == 0:
             self.runDraft()
         return self.draftDict[self.name]
 
-    def getDraftScore(self):
+    def get_team_draft_score(self):
         if len(self.draftResults) == 0:
             self.runDraft()
         self.draftScore = 0
@@ -717,24 +725,34 @@ class team_reg_season(regSeason):
 
         return self.draftScore
 
-    def getRating(self, week):
-        return self.getWeekRankings(week,False).get(self.name)
+    def get_team_week_rating(self, week):
+        return self.get_week_rankings(week, False).get(self.name)
 
-    def getAvgRating(self, startWeek = 0, endWeek = 0):
+    def get_team_avg_rating(self, startWeek = 0, endWeek = 0):
         if endWeek <= 0:
             endWeek = self.currentWeek
         if startWeek <= 0:
             startWeek = 1
 
-        weeklyRatings = [self.getRating(week) for week in range(startWeek, endWeek+1)
-                         if self.getRating(week)]
-        return sum(weeklyRatings)/len(weeklyRatings)
+        weeklyRatings = [self.get_team_week_rating(week) for week in range(startWeek, endWeek + 1)
+                         if self.get_team_week_rating(week)]
+        return float(sum(weeklyRatings)/len(weeklyRatings))
 
-    def getOppRating(self, week):
+    def get_team_avg_cat_ratings(self, startWeek=0, endWeek=0):
+        if endWeek <= 0 or endWeek > self.currentWeek:
+            endWeek = self.currentWeek
+        if startWeek <= 0:
+            startWeek = 1
+
+        return self.get_avg_cat_rankings(startWeek, endWeek)[self.name]
+
+    def get_team_opp_week_rating(self, week):
         opp = self.teamStatDict.get(week).get('Opp')
-        return self.getWeekRankings(week,False).get(opp)
+        return self.get_week_rankings(week, False).get(opp)
 
-    def getAvgOppRating(self, startWeek = 0, endWeek = 0): ## get the average of weekly opponent ratings (in range of weeks (if specified))
+
+    def get_team_avg_opp_rating(self, startWeek = 0, endWeek = 0):
+    ## get the average of weekly opponent ratings (in range of weeks (if specified))
         if endWeek <= 0:
             endWeek = self.currentWeek
         if startWeek <= 0:
@@ -742,12 +760,13 @@ class team_reg_season(regSeason):
 
         oppRatings = []
         for week in range(startWeek, endWeek+1):
-            if self.getOppRating(week): ## don't include NoneTypes (when opponent is BYE)
-                oppRatings.append(self.getOppRating(week))
+            if self.get_team_opp_week_rating(week): ## don't include NoneTypes (when opponent is BYE)
+                oppRatings.append(self.get_team_opp_week_rating(week))
 
         return sum(oppRatings)/len(oppRatings)
 
-    def getSeasonOppRatings(self, startWeek = 0, endWeek = 0, sortedReturn = True):
+    def get_team_opp_ratings(self, startWeek = 0, endWeek = 0, sortedReturn = True):
+    # get (average) rating of each opponent across season
         if endWeek <= 0:
             endWeek = self.currentWeek
         if startWeek <= 0:
@@ -757,7 +776,7 @@ class team_reg_season(regSeason):
         for week in range(startWeek, endWeek+1):
             try:
                 opp = self.teamStatDict[week]['Opp']
-                oppRatings[opp].append(self.getOppRating(week))
+                oppRatings[opp].append(self.get_team_opp_week_rating(week))
             except KeyError:
                 pass
 
@@ -773,7 +792,7 @@ class team_reg_season(regSeason):
         else:
             return avgOppRatings
 
-    def getLeagueRecordWL(self, startWeek = 0, endWeek = 0):
+    def get_team_league_record_WL(self, startWeek = 0, endWeek = 0):
         if endWeek <= 0:
             endWeek = self.currentWeek
         if startWeek <= 0:
@@ -797,7 +816,7 @@ class team_reg_season(regSeason):
 
         return {'Wins':wins, 'Ties':ties, 'Losses':losses}
 
-    def getLeagueRecordCats(self, startWeek = 0, endWeek = 0):
+    def get_team_league_record_Cats(self, startWeek = 0, endWeek = 0):
         if endWeek <= 0:
             endWeek = self.currentWeek
         if startWeek <= 0:
@@ -822,16 +841,18 @@ class team_PO_season(poSeason):
     def __init__(self, name, year, extStatDict = None):
         super().__init__(year, extStatDict)
         self.name = name
+        self.teamTotals = {}
+        self.teamAverages = {}
 
         if self.PO_time:
-            self.runPlayoffs()
+            self.run_playoffs()
         else:
             pass
 
-    def getFinalStanding(self):
-        return self.getFinalResults(self.name)
+    def get_team_final_standing(self):
+        return self.get_final_PO_results(self.name)
 
-    def getRoundsPlayed(self):
+    def get_team_rounds_played(self):
         roundsPlayed = 0
         if not self.PO_time:
             return roundsPlayed
@@ -842,14 +863,12 @@ class team_PO_season(poSeason):
                     roundsPlayed += 1
         return roundsPlayed
 
-    def get_PO_totals(self):
+    def get_team_PO_totals(self):
         statCats = ['Opp', 'FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK',
                     'TO', 'PTS', 'FGM', 'FGA', 'FTM', 'FTA', '3PTA', '3PT%']
         if not self.PO_time:
             return {cat:0 for cat in statCats[1:]}
 
-        self.teamTotals = {}
-        self.teamAverages = {}
         teamStats = {}
 
         if playoffTeamCount[self.year] == 'N/A':
@@ -864,7 +883,7 @@ class team_PO_season(poSeason):
                     teamStats[week] = list(self.statDict[week][self.name].values())
 
         if teamStats == {}:
-            for category in statCats:
+            for category in statCats[1:]:
                 self.teamTotals[category] = 0
                 self.teamAverages[category] = 0
             return self.teamTotals
@@ -897,13 +916,13 @@ class team_PO_season(poSeason):
 
             return self.teamTotals
 
-    def get_PO_averages(self):
-        self.get_PO_totals()
+    def get_team_PO_avgs(self):
+        self.get_team_PO_totals()
         return self.teamAverages
 
 ## TESTING TESTING TESTING
 if __name__ == '__main__':
-    testName = 'Rohil'
+    testName = 'Fano'
     testNames = allMembers
 
     start = 0
@@ -913,8 +932,17 @@ if __name__ == '__main__':
     endW = 0
     year = 2024
 
-    y = team_PO_season(testName, 2024)
-    print(y.get_PO_totals())
+    # y = team_PO_season(testName, 2024)
+    y = teamManager(testName)
+    # print(y.get_career_PO_totals())
+    # print(y.get_best_draft_pick())
+    # # print(y.playOffs)
+    # for playoff in y.playOffs.values():
+    #     print(playoff.year, playoff.get_final_PO_standings())
+
+    # x = team_reg_season(testName, year)
+    # print(x.get_team_avg_cat_ratings())
+
     # print(y.get_PO_totals())
 
     # x = teamManager("Fano")
@@ -922,7 +950,7 @@ if __name__ == '__main__':
     # print(y.getLeagueRecordWL())
     # print(y.getLeagueRecordCats())
 
-    for name in si[year][0]:
+    for name in si[year]['teams']:
         pass
         # y = teamManager(name)
         # y = team_reg_season(name, year)

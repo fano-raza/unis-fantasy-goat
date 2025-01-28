@@ -20,6 +20,7 @@ def updateCarTotals(league: fantasyLeague):
     worksheet.update(statList, f"A{firstRow}:J{firstRow + len(statList) - 1}")
 
     updateTime(sheetname,"L2")
+    write_sheet(sheetname, f"All Time {sheetname}", "A2", bold=True)
 
 def updateRSTotals(league: fantasyLeague):
     statList = []
@@ -33,6 +34,7 @@ def updateRSTotals(league: fantasyLeague):
     
     worksheet.update(statList, f"A{firstRow}:J{firstRow + len(statList) - 1}")
     updateTime(sheetname,"L2")
+    write_sheet(sheetname, f"All Time {sheetname}", "A2", bold=True)
 def updatePOTotals(league: fantasyLeague):
     statList = []
     sheetname = "PO Totals"
@@ -45,6 +47,7 @@ def updatePOTotals(league: fantasyLeague):
     
     worksheet.update(statList, f"A{firstRow}:J{firstRow + len(statList) - 1}")
     updateTime(sheetname,"L2")
+    write_sheet(sheetname, f"All Time {sheetname}", "A2", bold=True)
 
 def updateCarAVGs(league: fantasyLeague):
     statList = []
@@ -58,6 +61,7 @@ def updateCarAVGs(league: fantasyLeague):
     
     worksheet.update(statList, f"A{firstRow}:J{firstRow + len(statList) - 1}")
     updateTime(sheetname,"L2")
+    write_sheet(sheetname, f"All Time {sheetname}", "A2", bold=True)
 
 def updateRSAVGs(league: fantasyLeague):
     statList = []
@@ -71,6 +75,7 @@ def updateRSAVGs(league: fantasyLeague):
     
     worksheet.update(statList, f"A{firstRow}:J{firstRow + len(statList) - 1}")
     updateTime(sheetname,"L2")
+    write_sheet(sheetname, f"All Time {sheetname}", "A2", bold=True)
 
 def updatePOAVGs(league: fantasyLeague):
     statList = []
@@ -84,6 +89,7 @@ def updatePOAVGs(league: fantasyLeague):
     
     worksheet.update(statList, f"A{firstRow}:J{firstRow + len(statList) - 1}")
     updateTime(sheetname,"L2")
+    write_sheet(sheetname, f"All Time {sheetname}", "A2", bold=True)
 
 def write_sheet(sheet, text, cell, bold = False, italic = False, underline = False):
     worksheet = gc.open(gDocName).worksheet(sheet)
