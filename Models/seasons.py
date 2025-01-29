@@ -5,9 +5,9 @@ from yfpy_fr import YahooFantasySportsQuery
 import math
 import datetime
 import time
-from Matchup import matchup
+from Models.Matchup import matchup
 import csv
-from StatSheetGenerator import genStatDict
+from StatGenerator import genStatDict
 
 def bs_calList(day, calList): #binary search to find what week/matchup "day" is in
     if len(calList) == 1:
@@ -63,6 +63,13 @@ class regSeason:
 
     def __repr__(self):
         return f"Regular Season({self.year}, Status: {self.status})"
+
+    def get_week_range(self, startWeek, endWeek):
+        if endWeek <= 0 or endWeek > self.currentWeek:
+            endWeek = self.currentWeek
+        if startWeek <=0 or startWeek > self.currentWeek:
+            startWeek = 1
+        return startWeek, endWeek
 
     def make_stat_dict(self):
 
@@ -268,10 +275,7 @@ class regSeason:
         averageRankDict = {}
         rankedDict = {}
 
-        if endWeek <= 0 or endWeek > self.currentWeek:
-            endWeek = self.currentWeek
-        if startWeek <= 0:
-            startWeek = 1
+        startWeek, endWeek = self.get_week_range(startWeek, endWeek)
 
         for team in self.teams:
             rankingsDict[team] = []
@@ -296,10 +300,7 @@ class regSeason:
             return averageRankDict
 
     def get_avg_cat_rankings(self, startWeek = 0, endWeek = 0):
-        if endWeek <= 0 or endWeek > self.currentWeek:
-            endWeek = self.currentWeek
-        if startWeek <= 0:
-            startWeek = 1
+        startWeek, endWeek = self.get_week_range(startWeek, endWeek)
 
         avgCatRankDict = {team: {cat: 0 for cat in mainCats} for team in self.teams}
 
@@ -339,10 +340,7 @@ class regSeason:
             return oppWeekRankings
 
     def get_opp_season_rankings(self, startWeek = 0, endWeek = 0, sortedReturn = True):
-        if endWeek <= 0 or endWeek > self.currentWeek:
-            endWeek = self.currentWeek
-        if startWeek <=0:
-            startWeek = 1
+        startWeek, endWeek = self.get_week_range(startWeek, endWeek)
 
         OppRankings = {}
 
@@ -367,10 +365,7 @@ class regSeason:
             return OppAvgRankings
 
     def get_league_totals(self, startWeek = 0, endWeek = 0):
-        if endWeek <= 0 or endWeek > self.currentWeek:
-            endWeek = self.currentWeek
-        if startWeek <=0:
-            startWeek = 1
+        startWeek, endWeek = self.get_week_range(startWeek, endWeek)
 
         catTotals = {cat: 0 for cat in self.statCats}
         if self.is_espn:
@@ -405,10 +400,7 @@ class regSeason:
         return catTotals
 
     def get_league_avgs(self, startWeek = 0, endWeek = 0):
-        if endWeek <= 0 or endWeek > self.currentWeek:
-            endWeek = self.currentWeek
-        if startWeek <=0:
-            startWeek = 1
+        startWeek, endWeek = self.get_week_range(startWeek, endWeek)
 
         catTotals = self.get_league_totals(startWeek, endWeek)
         catAvgs = {cat: catTotals[cat]/(self.currentWeek * math.floor(len(self.teams)/2)*2) for cat in catTotals}
@@ -418,11 +410,7 @@ class regSeason:
         return catAvgs
 
     def get_league_cat_totals(self, startWeek = 0, endWeek = 0):
-        # print(self.year)
-        if endWeek <= 0 or endWeek > self.currentWeek:
-            endWeek = self.currentWeek
-        if startWeek <=0:
-            startWeek = 1
+        startWeek, endWeek = self.get_week_range(startWeek, endWeek)
 
         catTotals = {cat: 0 for cat in self.statCats}
         if self.is_espn:
@@ -458,12 +446,9 @@ class regSeason:
 
         return catTotals
 
-    #TODO: write this function and league wins for Cats
+    #TODO: write league Win standings for WL and Cats
     def get_league_wins_standings_WL(self, startWeek = 0, endWeek = 0):
-        if endWeek <= 0 or endWeek > self.currentWeek:
-            endWeek = self.currentWeek
-        if startWeek <=0:
-            startWeek = 1
+        startWeek, endWeek = self.get_week_range(startWeek, endWeek)
 
 class poSeason(regSeason):
     def __init__(self, year, extStatDict = None):

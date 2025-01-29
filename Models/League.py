@@ -1,11 +1,7 @@
-from constants import *
-from constants import seasonInfoDict as si
-from espn_fr.basketball import *
 # from yfpy_fr import YahooFantasySportsQuery
-from Draft import *
-from seasons import regSeason, poSeason
-from TeamManager import *
-import pandas as pd
+from Models.Draft import *
+from Models.TeamManager import *
+
 
 class fantasyLeague():
     def __init__(self, startYear: int = 0, endYear: int = 0, include: list = [], exclude: list = []):
@@ -82,7 +78,7 @@ class leagueSeason:
 
 ## TESTING REGULAR SEASON
 if __name__ == '__main__':
-    x = fantasyLeague(exclude=[2025])
+    x = fantasyLeague()
     print(x.seasons)
     # for team in x.historicalMembers:
     #     print(team.name, team.get_avg_rating())

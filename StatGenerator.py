@@ -2,8 +2,63 @@ from constants import *
 import csv
 from espn_fr.basketball import League
 from constants import *
+from constants import seasonInfoDict as si
 from yfpy_fr import YahooFantasySportsQuery
+import pandas as pd
 
+def genWeekStatDict(year, week):
+    stats = mainCats
+    statDict = {teamName: {} for teamName in si[year]['teams']}
+
+    ## If the year is on ESPN
+    if si[year]['is_espn']:
+        espnLeague = League(espn_leagueID, year, espn_s2, espn_swid)
+        league_data = espnLeague._fetch_league()
+        sched = league_data.get("schedule")
+        weekSched = sched[(week - 1) * -(-teamCount[year] // 2) : week * -(-teamCount[year] // 2)]
+        ## double negative floor division to ceiling divide
+
+        for matchup in weekSched:
+            try:
+                team1 = espnTeamIDs.get(year).get(matchup.get('home').get('teamId'))
+                team2 = espnTeamIDs.get(year).get(matchup.get('away').get('teamId'))
+
+                for stat in stats:
+                    statDict[team1][stat] = (matchup.get('home').get('cumulativeScore').get('scoreByStat').
+                        get(espnStatMap.get(stat)).get('score'))
+
+                    statDict[team2][stat] = (matchup.get('home').get('cumulativeScore').get('scoreByStat').
+                                             get(espnStatMap.get(stat)).get('score'))
+
+                statDict[team1]['Opp'], statDict[team2]['Opp'] = team2, team1
+            except:
+                pass
+            # if team2 != 'BYE':
+
+    ## If season is Yahoo
+    else:
+        yQuery = YahooFantasySportsQuery('', yLeagueIDs[year], 'nba', yGameIDs[year], False, False, yKey, ySec)
+
+        matchupListCopy = yQuery.get_league_matchups_by_week(week)
+        team_stats = yQuery.get_all_team_stats_by_week(week)
+
+        for matchup in matchupListCopy:
+            matchup_teams = matchup.teams
+
+            team1_id = matchup_teams[0].team_id
+            team2_id = matchup_teams[1].team_id
+
+            team1 = yTeamIDs[year].get(team1_id)
+            team2 = yTeamIDs[year].get(team2_id)
+
+            teamStat1 = team_stats[team1_id]
+            teamStat2 = team_stats[team2_id]
+
+            statDict[team1] = {stat: teamStat1.get(yStatMap.get(stat)) for stat in stats}
+            statDict[team2] = {stat: teamStat2.get(yStatMap.get(stat)) for stat in stats}
+            statDict[team1]['Opp'], statDict[team2]['Opp'] = team2, team1
+
+    return statDict
 def genStatDict(startYear, endYear=0):
     if endYear==0:
         endYear = startYear
@@ -104,24 +159,27 @@ def genStatList(startYear, endYear):
     return csvList
 
 if __name__ == '__main__':
-    startYear = 2025
-    endYear = 2025
-    stats = ['FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PTS', 'FGM', 'FGA', 'FTM', 'FTA', '3PTA', '3PT%']
+    # startYear = 2025
+    # endYear = 2025
+    # stats = ['FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PTS', 'FGM', 'FGA', 'FTM', 'FTA', '3PTA', '3PT%']
+    #
+    # print(f"\nGenerating stats for all players from the {startYear - 1}/{startYear} season\n"
+    #       f"to the {endYear - 1}/{endYear} season...")
+    #
+    # pathname = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/ref/{startYear}_to_{endYear}_CompStats.csv" if startYear != endYear \
+    #     else f"/Users/fano/Documents/Fantasy/Fantasy GOAT/ref/{startYear}_CompStats.csv"
+    #
+    # statList = genStatList(startYear, endYear)
+    #
+    # with open(pathname, 'w') as csvfile:
+    #     header = ['Year', 'Week', 'Week Name', 'Season', 'Count', 'Team', 'Opp']+stats
+    #     # header.extend(stats)
+    #     writer = csv.writer(csvfile)
+    #     writer.writerow(header)
+    #     writer.writerows(statList)
 
-    print(f"\nGenerating stats for all players from the {startYear - 1}/{startYear} season\n"
-          f"to the {endYear - 1}/{endYear} season...")
-
-    pathname = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/ref/{startYear}_to_{endYear}_CompStats.csv" if startYear != endYear \
-        else f"/Users/fano/Documents/Fantasy/Fantasy GOAT/ref/{startYear}_CompStats.csv"
-
-    statList = genStatList(startYear, endYear)
-
-    with open(pathname, 'w') as csvfile:
-        header = ['Year', 'Week', 'Week Name', 'Season', 'Count', 'Team', 'Opp']+stats
-        # header.extend(stats)
-        writer = csv.writer(csvfile)
-        writer.writerow(header)
-        writer.writerows(statList)
+    statDict = genWeekStatDict(2024,3)
+    print(pd.DataFrame(statDict))
 
 
 

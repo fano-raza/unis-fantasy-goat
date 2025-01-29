@@ -4,14 +4,13 @@ from yfpy_fr import YahooFantasySportsQuery
 from constants import *
 import datetime
 import time
-from League import fantasyLeague
-from seasons import bs_calList
+from Models.seasons import bs_calList
 
 def genWeekStats(year, week):
     stats = gDocStatCats
     statList = []
 
-    ## If the year was on ESPN
+    ## If the year is on ESPN
     if seasonInfo[year][1]:
         espnLeague = League(espn_leagueID, year, espn_s2, espn_swid)
         league_data = espnLeague._fetch_league()

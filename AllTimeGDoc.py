@@ -1,8 +1,6 @@
-from League import fantasyLeague
+from Models.League import fantasyLeague
 from constants import *
 import datetime
-import time
-from gdoc_writer import write_gDoc
 
 gDocName = "All-Time Leaders"
 firstRow = 10

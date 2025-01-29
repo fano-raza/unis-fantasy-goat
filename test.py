@@ -1,15 +1,6 @@
-import gspread as gs
-import numpy as np
-import pandas as pd
-import csv
-from espn_fr.basketball.league import League
 # from espn_fr.basketball.box_score import H2HCategoryBoxScore
-from yfpy_fr.query import YahooFantasySportsQuery
-from yfpy_fr.models import YahooFantasyObject
-from constants import *
-from League import fantasyLeague
-from TeamManager import *
-import requests
+from Models.TeamManager import *
+
 
 # from espn_api.basketball.constant import
 

@@ -1,10 +1,5 @@
-import time
-import csv
 from flask import Flask
 from gdoc_writer import *
-import datetime
-import pandas as pd
-from League import fantasyLeague
 from AllTimeGDoc import *
 
 app = Flask(__name__)
