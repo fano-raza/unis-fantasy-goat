@@ -186,7 +186,7 @@ def updateCurrentSheet(year):
 
 if __name__ == '__main__':
     year = 2025
-    week = 13
+    week = 14
 
     # print(genWeekStats(year, week))
 

@@ -10,8 +10,6 @@ Attributes:
 FIND "MADE CHANGES" to view what changes were made from original yfpy repo
 
 """
-__author__ = "Wren J. R. (uberfastman)"
-__email__ = "uberfastman@uberfastman.dev"
 
 import json
 import logging

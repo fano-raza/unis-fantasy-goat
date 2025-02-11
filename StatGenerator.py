@@ -22,12 +22,11 @@ def genWeekStatDict(year, week):
             try:
                 team1 = espnTeamIDs.get(year).get(matchup.get('home').get('teamId'))
                 team2 = espnTeamIDs.get(year).get(matchup.get('away').get('teamId'))
-
                 for stat in stats:
                     statDict[team1][stat] = (matchup.get('home').get('cumulativeScore').get('scoreByStat').
                         get(espnStatMap.get(stat)).get('score'))
 
-                    statDict[team2][stat] = (matchup.get('home').get('cumulativeScore').get('scoreByStat').
+                    statDict[team2][stat] = (matchup.get('away').get('cumulativeScore').get('scoreByStat').
                                              get(espnStatMap.get(stat)).get('score'))
 
                 statDict[team1]['Opp'], statDict[team2]['Opp'] = team2, team1
@@ -159,27 +158,27 @@ def genStatList(startYear, endYear):
     return csvList
 
 if __name__ == '__main__':
-    # startYear = 2025
-    # endYear = 2025
-    # stats = ['FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PTS', 'FGM', 'FGA', 'FTM', 'FTA', '3PTA', '3PT%']
-    #
-    # print(f"\nGenerating stats for all players from the {startYear - 1}/{startYear} season\n"
-    #       f"to the {endYear - 1}/{endYear} season...")
-    #
-    # pathname = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/ref/{startYear}_to_{endYear}_CompStats.csv" if startYear != endYear \
-    #     else f"/Users/fano/Documents/Fantasy/Fantasy GOAT/ref/{startYear}_CompStats.csv"
-    #
-    # statList = genStatList(startYear, endYear)
-    #
-    # with open(pathname, 'w') as csvfile:
-    #     header = ['Year', 'Week', 'Week Name', 'Season', 'Count', 'Team', 'Opp']+stats
-    #     # header.extend(stats)
-    #     writer = csv.writer(csvfile)
-    #     writer.writerow(header)
-    #     writer.writerows(statList)
+    startYear, endYear = si['year'][0], si['year'][-1]
+    stats = statCats
 
-    statDict = genWeekStatDict(2024,3)
-    print(pd.DataFrame(statDict))
+    print(f"\nGenerating stats for all players from the {startYear - 1}/{startYear} season\n"
+          f"to the {endYear - 1}/{endYear} season...")
+
+    pathname = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/ref/{startYear}_to_{endYear}_CompStats.csv" if startYear != endYear \
+        else f"/Users/fano/Documents/Fantasy/Fantasy GOAT/ref/{startYear}_CompStats.csv"
+
+    statList = genStatList(startYear, endYear)
+
+    with open(pathname, 'w') as csvfile:
+        header = ['Year', 'Week', 'Week Name', 'Season', 'Count', 'Team', 'Opp']+stats
+        # header.extend(stats)
+        writer = csv.writer(csvfile)
+        writer.writerow(header)
+        writer.writerows(statList)
+
+    statDict = genWeekStatDict(2020,1)
+    print(statDict)
+    # print(pd.DataFrame(statDict))
 
 
 

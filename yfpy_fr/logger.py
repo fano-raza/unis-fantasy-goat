@@ -1,8 +1,4 @@
 # -*- coding: utf-8 -*-
-"""YFPY module for configuring and formatting the custom logger.
-"""
-__author__ = "Wren J. R. (uberfastman)"
-__email__ = "uberfastman@uberfastman.dev"
 
 from logging import getLogger, Logger, Formatter, StreamHandler, INFO
 

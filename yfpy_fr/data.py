@@ -29,8 +29,6 @@ Attributes:
     logger (Logger): Module level logger for usage and debugging.
 
 """
-__author__ = "Wren J. R. (uberfastman)"
-__email__ = "uberfastman@uberfastman.dev"
 
 import inspect
 import json

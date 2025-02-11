@@ -1,6 +1,3 @@
-__author__ = "Wren J. R. (uberfastman)"
-__email__ = "uberfastman@uberfastman.dev"
-
 from yfpy_fr.data import Data
 from yfpy_fr.exceptions import YahooFantasySportsException, YahooFantasySportsDataNotFound
 from yfpy_fr.logger import get_logger
