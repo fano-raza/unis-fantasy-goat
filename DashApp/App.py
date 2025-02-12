@@ -22,8 +22,6 @@ def get_week_stats(year, week):
 # Initialize the Dash app
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
-## test comment to see if push works
-
 # Layout of the app
 app.layout = dbc.Container([
     dbc.Row([
