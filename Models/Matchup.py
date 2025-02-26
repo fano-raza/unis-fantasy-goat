@@ -12,6 +12,7 @@ class matchup():
         self.weekName = f"M{week}" if week <= weekCountDict[self.year] else f"P{week % weekCountDict[self.year]}"
         self.team1 = team1
         self.team2 = team2
+        self.teams = [self.team1, self.team2]
 
         if self.team2 != 'BYE':
             self.is_BYE = False

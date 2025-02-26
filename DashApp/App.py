@@ -114,7 +114,7 @@ def update_table(n_clicks, year, week, focus_team):
     if not focus_team:
         focus_team = df['Team'].iloc[0]  # Default to the first team
 
-    if n_clicks > 0:
+    if n_clicks >= 0:
         main_table_data = df.to_dict('records')
 
         # Update the focus team table data

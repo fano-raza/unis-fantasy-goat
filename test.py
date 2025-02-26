@@ -1,6 +1,6 @@
 # from espn_fr.basketball.box_score import H2HCategoryBoxScore
 from Models.TeamManager import *
-
+from StatGenerator import *
 
 # from espn_api.basketball.constant import
 
@@ -207,12 +207,12 @@ if __name__ == '__main__':
     #     print(season.playoffs)
     #     print(season.playoffs.getWinner())
 
-    x = teamManager('Juan')
-    x.get_career_PO_totals()
-    print(x.career_PO_totals)
-
-    for playoff in x.playOffs.values():
-        print(playoff.year, playoff.get_team_PO_totals())
+    # x = teamManager('Juan')
+    # x.get_career_PO_totals()
+    # print(x.career_PO_totals)
+    #
+    # for playoff in x.playOffs.values():
+    #     print(playoff.year, playoff.get_team_PO_totals())
 
     # y = teamManager('Fano')
     # y.get_career_PO_totals()
@@ -220,3 +220,15 @@ if __name__ == '__main__':
     #
     # for playoff in y.playOffs.values():
     #     print(playoff.year, playoff.get_PO_totals())
+
+    # df_19 = genStatDF(2019,2025)
+    for year in range(2019,2026):
+        print(year)
+        dict = genStatDict(year)
+    # df_25 = genStatDF(2025,2026)
+    # # print(df_25)
+    #
+    # print(df_19[mainCats])
+    # print(df_25[mainCats])
+    # print("DF ALL", df_all)
+    # print(df_all[['Team','Year']+mainCats])

@@ -1,3 +1,5 @@
+import pandas as pd
+
 from Models.Draft import teamDraft
 from Models.seasons import *
 from Models.Matchup import matchup
@@ -5,22 +7,29 @@ from Models.Matchup import matchup
 
 class teamManager():
     # TODO figure out include and exclude
-    def __init__(self, name, extStats = None, extDraft = {1996: None}, includeYear = [], excludeYear = []):
+    def __init__(self, name, extStatDicts = None, extStatDFs = None, extDraft = {1996: None}, includeYear = [], excludeYear = []):
         self.name = name
         self.yearsPlayed = []
         for year in si:
             if self.name in si[year]['teams']:
                 self.yearsPlayed.append(year)
         self.regSeasons = {}
-        self.playOffs = {}
+        self.playoffs = {}
         self.draftInfo = {}
+        statDFs = []
         for year in self.yearsPlayed:
             # can use existing statDict if it is called out
-            extStatDict = None if not extStats else extStats[year]
-            self.regSeasons[year] = team_reg_season(self.name, year, extStatDict)
-            self.playOffs[year] = team_PO_season(self.name, year, self.regSeasons[year].statDict)
+            extStatDict = None if not extStatDicts else extStatDicts[year]
+            extStatDF = None if not extStatDFs else extStatDFs[year]
+
+            self.playoffs[year] = team_PO_season(self.name, year, extStatDict=extStatDict, extStatDF=extStatDF)
+            self.regSeasons[year] = team_reg_season(self.name, year,
+                                                    extStatDict=self.playoffs[year].statDict,
+                                                    extStatDF=self.playoffs[year].statDF)
             self.draftInfo[year] = teamDraft(self.name, year, extDraft.get(year))
-        
+            statDFs.append(self.regSeasons[year].statDF)
+        self.compStatDF = pd.concat(statDFs)
+
         self.get_career_draft_score()
         self.total_career_matchups = self.get_career_matchups_played()
         self.total_RS_matchups = self.get_career_matchups_played(0,0,'RS')
@@ -39,6 +48,19 @@ class teamManager():
     def __repr__(self):
         return f"TeamManager({self.name})"
 
+    def get_career_matchups_played2(self, years = [], weeks = [], RS=True, PO=True):
+        if len(years) == 0:
+            years = self.yearsPlayed
+        if len(weeks)==0:
+            weeks = list(range(1,22)) # most possible weeks played
+
+        season_include = ("M", "P") if RS and PO else ("M") if RS and not PO else ("P") if PO and not RS else ()
+
+        return self.compStatDF.loc[self.compStatDF["Year"].isin(years) &
+                                   (self.compStatDF["Team"] == self.name) &
+                                   self.compStatDF["Week"].isin(weeks) &
+                                   self.compStatDF["Week Name"].str.startswith(season_include)].shape[0]
+
     def get_career_matchups_played(self, startYear = 0, endYear = 0, season = 0):
         if endYear == 0 or endYear > self.yearsPlayed[-1]:
             endYear = self.yearsPlayed[-1]
@@ -50,7 +72,7 @@ class teamManager():
 
         for year in range(startYear, endYear+1):
             RS_matchups_played += self.regSeasons[year].get_team_weeks_played()
-            PO_matchups_played += self.playOffs[year].get_team_rounds_played()
+            PO_matchups_played += self.playoffs[year].get_team_rounds_played()
 
         total_matchups_played = RS_matchups_played + PO_matchups_played
 
@@ -129,7 +151,7 @@ class teamManager():
         for year in range(startYear, endYear + 1):
             # print(f"year: {year}")
             try:
-                yearTotals[year] = list(self.playOffs[year].get_team_PO_totals().values())
+                yearTotals[year] = list(self.playoffs[year].get_team_PO_totals().values())
             except AttributeError:
                 pass
 
@@ -138,7 +160,7 @@ class teamManager():
 
         self.career_PO_totals = {}
         self.career_PO_averages = {}
-        rounds_played_in_year = [self.playOffs.get(year).get_team_rounds_played() for year in range(startYear, endYear + 1)]
+        rounds_played_in_year = [self.playoffs.get(year).get_team_rounds_played() for year in range(startYear, endYear + 1)]
 
         for category in statCats:
             if len(statsByCat) == 0:
@@ -198,8 +220,8 @@ class teamManager():
             RS_weeks_played_in_year.append(self.regSeasons[year].get_team_weeks_played())
 
         for year in range(startYear, endYear+1):
-            if self.playOffs.get(year).get_team_rounds_played() > 0:
-                PO_rounds_played_in_year.append(self.playOffs.get(year).get_team_rounds_played())
+            if self.playoffs.get(year).get_team_rounds_played() > 0:
+                PO_rounds_played_in_year.append(self.playoffs.get(year).get_team_rounds_played())
 
         self.get_career_RS_totals(startYear, endYear)
         self.get_career_PO_totals(startYear, endYear)
@@ -219,9 +241,9 @@ class teamManager():
                     matchups = []
                     for year in range(startYear, endYear+1):
                         FGs.append(self.regSeasons[year].get_team_totals()['FG%'])
-                        FGs.append(self.playOffs[year].get_team_PO_totals()['FG%'])
+                        FGs.append(self.playoffs[year].get_team_PO_totals()['FG%'])
                         matchups.append(self.regSeasons[year].get_team_weeks_played())
-                        matchups.append(self.playOffs[year].get_team_rounds_played())
+                        matchups.append(self.playoffs[year].get_team_rounds_played())
 
                         FG_sumproduct = sum(x * y for x, y in zip(FGs, matchups))
                         self.career_totals[category] = FG_sumproduct/sum(matchups)
@@ -236,9 +258,9 @@ class teamManager():
                     matchups = []
                     for year in range(startYear, endYear + 1):
                         FTs.append(self.regSeasons[year].get_team_totals()['FT%'])
-                        FTs.append(self.playOffs[year].get_team_PO_totals()['FT%'])
+                        FTs.append(self.playoffs[year].get_team_PO_totals()['FT%'])
                         matchups.append(self.regSeasons[year].get_team_weeks_played())
-                        matchups.append(self.playOffs[year].get_team_rounds_played())
+                        matchups.append(self.playoffs[year].get_team_rounds_played())
 
                         FT_sumproduct = sum(x * y for x, y in zip(FTs, matchups))
                         self.career_totals[category] = FT_sumproduct / sum(matchups)
@@ -535,7 +557,7 @@ class teamManager():
         PO_chips = {year:0 for year in range(startYear,endYear+1)}
 
         for year in PO_chips:
-            season = self.playOffs[year]
+            season = self.playoffs[year]
             try:
                 if season.PO_champ == self.name:
                     PO_chips[year] = 1
@@ -564,8 +586,8 @@ class teamManager():
 
 
 class team_reg_season(regSeason):
-    def __init__(self, name, year, extStatDict = None):
-        super(team_reg_season, self).__init__(year, extStatDict)
+    def __init__(self, name, year, extStatDict = None, extStatDF = None):
+        super(team_reg_season, self).__init__(year, extStatDict, extStatDF)
         # super(team_reg_season, self)
         self.name = name
         self.otherTeams = list(self.teams)
@@ -835,16 +857,16 @@ class team_reg_season(regSeason):
         return {'Wins':wins, 'Ties':ties, 'Losses':losses}
 
 class team_PO_season(poSeason):
-    def __init__(self, name, year, extStatDict = None):
-        super().__init__(year, extStatDict)
+    def __init__(self, name, year, extStatDict = None, extStatDF = None):
+        super().__init__(year, extStatDict, extStatDF)
         self.name = name
         self.teamTotals = {}
         self.teamAverages = {}
 
-        if self.PO_time:
-            self.run_playoffs()
-        else:
-            pass
+        # if self.PO_time:
+        #     self.run_playoffs()
+        # else:
+        #     pass
 
     def get_team_final_standing(self):
         return self.get_final_PO_results(self.name)
@@ -919,6 +941,7 @@ class team_PO_season(poSeason):
 
 ## TESTING TESTING TESTING
 if __name__ == '__main__':
+    import time
     testName = 'Fano'
     testNames = allMembers
 
@@ -927,10 +950,19 @@ if __name__ == '__main__':
 
     startW = 0
     endW = 0
-    year = 2024
+    year = 2020
+
+
 
     # y = team_PO_season(testName, 2024)
     y = teamManager(testName)
+    # print(y.compStatDF.loc[(y.compStatDF["Team"]==y.name) & (y.compStatDF["Week Name"].str.startswith("P"))])
+    start = time.time()
+    print(y.get_career_matchups_played2())
+    print(f"df took: {time.time()-start}s")
+    start = time.time()
+    print(y.get_career_matchups_played())
+    print(f"reg took: {time.time() - start}s")
     # print(y.get_career_PO_totals())
     # print(y.get_best_draft_pick())
     # # print(y.playOffs)

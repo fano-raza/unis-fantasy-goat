@@ -86,7 +86,7 @@ playoffTeamCount = {
 }
 
 playoffWeeks = {year:math.ceil(playoffTeamCount[year]/2) for year in playoffTeamCount}
-# print(playoffWeeks)
+# print(f"PO Weeks: {playoffWeeks}")
 
 ## ESPN-SPECIFIC INFO
 espnTeamIDs = {

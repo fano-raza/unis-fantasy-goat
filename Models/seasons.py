@@ -7,7 +7,11 @@ import datetime
 import time
 from Models.Matchup import matchup
 import csv
-from StatGenerator import genStatDict
+from StatGenerator import *
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+
 
 def bs_calList(day, calList): #binary search to find what week/matchup "day" is in
     if len(calList) == 1:
@@ -22,7 +26,7 @@ def bs_calList(day, calList): #binary search to find what week/matchup "day" is 
         return calList[midInd][0]
 
 class regSeason:
-    def __init__(self, year, extStatDict = None):
+    def __init__(self, year, extStatDict = None, extStatDF = None):
         ## Basic Variables
         self.year = year
 
@@ -47,13 +51,19 @@ class regSeason:
         else:
             self.currentWeek = self.RSweekCount
 
+        # Stat Data Structures
         self.statCSV = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/ref/{self.year}_CompStats.csv"
         self.statDict = {} if not extStatDict else extStatDict
-        if len(self.statDict)==0:
-            self.make_stat_dict()
+        self.statDF = extStatDF if isinstance(extStatDF, pd.DataFrame) else pd.DataFrame()
+        if len(self.statDict)==0 or self.statDF.size==0:
+            self.make_stats()
 
         self.matchups = []
         self.make_matchups()
+
+        if 'PTS_opp' not in self.statDF.columns:
+            self.df_build_out()
+
         if self.is_WL:
             self.RS_champ = self.get_RSwinner_WL()
         else:
@@ -62,8 +72,8 @@ class regSeason:
         self.status = "Active" if self.currentWeek<self.RSweekCount else "Complete"
 
     def __repr__(self):
-        return f"Regular Season({self.year}, Status: {self.status})"
-
+        # return f"Regular Season({self.year}, Status: {self.status})"
+        return f"Regular Season({self.year})"
     def get_week_range(self, startWeek, endWeek):
         if endWeek <= 0 or endWeek > self.currentWeek:
             endWeek = self.currentWeek
@@ -71,8 +81,7 @@ class regSeason:
             startWeek = 1
         return startWeek, endWeek
 
-    def make_stat_dict(self):
-
+    def make_stats(self):
         # Try to find CompStat csv for that year
         try:
             statCats = ['Opp', 'FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK',
@@ -100,7 +109,10 @@ class regSeason:
         # If CompStat csv doesn't exist (takes longer, esp w Yahoo)
         except FileNotFoundError:
             print(f"Creating stat database for {self.year} season...make take some time")
-            self.statDict = genStatDict(self.year)[self.year]
+            self.statDict = genStatDict(self.year)
+
+        statList = genStatList(self.year, extStatDict=self.statDict)
+        self.statDF = genStatDF(self.year, extStatList=statList)
 
     def make_matchups(self):
 
@@ -109,11 +121,10 @@ class regSeason:
             teams = []
             if week not in self.statDict:
                 break
-            for team in self.statDict.get(week):
+            for team in self.statDict[week]:
                 teams.append(team)
-                opp = self.statDict.get(week).get(team)['Opp']
+                opp = self.statDict[week].get(team)['Opp']
                 if opp not in teams:
-                    # start = time.time()
                     self.matchups.append(matchup(self.year, week, team, opp))
                     # print(f"matchup {team} vs {opp}: {time.time()-start}s")
 
@@ -151,6 +162,35 @@ class regSeason:
         place = 1
         for team in sortedTeams:
             standingsDict[place] = (team,f"{recDict[team]['wins']}W-{recDict[team]['losses']}L-{recDict[team]['ties']}D")
+            recDict[team]['position'] = place
+            place += 1
+
+        if sortedReturn:
+            return standingsDict
+        else:
+            return recDict
+
+    def get_WL_standings_DF(self, week = 0, sortedReturn = True):
+        if week <= 0 or week > self.currentWeek:
+            week = self.currentWeek
+
+        recDF = self.statDF.loc[(self.statDF['Week'] <= self.RSweekCount)] \
+            .groupby('Team')[['matchup_win', 'matchup_loss', 'matchup_tie']].sum()
+
+        recDict = {team: {'wins':recDF.loc[team, 'matchup_win'],
+                          'ties': recDF.loc[team, 'matchup_tie'],
+                          'losses': recDF.loc[team, 'matchup_loss'],
+                          'score': recDF.loc[team, 'matchup_win']+0.49*recDF.loc[team, 'matchup_tie']
+                          } for team in self.teams}
+
+        sortedTeams = sorted(recDict, key=lambda k: recDict[k]['score'])
+        sortedTeams.reverse()
+
+        standingsDict = {}
+        place = 1
+        for team in sortedTeams:
+            standingsDict[place] = (
+            team, f"{recDict[team]['wins']}W-{recDict[team]['losses']}L-{recDict[team]['ties']}D")
             recDict[team]['position'] = place
             place += 1
 
@@ -450,9 +490,70 @@ class regSeason:
     def get_league_wins_standings_WL(self, startWeek = 0, endWeek = 0):
         startWeek, endWeek = self.get_week_range(startWeek, endWeek)
 
+    # DATAFRAME PREP FUNCTIONS
+    def df_build_out(self):
+        posCats = [cat for cat in mainCats if cat != 'TO']
+        posCats_opp = [cat + "_opp" for cat in posCats]
+        negCats, negCats_opp = ['TO'], ['TO_opp']
+
+
+        scaler = MinMaxScaler()
+
+        # RANKING scale; scales values from 1 to 0 (lowest to highest)
+        def minmax_rank_scale(df, columns):
+            return df.groupby('Week')[columns].transform(
+                lambda x: 1-pd.Series(scaler.fit_transform(x.values.reshape(-1, 1)).flatten(), index=x.index))
+        # RATING scale; scales values from 0 to 1 (lowest to highest)
+        def minmax_rating_scale(df, columns):
+            return df.groupby('Week')[columns].transform(
+                lambda x: pd.Series(scaler.fit_transform(x.values.reshape(-1, 1)).flatten(), index=x.index))
+
+        # add columns for cat ranks + overall week rank
+        for col in posCats:
+            self.statDF[col + '_rank'] = minmax_rank_scale(self.statDF, [col])
+            self.statDF[col + '_rating'] = minmax_rating_scale(self.statDF, [col])
+
+        stat_df_copy = self.statDF.copy()
+        stat_df_copy['TO'] = -stat_df_copy['TO']
+        for col in negCats:
+            self.statDF[col + '_rank'] = minmax_rank_scale(stat_df_copy, [col])
+            self.statDF[col + '_rating'] = minmax_rank_scale(stat_df_copy, [col])
+
+        rank_cols = [col + '_rank' for col in mainCats]
+        rating_cols = [col + '_rating' for col in mainCats]
+
+        self.statDF['week_rank'] = self.statDF[rank_cols].mean(axis=1)
+        self.statDF['week_rank'] = 1-minmax_rank_scale(self.statDF, ['week_rank'])
+
+        self.statDF['week_rating'] = self.statDF[rating_cols].mean(axis=1)
+        self.statDF['week_rating'] = minmax_rating_scale(self.statDF, ['week_rating'])
+
+        # re-scale all RANK values so that they from 1 to teamCount
+        self.statDF[rank_cols+['week_rank']] = self.statDF[rank_cols+['week_rank']].apply(
+            lambda x: (self.teamCount-1) * x+1)
+
+        # add columns for opponent stats
+        self.statDF = self.statDF.merge(self.statDF[['Week', 'Team']+mainCats+['week_rank']],
+                                        left_on=['Week', 'Opp'], right_on=['Week', 'Team'],
+                                        suffixes=('', '_opp'))
+        self.statDF.drop(columns=['Team_opp'], inplace=True)
+
+
+        # add columns for category WLD and matchup WLD
+        self.statDF['cat_wins'] = (self.statDF[posCats].values > self.statDF[posCats_opp].values).sum(axis=1) + \
+                                  (self.statDF[negCats].values < self.statDF[negCats_opp].values).sum(axis=1)
+        self.statDF['cat_losses'] = (self.statDF[posCats].values < self.statDF[posCats_opp].values).sum(axis=1) + \
+                                  (self.statDF[negCats].values > self.statDF[negCats_opp].values).sum(axis=1)
+        self.statDF['cat_ties'] = len(mainCats)-(self.statDF[['cat_wins', 'cat_losses']]).sum(axis=1)
+
+        self.statDF['matchup_win'] = (self.statDF['cat_wins'] > self.statDF['cat_losses']).astype(int)
+        self.statDF['matchup_loss'] = (self.statDF['cat_wins'] < self.statDF['cat_losses']).astype(int)
+        self.statDF['matchup_tie'] = (self.statDF['cat_wins'] == self.statDF['cat_losses']).astype(int)
+
+        return None
 class poSeason(regSeason):
-    def __init__(self, year, extStatDict = None):
-        super(poSeason, self).__init__(year, extStatDict)
+    def __init__(self, year, extStatDict = None, extStatDF = None):
+        super(poSeason, self).__init__(year, extStatDict=extStatDict, extStatDF=extStatDF)
         try:
             self.rounds = int(playoffTeamCount[self.year]/2) # from constants
         except TypeError:
@@ -483,29 +584,29 @@ class poSeason(regSeason):
         self.PO_results = {}
         self.PO_standings = {}
 
-        if self.PO_time:
-            self.make_matchups()
+        if self.PO_time and self.rounds > 0:
+            for i in range(1,playoffTeamCount[self.year]+1):
+                if self.is_WL:
+                    self.PO_teams.append(self.get_WL_standings()[i][0])
+                    self.POseeding[i] = self.get_WL_standings()[i][0]
+                else:
+                    self.PO_teams.append(self.get_Cats_standings()[i][0])
+                    self.POseeding[i] = self.get_Cats_standings()[i][0]
 
-            if self.rounds > 0:
-                for i in range(1,playoffTeamCount[self.year]+1):
-                    if self.is_WL:
-                        self.PO_teams.append(self.get_WL_standings()[i][0])
-                        self.POseeding[i] = self.get_WL_standings()[i][0]
-                    else:
-                        self.PO_teams.append(self.get_Cats_standings()[i][0])
-                        self.POseeding[i] = self.get_Cats_standings()[i][0]
-
-                self.make_PO_matchups()
-                self.run_playoffs()
-                self.PO_champ = self.get_PO_winner()
+            self.make_PO_matchups()
+            self.run_playoffs()
+            self.PO_champ = self.get_PO_winner()
+        else:
+            self.statDF = self.statDF.loc[self.statDF['Week'] <= self.RSweekCount]
 
         self.status = \
             "Not Active" if not self.PO_time else \
-            "Active" if self.PO_time and not self.get_PO_winner() else \
+            "Active" if self.PO_time and not self.PO_champ else \
             "Complete"
 
     def __repr__(self):
-        return f"Playoff({self.year}, Status: {self.status})"
+        # return f"Playoff({self.year}, Status: {self.status})"
+        return f"Playoff({self.year})"
 
     def make_PO_matchups(self):
         if playoffTeamCount[self.year] == 'N/A':
@@ -536,63 +637,71 @@ class poSeason(regSeason):
             print("Playoffs Skipped")
             return None
 
-        else:
-            elimTeams = []
-            thirdPlace = []
+        # print(self.statDF.loc[self.statDF['Week']>self.RSweekCount][['Week','Team','Opp']])
 
-            # print(self.year, self.POmatchupsByWeek)
+        # initial pass of removing non-playoff teams' matchups from statDF
+        self.statDF = self.statDF.loc[~((self.statDF['Week'] >= self.RSweekCount + 1) &
+                                      (~self.statDF['Team'].isin(self.PO_teams)))]
 
-            for week in range(self.RSweekCount + 1, self.RSweekCount + self.rounds + 1):
-                # print(f"eliminated teams: {elimTeams}")
-                remover = []
+        # print(self.statDF.loc[self.statDF['Week']>self.RSweekCount][['Week','Team','Opp']])
 
-                for matchup_obj in self.POmatchupsByWeek[week]:
-                    ## remove BYE week matchups (during first round)
-                    if matchup_obj.is_BYE:
+        elimTeams = []
+        thirdPlace = []
+        for week in range(self.RSweekCount + 1, self.RSweekCount + self.rounds + 1):
+            # print(f"eliminated teams: {elimTeams}")
+            remover = []
+
+            for matchup_obj in self.POmatchupsByWeek[week]:
+                ## remove BYE week matchups (during first round)
+                if matchup_obj.is_BYE:
+                    remover.append(matchup_obj)
+
+            for matchup_obj in self.POmatchupsByWeek[week]:
+                ## if past the first week, remove any matchups that include eliminated teams
+                if week > self.RSweekCount + 1:
+                    if matchup_obj.team1 in elimTeams or matchup_obj.team2 in elimTeams:
                         remover.append(matchup_obj)
+                    # print(f"past first week remover: {remover}")
 
-                for matchup_obj in self.POmatchupsByWeek[week]:
-                    ## if past the first week, remove any matchups that include eliminated teams
-                    if week > self.RSweekCount + 1:
-                        if matchup_obj.team1 in elimTeams or matchup_obj.team2 in elimTeams:
-                            remover.append(matchup_obj)
-                        # print(f"past first week remover: {remover}")
+                ## teams that lost in quarterfinals or earlier are added to eliminated teams
+                if week < self.RSweekCount + self.rounds-1:
+                    elimTeams.append(matchup_obj.loser)
+                    self.PO_results[matchup_obj.loser] = 'Below Top 4'
+                    # print(f"loser: {matchup_obj.loser}")
 
-                    ## teams that lost in quarterfinals or earlier are added to eliminated teams
-                    if week < self.RSweekCount + self.rounds-1:
-                        elimTeams.append(matchup_obj.loser)
-                        self.PO_results[matchup_obj.loser] = 'Below Top 4'
-                        # print(f"loser: {matchup_obj.loser}")
+                ## teams that lost in the semi-final are added to third place game
+                elif week == self.RSweekCount + self.rounds-1:
+                    thirdPlace.append(matchup_obj.loser)
 
-                    ## teams that lost in the semi-final are added to third place game
-                    elif week == self.RSweekCount + self.rounds-1:
-                        thirdPlace.append(matchup_obj.loser)
+                ## in final week, teams in 3rd place list are part of 3rd place game
+                ## teams not in 3rd place list are part of final
+                elif week == self.RSweekCount + self.rounds:
+                    if matchup_obj.team1 in thirdPlace or matchup_obj.team2 in thirdPlace:
+                        self.POmatchupsByWeek['3rd Place'] = matchup_obj
+                    else:
+                        self.POmatchupsByWeek['Final'] = matchup_obj
 
-                    ## in final week, teams in 3rd place list are part of 3rd place game
-                    ## teams not in 3rd place list are part of final
-                    elif week == self.RSweekCount + self.rounds:
-                        if matchup_obj.team1 in thirdPlace or matchup_obj.team2 in thirdPlace:
-                            self.POmatchupsByWeek['3rd Place'] = matchup_obj
-                        else:
-                            self.POmatchupsByWeek['Final'] = matchup_obj
+                for matchup_obj in remover:
+                    try:
+                        self.POmatchupsByWeek[week].remove(matchup_obj)
+                        self.statDF = self.statDF.loc[~((self.statDF['Week'] == week) & \
+                                                      (self.statDF['Team'].isin(matchup_obj.teams)))]
+                    except:
+                        pass
+                    # print(self.statDF.loc[self.statDF['Week']>self.RSweekCount][['Week','Team','Opp']])
 
-                    for matchup_obj in remover:
-                        try:
-                            self.POmatchupsByWeek[week].remove(matchup_obj)
-                        except:
-                            pass
+        # if self.POmatchupsByWeek['Final']:
+        self.PO_champ = self.get_PO_winner()
+        self.PO_standings = {
+            1: self.PO_champ,
+            2: self.POmatchupsByWeek['Final'].loser,
+            3: self.POmatchupsByWeek['3rd Place'].winner,
+            4: self.POmatchupsByWeek['3rd Place'].loser
+        }
 
-            # if self.POmatchupsByWeek['Final']:
-            self.PO_champ = self.get_PO_winner()
-            self.PO_standings = {
-                1: self.PO_champ,
-                2: self.POmatchupsByWeek['Final'].loser,
-                3: self.POmatchupsByWeek['3rd Place'].winner,
-                4: self.POmatchupsByWeek['3rd Place'].loser
-            }
+        for standing in self.PO_standings:
+            self.PO_results[self.PO_standings[standing]] = standing
 
-            for standing in self.PO_standings:
-                self.PO_results[self.PO_standings[standing]] = standing
 
     def get_PO_winner(self):
         if playoffTeamCount[self.year] == 0 or self.POmatchupsByWeek['Final']==None:
@@ -620,7 +729,10 @@ class poSeason(regSeason):
 
 ## TESTING ##
 if __name__ == '__main__':
-    x = regSeason(2020)
+    # x = regSeason(2022)
+    y = poSeason(2024)
+    print(y.statDF.loc[y.statDF['Week']>18][['Week','Team','Opp']])
+    # print(y.POmatchupsByWeek)
     # print(x.statDict)
     # print(x.matchups)
     # print(x.getCatStandings())
@@ -629,6 +741,6 @@ if __name__ == '__main__':
     # print(x.getLeagueAvgs())
     # print(x.get_week_cat_rankings(3))
     # print(x.get_league_cat_totals())
-    print(x.get_week_cat_rankings(3))
-    print(x.get_avg_cat_rankings())
+    # print(x.get_week_cat_rankings(3))
+    # print(x.get_avg_cat_rankings())
     # print(x.teams)
