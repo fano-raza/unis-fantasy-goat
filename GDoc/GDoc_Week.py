@@ -1,10 +1,15 @@
-import csv
-from espn_fr.basketball import League
-from yfpy_fr import YahooFantasySportsQuery
-from constants import *
-import datetime
-import time
-from Models.seasons import bs_calList
+# import csv
+# from espn_fr.basketball import League
+# from yfpy_fr import YahooFantasySportsQuery
+# from constants import *
+# import datetime
+# import time
+import sys
+import os
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.append(parent_dir)
+
+from Models.seasons import *
 
 def genWeekStats(year, week):
     stats = gDocStatCats
@@ -41,32 +46,39 @@ def genWeekStats(year, week):
         matchupListCopy = yQuery.get_league_matchups_by_week(week)
         team_stats = yQuery.get_all_team_stats_by_week(week)
 
-        for matchup in matchupListCopy:
-            matchup_teams = matchup.teams
+        for team_id in team_stats:
+            team = yTeamIDs[year].get(team_id)
+            teamStat = team_stats[team_id]
+            statDict = {stat: teamStat.get(yStatMap.get(stat)) for stat in statCats}
+            line = [team]+[statDict.get(stat) for stat in stats]
+            statList.append(line)
 
-            team1_id = matchup_teams[0].team_id
-            team2_id = matchup_teams[1].team_id
-            # print([team1_id, team2_id])
-
-            team1 = yTeamIDs[year].get(team1_id)
-            team2 = yTeamIDs[year].get(team2_id)
-            # print(team1, team2)
-
-            teamStat1 = team_stats[team1_id]
-            teamStat2 = team_stats[team2_id]
-
-            statDict1 = {stat: teamStat1.get(yStatMap.get(stat)) for stat in statCats}
-            statDict2 = {stat: teamStat2.get(yStatMap.get(stat)) for stat in statCats}
-
-            line1 = [team1]
-            line2 = [team2]
-
-            for stat in stats:
-                line1.append(statDict1.get(stat))
-                line2.append(statDict2.get(stat))
-
-            statList.append(line1)
-            statList.append(line2)
+        # for matchup in matchupListCopy:
+        #     matchup_teams = matchup.teams
+        #
+        #     team1_id = matchup_teams[0].team_id
+        #     team2_id = matchup_teams[1].team_id
+        #     # print([team1_id, team2_id])
+        #
+        #     team1 = yTeamIDs[year].get(team1_id)
+        #     team2 = yTeamIDs[year].get(team2_id)
+        #     # print(team1, team2)
+        #
+        #     teamStat1 = team_stats[team1_id]
+        #     teamStat2 = team_stats[team2_id]
+        #
+        #     statDict1 = {stat: teamStat1.get(yStatMap.get(stat)) for stat in statCats}
+        #     statDict2 = {stat: teamStat2.get(yStatMap.get(stat)) for stat in statCats}
+        #
+        #     line1 = [team1]
+        #     line2 = [team2]
+        #
+        #     for stat in stats:
+        #         line1.append(statDict1.get(stat))
+        #         line2.append(statDict2.get(stat))
+        #
+        #     statList.append(line1)
+        #     statList.append(line2)
 
     return statList
 
@@ -143,7 +155,7 @@ def genSched(year):
 def createWeekSheet(year, week, copy = 1):
     sheet = gc.open(gDocNames[year])
     worksheet_to_copy = gc.open(gDocNames[year]).worksheet(f"M{copy}")
-    worksheet_to_copy.duplicate(insert_sheet_index = week-1, new_sheet_name=f"M{week}")
+    worksheet_to_copy.duplicate(insert_sheet_index = week+1, new_sheet_name=f"M{week}")
 
 def write_gDoc(year, week, text, cell, bold = False, italic = False, underline = False):
     worksheet = gc.open(gDocNames[year]).worksheet(f"M{week}")
@@ -158,7 +170,7 @@ def write_gDoc(year, week, text, cell, bold = False, italic = False, underline =
     })
 
 def makeRestOfSheets(year, startWeek = 1):
-    endWeek = weekCountDict[year]
+    endWeek = weekCountDict[year] + playoffRounds[year]
     week = startWeek
 
     while week <= endWeek:
@@ -183,21 +195,40 @@ def updateCurrentSheet(year):
 
     write_gDoc_stats(year, currentWeek)
 
+def updateStandings(year, extSeason = None):
+    worksheet = gc.open(gDocNames[year]).worksheet(f"Overall Rank")
+
+    season = regSeason(year) if not extSeason else extSeason
+    WL_standings = season.get_WL_standings()
+    cat_standings = season.get_Cats_standings()
+
+    replacements = str.maketrans({"W":"",
+                                  "L":"",
+                                  "D":""})
+
+    WL_standings_list = [[place, WL_standings[place][0], WL_standings[place][1].translate(replacements)] for place in WL_standings]
+    cat_standings_list = [[place, cat_standings[place][0], cat_standings[place][1].translate(replacements)] for place in cat_standings]
+
+    worksheet.update(WL_standings_list, f"A32:C41")
+    worksheet.update(cat_standings_list, f"F32:H41")
 
 if __name__ == '__main__':
     year = 2025
-    week = 16
+    week = 19
 
-    # print(genWeekStats(year, week))
+    # createWeekSheet(year, week)
 
-    # write_gDoc_stats(year,week)
-    #
+    write_gDoc_stats(year,week)
+
     # write_gDoc_sched(year)
 
-    # makeRestOfSheets(year, startWeek=3)
+    # makeRestOfSheets(year, startWeek=19)
 
-    updateCurrentSheet(year)
+    # updateCurrentSheet(year)
 
     # genSched(2024)
+
+    # updateStandings(year)
+
 
 

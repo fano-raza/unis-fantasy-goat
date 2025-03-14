@@ -1,7 +1,7 @@
 import gspread.exceptions
 from flask import Flask
-from gdoc_writer import *
-from AllTimeGDoc import *
+from GDoc_Week import *
+from GDoc_AllTime import *
 
 app = Flask(__name__)
 
@@ -44,6 +44,8 @@ def run_script():
             time.sleep(120)
 
         else:
+            updateStandings(year)
+
             league = fantasyLeague()
 
             try:

@@ -2,9 +2,7 @@ from constants import *
 from constants import seasonInfo as si
 from espn_fr.basketball import *
 from yfpy_fr import YahooFantasySportsQuery
-from YahooQuery import *
-import math
-import time
+from yfpy_fr.YahooQuery import *
 import csv
 
 class Draft:
@@ -170,13 +168,15 @@ class Draft:
 
         # If Draft CSV doesn't exist (yet)
         except FileNotFoundError:
-            # print("calculating new draft from queries")
+            print("calculating new draft from queries")
             rankDict = self.makeRankDict()
             for player in self.draftResults:
                 player.rank = rankDict.get(player.name, 501)
+                # print(player.name, player.rank)
                 # if player name doesn't appear in rankDict, it probably means the player's rank fell out of the
                 # arbitrary 500 rank limit (for Yahoo leagues)
                 player.score = player.oPick - player.rank
+
                 self.draftScore += player.score
 
                 if player.score >= topScore:
@@ -190,7 +190,7 @@ class Draft:
                         botScore = player.score
                         self.worstPick.clear()
                     self.worstPick.append(player)
-
+                player.updateList()
         self.avgPickScore = self.draftScore / self.totalPicks
 
     def makeRankDict(self):
@@ -213,6 +213,7 @@ class Draft:
                     params={"sort": "AR", "start": startPoint}
                 )
                 playerList = list(make_yahoo_api_request(endpoint_player)['fantasy_content']['league'][1]['players'].values())
+                # print("player list: ", playerList[0])
                 # print(playerList[-2])
                 for i in range(25):
                     rankDict[playerList[i]['player'][0][2]["name"]["full"]] = startPoint + i + 1
@@ -225,10 +226,13 @@ class Draft:
         csvList = []
         for pick in self.draftResults:
             row = pick.list
+
+            # NOT DOING THIS
             # player ranks will automatically be set to -1 *IN THE CSV* if the draft instance is of the
             # current year's draft
-            if self.year == currentYear:
-                row[5] = -1
+            # if self.year == currentYear:
+            #     row[5] = -1
+
             csvList.append(row)
 
         with open(pathname, 'w') as csvfile:
@@ -301,11 +305,11 @@ if __name__ == '__main__':
     # team = "Fano"
     #
     # y = Draft(2024)
-    x = teamDraft("Chirayu", 2025)
-    print(x.teamBestPick, x.teamWorstPick)
-    print(x.bestPick, x.worstPick)
-    print(x.teamScore)
-    print(x.draftScore)
+    # x = teamDraft("Chirayu", 2025)
+    # print(x.teamBestPick, x.teamWorstPick)
+    # print(x.bestPick, x.worstPick)
+    # print(x.teamScore)
+    # print(x.draftScore)
     # print(y.makeRankDict())
     # print(y.draftScore)
     # y.makeDraftCSV()
@@ -319,3 +323,8 @@ if __name__ == '__main__':
     #     print(f"worst pick: {y.teamWorstPick}\n")
         # print(x.draftScore)
     #     print((x.bestPick, x.worstPick))
+
+    x = Draft(2025)
+
+
+    pass

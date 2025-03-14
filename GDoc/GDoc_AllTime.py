@@ -124,7 +124,7 @@ def updateTime(sheet, cell):
     write_sheet(sheet, f"UPDATED {displayTime}", cell, bold=True)
 
 if __name__ == '__main__':
-    createSheets("Career Totals")
+    # createSheets("Career Totals")
     x = fantasyLeague()
     updateCarTotals(x)
     updateRSTotals(x)

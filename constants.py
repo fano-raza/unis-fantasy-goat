@@ -31,6 +31,8 @@ abbMembers = {member:
 
 mainCats = ['FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PTS']
 statCats = ['FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PTS', 'FGM', 'FGA', 'FTM', 'FTA', '3PTA', '3PT%']
+mainCats_ratings = [cat+"_rating" for cat in mainCats]
+mainCats_rankings = [cat+"_rank" for cat in mainCats]
 
 ## season info dict has tuple as value for each key
 ## each tuple will contain ((team1, team2, ...), is ESPN (T/F), is W/L scoring (T/F))
@@ -44,11 +46,12 @@ seasonInfo = {
     2025: (sorted(('Amil', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Sai')),False,True)
 }
 
-# was too lazy to rewrite seasonInfo as a dict
+# was too lazy to rewrite seasonInfo as a dict, but everything should be using this Dict as reference
 seasonInfoDict = {
     year: {'teams': seasonInfo[year][0], 'is_espn': seasonInfo[year][1], 'is_WL': seasonInfo[year][1]} for year in seasonInfo
 }
 
+# number of participating teams per year
 teamCount = {year : len(seasonInfo[year][0]) for year in seasonInfo}
 
 ## Calendars
@@ -65,6 +68,7 @@ draftOrder = {
     2025: ('Juan', 'Amil', 'Sai', 'Sama', 'Rohil', 'Ange', 'Fano', 'Saamrit', 'Chirayu', 'Zahir')
 }
 
+# number of REGULAR SEASON weeks per year
 weekCountDict = {
     2019:20,
     2020:18,
@@ -75,6 +79,7 @@ weekCountDict = {
     2025:18
 }
 
+# number of playoff teams per year
 playoffTeamCount = {
     2019:4,
     2020:0,
@@ -85,8 +90,19 @@ playoffTeamCount = {
     2025:6
 }
 
-playoffWeeks = {year:math.ceil(playoffTeamCount[year]/2) for year in playoffTeamCount}
-# print(f"PO Weeks: {playoffWeeks}")
+# number of rounds in playoffs per year
+playoffRounds = {year:math.ceil(playoffTeamCount[year] / 2) for year in playoffTeamCount}
+
+# number of weeks per round of playoffs per year
+playoffRoundLength = {
+    2019:2,
+    2020:2,
+    2021:2,
+    2022:2,
+    2023:2,
+    2024:1,
+    2025:1
+}
 
 ## ESPN-SPECIFIC INFO
 espnTeamIDs = {

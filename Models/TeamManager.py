@@ -48,11 +48,13 @@ class teamManager():
     def __repr__(self):
         return f"TeamManager({self.name})"
 
+    # def
+
     def get_career_matchups_played2(self, years = [], weeks = [], RS=True, PO=True):
         if len(years) == 0:
             years = self.yearsPlayed
         if len(weeks)==0:
-            weeks = list(range(1,22)) # most possible weeks played
+            weeks = list(range(1, max(weekCountDict.values()) + max(playoffRounds.values())))
 
         season_include = ("M", "P") if RS and PO else ("M") if RS and not PO else ("P") if PO and not RS else ()
 
@@ -61,27 +63,36 @@ class teamManager():
                                    self.compStatDF["Week"].isin(weeks) &
                                    self.compStatDF["Week Name"].str.startswith(season_include)].shape[0]
 
-    def get_career_matchups_played(self, startYear = 0, endYear = 0, season = 0):
+    def get_career_matchups_played(self, startYear = 0, endYear = 0, RS=True, PO=True, weeks=False):
         if endYear == 0 or endYear > self.yearsPlayed[-1]:
             endYear = self.yearsPlayed[-1]
 
         if startYear == 0 or startYear < self.yearsPlayed[0]:
             startYear = self.yearsPlayed[0]
 
-        RS_matchups_played, PO_matchups_played = 0, 0
+        RS_matchups_played, PO_matchups_played, PO_weeks_played = 0,0,0
 
         for year in range(startYear, endYear+1):
             RS_matchups_played += self.regSeasons[year].get_team_weeks_played()
             PO_matchups_played += self.playoffs[year].get_team_rounds_played()
+            PO_weeks_played += self.playoffs[year].get_team_weeks_played()
 
         total_matchups_played = RS_matchups_played + PO_matchups_played
+        total_weeks_played = RS_matchups_played + PO_weeks_played
 
-        if season == 'RS':
-            return RS_matchups_played
-        elif season == 'PO':
-            return PO_matchups_played
-        else:
+        if RS and PO and not weeks:
             return total_matchups_played
+
+        elif RS and PO and weeks:
+            return total_weeks_played
+
+        elif RS:
+            return RS_matchups_played
+
+        elif PO and not weeks:
+            return PO_matchups_played
+        elif PO and weeks:
+            return PO_weeks_played
 
     def get_career_RS_totals(self, startYear = 0, endYear = 0):
         if endYear == 0 or endYear>max(self.yearsPlayed):
@@ -161,6 +172,8 @@ class teamManager():
         self.career_PO_totals = {}
         self.career_PO_averages = {}
         rounds_played_in_year = [self.playoffs.get(year).get_team_rounds_played() for year in range(startYear, endYear + 1)]
+        weeks_played_per_matchup = [playoffRoundLength[year] for year in range(startYear, endYear+1)]
+        weeks_played_in_year = [rounds_played_in_year[i]*weeks_played_per_matchup[i] for i in range(len(rounds_played_in_year))]
 
         for category in statCats:
             if len(statsByCat) == 0:
@@ -170,27 +183,27 @@ class teamManager():
                 try:
                     self.career_PO_totals[category] = sum(statsByCat[statCats.index('FGM')]) / sum(statsByCat[statCats.index('FGA')])
                 except (TypeError, IndexError, ZeroDivisionError):
-                    if sum(rounds_played_in_year) == 0:
+                    if sum(weeks_played_in_year) == 0:
                         self.career_PO_totals[category] = 0
                     else:
-                        FG_sumproduct = sum(x * y for x, y in zip(rounds_played_in_year, statsByCat[statCats.index('FG%')]))
-                        self.career_PO_totals[category] = FG_sumproduct / sum(rounds_played_in_year)
+                        FG_sumproduct = sum(x * y for x, y in zip(weeks_played_in_year, statsByCat[statCats.index('FG%')]))
+                        self.career_PO_totals[category] = FG_sumproduct / sum(weeks_played_in_year)
                 self.career_PO_averages[category] = self.career_PO_totals[category]
             elif category == 'FT%':
                 try:
                     self.career_PO_totals[category] = sum(statsByCat[statCats.index('FTM')]) / sum(statsByCat[statCats.index('FTA')])
                 except (TypeError, IndexError, ZeroDivisionError):
-                    if sum(rounds_played_in_year) == 0:
+                    if sum(weeks_played_in_year) == 0:
                         self.career_PO_totals[category] = 0
                     else:
-                        FT_sumproduct = sum(x * y for x, y in zip(rounds_played_in_year, statsByCat[statCats.index('FT%')]))
-                        self.career_PO_totals[category] = FT_sumproduct / sum(rounds_played_in_year)
+                        FT_sumproduct = sum(x * y for x, y in zip(weeks_played_in_year, statsByCat[statCats.index('FT%')]))
+                        self.career_PO_totals[category] = FT_sumproduct / sum(weeks_played_in_year)
                 self.career_PO_averages[category] = self.career_PO_totals[category]
             else:
                 try:
                     self.career_PO_totals[category] = sum(statsByCat[statCats.index(category)])
                     try:
-                        self.career_PO_averages[category] = self.career_PO_totals[category]/sum(rounds_played_in_year)
+                        self.career_PO_averages[category] = self.career_PO_totals[category]/sum(weeks_played_in_year)
                     except ZeroDivisionError:
                         self.career_PO_averages[category] = 0
                 except TypeError:
@@ -243,7 +256,7 @@ class teamManager():
                         FGs.append(self.regSeasons[year].get_team_totals()['FG%'])
                         FGs.append(self.playoffs[year].get_team_PO_totals()['FG%'])
                         matchups.append(self.regSeasons[year].get_team_weeks_played())
-                        matchups.append(self.playoffs[year].get_team_rounds_played())
+                        matchups.append(self.playoffs[year].get_team_weeks_played())
 
                         FG_sumproduct = sum(x * y for x, y in zip(FGs, matchups))
                         self.career_totals[category] = FG_sumproduct/sum(matchups)
@@ -260,7 +273,7 @@ class teamManager():
                         FTs.append(self.regSeasons[year].get_team_totals()['FT%'])
                         FTs.append(self.playoffs[year].get_team_PO_totals()['FT%'])
                         matchups.append(self.regSeasons[year].get_team_weeks_played())
-                        matchups.append(self.playoffs[year].get_team_rounds_played())
+                        matchups.append(self.playoffs[year].get_team_weeks_played())
 
                         FT_sumproduct = sum(x * y for x, y in zip(FTs, matchups))
                         self.career_totals[category] = FT_sumproduct / sum(matchups)
@@ -270,8 +283,7 @@ class teamManager():
                 try:
                     self.career_totals[category] = (self.get_career_RS_totals(startYear, endYear)[category]
                                                     + self.get_career_PO_totals(startYear, endYear)[category])
-                    # print(f"{category}: {self.career_totals[category]}")
-                    self.career_averages[category] = self.career_totals[category] / self.get_career_matchups_played(startYear, endYear)
+                    self.career_averages[category] = self.career_totals[category] / self.get_career_matchups_played(startYear, endYear, weeks=True)
                 except TypeError:
                     self.career_totals[category] = 'N/A'
                     self.career_averages[category] = 'N/A'
@@ -881,6 +893,9 @@ class team_PO_season(poSeason):
                 if matchup_obj.team1 == self.name or matchup_obj.team2 == self.name:
                     roundsPlayed += 1
         return roundsPlayed
+
+    def get_team_weeks_played(self):
+        return self.get_team_rounds_played()*playoffRoundLength[self.year]
 
     def get_team_PO_totals(self):
         statCats = ['Opp', 'FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK',

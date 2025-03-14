@@ -2,6 +2,7 @@
 from Models.TeamManager import *
 from StatGenerator import *
 
+
 # from espn_api.basketball.constant import
 
 ## GOOGLE DOCS GOOGLE DOCS GOOGLE DOCS
@@ -109,97 +110,20 @@ def espn():
 ## YAHOO YAHOO YAHOO
 def yahoo():
     year = 2025
-    # yQuery = YahooFantasySportsQuery('',str(yLeagueIDs[year]),'nba',yGameIDs[year],False,False,yKey,ySec)
+    yQuery = YahooFantasySportsQuery('',str(yLeagueIDs[year]),'nba',yGameIDs[year],False,False,yKey,ySec)
     # print(yQuery.get_all_yahoo_fantasy_game_keys())
     # leagueKey = yQuery.get_league_key()
 
-    # print(yQuery.get_team_stats_by_week(1, 2))
+    team_stats = yQuery.get_all_team_stats_by_week(19)
+    print(team_stats)
 
-    # print(yQuery.get_all_team_stats_by_week(2))
-    # print([player.player_key for player in yQuery.get_team_roster_player_info_by_week(1,2)[0:2]])
-
-    # print(yQuery.get_league_matchups_by_week(2))
-    # print(yQuery.get_league_scoreboard_by_week(1))
-
-
-    # print(yQuery.get_league_players())
-    # print(yQuery.get_league_scoreboard_by_week(2).matchups[1].teams[1])
-    # print(yQuery.get_all_yahoo_fantasy_game_keys())
-    # for week in range(1,19):
-    #     print(yQuery.get_league_matchups_by_week(week))
-    # yInfo = yQuery.get_league_info()
-    # gameInfo = yQuery.get_current_game_info()
-
-    # csvList = []
-    # for week in gameInfo.game_weeks:
-    #     startDate = [int(i) for i in week.start.split("-")]
-    #     endDate = [int(i) for i in week.end.split("-")]
-    #     line = [week.week]+startDate+endDate
-    #     csvList.append(line)
-    #
-    # pathname = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/{year}/{year}_matchup_cal.csv"
-    # with open(pathname, 'w') as csvfile:
-    #     header = ["week","start year","start mon", "start day", "end year", "end mon", "end day"]
-    #     writer = csv.writer(csvfile)
-    #     writer.writerow(header)
-    #     writer.writerows(csvList)
-
-    # print(type(yInfo))
-    # for key in yInfo:
-    #     print(key)
-    # print(yInfo)
-    # print(yQuery.get_league_players())
-    # print(yQuery.get_league_matchups_by_week(1))
-    # print(yQuery.get_league_draft_results()[55].player_key)
-    # print(yQuery.get_player_draft_analysis("428.p.5958"))
-    # print(yQuery.get_league_info())
-
-    # yStatMapList = yQuery.get_game_stat_categories_by_game_id('nba').stats
-    # yStatMap = {}
-    # for stat in yStatMapList:
-    #     yStatMap[stat.stat_id] = stat.display_name
-    #     yStatMap[stat.display_name] = stat.stat_id
-    # print(yStatMap)
-
-    # print(type(yQuery.get_game_stat_categories_by_game_id('nba')))
-    # print(yQuery.get_league_scoreboard_by_week(1))
-    # print(yQuery.get_team_stats(2))
-    # print(yQuery.get_team_matchups(1))
-    # yObj = YahooFantasyObject(yQuery.get_team_matchups(1))
-    # print(yObj)
-    # print(yQuery.get_all_yahoo_fantasy_game_keys())
-    # print(yQuery.get_game_stat_categories_by_game_id(428))
-    # yQuery.get_league_scoreboard_by_week(1)
-    # print(yQuery.get_team_stats(4))
-
-    # team_stat = yQuery.get_team_stats_by_week(4, 20)
-    # print(team_stat)
-    # for statDict in team_stat:
-    #     # print(statDict['stat'].stat_id)
-    #     print(statDict['stat'])
-
-    # print(yQuery.get_league_matchups_by_week(3))
-    # print(yInfo.current_week)
-    # for team in yInfo.teams:
-    #     print(f"id: {team.team_id}")
-    #     print(f"email: {team.managers[0].email}")
-    #     print(f"nickname: {team.managers[0].nickname}")
-
-    # print(yQuery.get_league_matchups_by_week(1))
-    # for matchup in yQuery.get_league_matchups_by_week(1):
-    #     team1 = matchup.teams[0].team_id
-
-    # print("\nBREAK\nBREAK\nBREAK\n\n")
-    # print(yQuery.get_team_stats(1))
-
-    # print(yQuery.test_func(1))
 
 
 
 if __name__ == '__main__':
     # gdoc()
     # espn()
-    # yahoo()
+    yahoo()
 
     # a = fantasyLeague()
     # for season in a.seasons:
@@ -222,9 +146,9 @@ if __name__ == '__main__':
     #     print(playoff.year, playoff.get_PO_totals())
 
     # df_19 = genStatDF(2019,2025)
-    for year in range(2019,2026):
-        print(year)
-        dict = genStatDict(year)
+    # for year in range(2019,2026):
+    #     print(year)
+    #     dict = genStatDict(year)
     # df_25 = genStatDF(2025,2026)
     # # print(df_25)
     #
@@ -232,3 +156,5 @@ if __name__ == '__main__':
     # print(df_25[mainCats])
     # print("DF ALL", df_all)
     # print(df_all[['Team','Year']+mainCats])
+
+    pass

@@ -70,7 +70,7 @@ def genStatDict(year):
         league_data = espnLeague._fetch_league()
         sched = league_data.get("schedule")
 
-        statDict = {week:{} for week in range(1,weekCountDict[year] + playoffWeeks[year] + 1)}
+        statDict = {week:{} for week in range(1, weekCountDict[year] + playoffRounds[year] + 1)}
         # if year == 2020:
         #     statDict = {week: {} for week in range(1, 21)}
         for matchup in sched:
@@ -83,7 +83,7 @@ def genStatDict(year):
                 team2 = "BYE"
 
             week = matchup.get('matchupPeriodId')
-            if week > weekCountDict[year] + playoffWeeks[year]:
+            if week > weekCountDict[year] + playoffRounds[year]:
                 break
             statDict[week][team1] = {'Opp':team2}
             statDict[week][team2] = {'Opp':team1}
@@ -200,7 +200,7 @@ def genStatDF(year, extStatList=None):
     return stat_df
 
 if __name__ == '__main__':
-    year = 2019
+    year = 2025
 
     genStatCSV(year)
 

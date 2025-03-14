@@ -81,6 +81,29 @@ class regSeason:
             startWeek = 1
         return startWeek, endWeek
 
+    # returns filtered df for use in any future function that uses filtered data
+    def get_filtered_df(self, weeks=[], teams=[], opps=[], RS=True, PO=True, real=True):
+        if len(weeks)==0:
+            weeks = list(range(1, max(weekCountDict.values()) + max(playoffRounds.values())))
+        if len(teams)==0:
+            teams = self.teams
+        if len(opps)==0:
+            opps = self.teams
+
+        season_include = ("M", "P") if RS and PO else ("M") if RS and not PO else ("P") if PO and not RS else ()
+
+        real_include = 1 if real else 0
+
+        filtered_df = self.statDF.loc[
+                           self.statDF["Team"].isin(teams) &
+                            self.statDF["Opp"].isin(opps) &
+                            self.statDF["Week"].isin(weeks) &
+                            self.statDF["Week Name"].str.startswith(season_include) &
+                            self.statDF["real_matchup"] == real_include
+        ]
+
+        return filtered_df
+
     def make_stats(self):
         # Try to find CompStat csv for that year
         try:
@@ -495,10 +518,9 @@ class regSeason:
         posCats = [cat for cat in mainCats if cat != 'TO']
         posCats_opp = [cat + "_opp" for cat in posCats]
         negCats, negCats_opp = ['TO'], ['TO_opp']
-
+        self.statDF.drop('Count', axis=1)
 
         scaler = MinMaxScaler()
-
         # RANKING scale; scales values from 1 to 0 (lowest to highest)
         def minmax_rank_scale(df, columns):
             return df.groupby('Week')[columns].transform(
@@ -513,11 +535,12 @@ class regSeason:
             self.statDF[col + '_rank'] = minmax_rank_scale(self.statDF, [col])
             self.statDF[col + '_rating'] = minmax_rating_scale(self.statDF, [col])
 
+        # Rank and rate neg Cats on their negative values
         stat_df_copy = self.statDF.copy()
-        stat_df_copy['TO'] = -stat_df_copy['TO']
+        stat_df_copy[negCats] = -stat_df_copy[negCats]
         for col in negCats:
             self.statDF[col + '_rank'] = minmax_rank_scale(stat_df_copy, [col])
-            self.statDF[col + '_rating'] = minmax_rank_scale(stat_df_copy, [col])
+            self.statDF[col + '_rating'] = minmax_rating_scale(stat_df_copy, [col])
 
         rank_cols = [col + '_rank' for col in mainCats]
         rating_cols = [col + '_rating' for col in mainCats]
@@ -528,18 +551,27 @@ class regSeason:
         self.statDF['week_rating'] = self.statDF[rating_cols].mean(axis=1)
         self.statDF['week_rating'] = minmax_rating_scale(self.statDF, ['week_rating'])
 
-        # re-scale all RANK values so that they from 1 to teamCount
+        # re-scale all RANK values so that they from teamCount to 1 (worst to best)
         self.statDF[rank_cols+['week_rank']] = self.statDF[rank_cols+['week_rank']].apply(
             lambda x: (self.teamCount-1) * x+1)
 
-        # add columns for opponent stats
-        self.statDF = self.statDF.merge(self.statDF[['Week', 'Team']+mainCats+['week_rank']],
-                                        left_on=['Week', 'Opp'], right_on=['Week', 'Team'],
-                                        suffixes=('', '_opp'))
-        self.statDF.drop(columns=['Team_opp'], inplace=True)
+        self.statDF['real_matchup'] = 1
+        # add rows so that there is a row for every hypothetical matchup in which a team played another team
+        # these will be used to calculate league wins
+        self.statDF = self.statDF.merge(
+            self.statDF[['Week','Team'] + mainCats + ['week_rank', 'week_rating']],
+            on=["Week"],
+            suffixes=("", "_opp"),
+            how="left"  # Ensures unmatched rows still exist
+        )
+        # remove duplicate row where
+        self.statDF = self.statDF[self.statDF["Team"] != self.statDF["Team_opp"]]
+        # set new rows (non-real matchups) real_matchup value to 0
+        self.statDF.loc[self.statDF['Team_opp'] != self.statDF['Opp'], 'real_matchup'] = 0
+        self.statDF['Opp'] = self.statDF['Team_opp']
+        self.statDF.drop('Team_opp', axis=1)
 
-
-        # add columns for category WLD and matchup WLD
+        # # add columns for category WLD and matchup WLD
         self.statDF['cat_wins'] = (self.statDF[posCats].values > self.statDF[posCats_opp].values).sum(axis=1) + \
                                   (self.statDF[negCats].values < self.statDF[negCats_opp].values).sum(axis=1)
         self.statDF['cat_losses'] = (self.statDF[posCats].values < self.statDF[posCats_opp].values).sum(axis=1) + \
@@ -561,6 +593,7 @@ class poSeason(regSeason):
         # print(f"{self.year}: {self.rounds}")
 
         self.PO_weeks = self.RSweekCount+self.rounds
+        self.roundLength = playoffRoundLength[self.year]
 
         today = datetime.date.today()
         if self.year == currentYear:
@@ -647,7 +680,7 @@ class poSeason(regSeason):
 
         elimTeams = []
         thirdPlace = []
-        for week in range(self.RSweekCount + 1, self.RSweekCount + self.rounds + 1):
+        for week in range(self.RSweekCount + 1, self.PO_currentWeek + 1):
             # print(f"eliminated teams: {elimTeams}")
             remover = []
 
@@ -690,17 +723,18 @@ class poSeason(regSeason):
                         pass
                     # print(self.statDF.loc[self.statDF['Week']>self.RSweekCount][['Week','Team','Opp']])
 
-        # if self.POmatchupsByWeek['Final']:
-        self.PO_champ = self.get_PO_winner()
-        self.PO_standings = {
-            1: self.PO_champ,
-            2: self.POmatchupsByWeek['Final'].loser,
-            3: self.POmatchupsByWeek['3rd Place'].winner,
-            4: self.POmatchupsByWeek['3rd Place'].loser
-        }
+        if self.PO_currentWeek==self.PO_weeks:
+            # if self.POmatchupsByWeek['Final']:
+            self.PO_champ = self.get_PO_winner()
+            self.PO_standings = {
+                1: self.PO_champ,
+                2: self.POmatchupsByWeek['Final'].loser,
+                3: self.POmatchupsByWeek['3rd Place'].winner,
+                4: self.POmatchupsByWeek['3rd Place'].loser
+            }
 
-        for standing in self.PO_standings:
-            self.PO_results[self.PO_standings[standing]] = standing
+            for standing in self.PO_standings:
+                self.PO_results[self.PO_standings[standing]] = standing
 
 
     def get_PO_winner(self):
@@ -729,9 +763,12 @@ class poSeason(regSeason):
 
 ## TESTING ##
 if __name__ == '__main__':
-    # x = regSeason(2022)
-    y = poSeason(2024)
-    print(y.statDF.loc[y.statDF['Week']>18][['Week','Team','Opp']])
+    # x = poSeason(2022)
+    # print(x.statDF[['Week', 'Team', 'Opp', 'real_matchup', 'week_rating_opp']])
+    # print(x.statDF.columns)
+    # print(x.statDF.loc[x.statDF['Week']==1][['PTS', 'PTS_rank', 'PTS_rating', 'TO', 'TO_rank', 'TO_rating']].sort_values('TO'))
+    # y = poSeason(2024)
+    # print(y.statDF.loc[y.statDF['Week']>18][['Week','Team','Opp']])
     # print(y.POmatchupsByWeek)
     # print(x.statDict)
     # print(x.matchups)
@@ -744,3 +781,5 @@ if __name__ == '__main__':
     # print(x.get_week_cat_rankings(3))
     # print(x.get_avg_cat_rankings())
     # print(x.teams)
+
+    pass

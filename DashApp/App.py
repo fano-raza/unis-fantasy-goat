@@ -1,5 +1,6 @@
 import dash
 from dash import dcc, html, Input, Output, dash_table
+# import dash
 import dash_bootstrap_components as dbc
 import pandas as pd
 from StatGenerator import genWeekStatDict
@@ -20,7 +21,7 @@ def get_week_stats(year, week):
     return df
 
 # Initialize the Dash app
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP], use_pages=True, pages_folder="")
 
 # Layout of the app
 app.layout = dbc.Container([
@@ -90,7 +91,8 @@ app.layout = dbc.Container([
 
             )
         ], width=12)
-    ])
+    ]),
+    dash.page_container  # This is required for multi-page apps
 ])
 
 # Callback to update the table based on the year and week number input

@@ -28,10 +28,12 @@ class fantasyLeague():
 
         # initialize every leagueSeason for year in include list
         self.seasons = {year: leagueSeason(year) for year in self.include}
+        self.seasonList = [self.seasons[year] for year in self.include]
 
         # create dictionary of draftResults for every year so that they don't have to be recreated
         # when new instances of teamSeasons are initialized
         self.drafts = {season.year: season.draft.draftResults for season in self.seasons.values()}
+        self.draftList = [self.drafts[year] for year in self.include]
 
         # create dictionary of statDicts for every year so that they don't have to be recreated
         # when new instances of seasons are initialized
@@ -53,6 +55,30 @@ class fantasyLeague():
 
     def __repr__(self):
         return f"fantasyLeague({self.include})"
+
+    def get_filtered_df(self, years=[], weeks=[], teams=[], opps=[], RS=True, PO=True, real=True):
+        if len(years) == 0:
+            years = self.yearsPlayed
+        if len(weeks)==0:
+            weeks = list(range(1, max(weekCountDict.values()) + max(playoffRounds.values())))
+        if len(teams)==0:
+            teams = self.teams
+        if len(opps)==0:
+            opps = self.teams
+
+        season_include = ("M", "P") if RS and PO else ("M") if RS and not PO else ("P") if PO and not RS else ()
+
+        real_include = 1 if real else 0
+
+        filtered_df = self.compStatDF.loc[self.compStatDF["Year"].isin(years) &
+                           self.compStatDF["Team"].isin(teams) &
+                            self.compStatDF["Opp"].isin(opps) &
+                            self.compStatDF["Week"].isin(weeks) &
+                            self.compStatDF["Week Name"].str.startswith(season_include) &
+                            self.compStatDF["real_matchup"] == real_include
+        ]
+
+        return filtered_df
 
 class leagueSeason:
     def __init__(self, year):
@@ -90,58 +116,53 @@ class leagueSeason:
     def __repr__(self):
         return f"leagueSeason({self.year})"
 
+    def get_draft_scores(self, sortedReturn=True):
+        scoreDict = {name.team : name.teamScore for name in self.teamDrafts}
+
+        if sortedReturn:
+            sortedTeams = sorted(scoreDict, key=lambda k: scoreDict[k])
+            sortedTeams.reverse()
+            rankedScoreDict = {num: (sortedTeams[num-1], scoreDict[sortedTeams[num-1]]) for num in range(1,len(scoreDict)+1)}
+
+            rankedScoreDict['Total'] = sum(scoreDict.values())
+
+            return rankedScoreDict
+
+        else:
+            scoreDict['Total'] = sum(scoreDict.values())
+            return scoreDict
+
 ## TESTING
 if __name__ == '__main__':
-    y = leagueSeason(2020)
-    df = y.statDF
-    print(df.loc[df['Week']>y.regSsn.RSweekCount][['Week','Team','Opp']])
+    y = leagueSeason(2025)
+    # print(y.get_draft_scores())
+    df = y.regSsn.get_filtered_df(PO=False)
+    df2 = y.regSsn.get_filtered_df()
+    for cat in mainCats:
+        print(df.groupby('Team')[cat].mean().sort_values())
+        print(df2.groupby('Team')[cat].mean().sort_values())
+    # print(df.loc[df['Week']>y.regSsn.RSweekCount][['Week','Team','Opp']])
     # print(df.loc[df['Week']==1][['PTS','PTS_scaled']].sort_values(['PTS']),"\n")
     # print(df.loc[df['Week']==1][['TO', 'TO_scaled']].sort_values(['TO']),"\n")
     # print(df.loc[df['Week'] == 1][['Team','week_rating', 'week_rank']].sort_values(['week_rating']), "\n")
     # teamInclude = ['Fano', 'Juan']
     # result = df.loc[(df['Week'] <= y.regSsn.RSweekCount) & (df['Opp'].isin(teamInclude))].groupby('Team')[['matchup_win', 'matchup_loss', 'matchup_tie', 'cat_wins', 'cat_losses', 'cat_ties']].sum()
     # print(result)
+
+    # print("total: ", y.draft.draftScore)
+    # for team in y.teamDrafts:
+    #     print(team.team, team.teamScore)
+
     # x = fantasyLeague()
-    # print(x.compStatDF.groupby(['Team','Year'])['PTS'].sum())
-    # print(x.compStatDF.shape)
+    # # print(x.compStatDF.groupby(['Team'])['matchup_win'].sum().sort_values())
+    # # print(x.compStatDF.groupby(['Team'])['matchup_loss'].sum().sort_values())
+    # # print(x.compStatDF.groupby(['Team'])['cat_wins'].sum().sort_values())
+    # # print(x.compStatDF.groupby(['Team'])['cat_losses'].sum().sort_values())
+    # # print(x.compStatDF.shape)
+    #
+    # for season in x.seasonList:
+    #     print(season.get_draft_scores())
 
-    # for year in x.seasons:
-    #     print(x.seasons[year].regSsn.get_WL_standings())
-
-    # print(x.seasons[2019].statDF)
-    # print(x.seasons)
-    # for team in x.historicalMembers:
-    #     print(team.name, team.get_avg_rating())
-
-    start = 2019
-    end = 2024
-    for year in range (start,end+1):
-        pass
-        # x = leagueSeason(year)
-        #
-        # pdDict = {f"{team} W{week}": [stat for stat in x.statDict[week][team].values()] for week in x.statDict for team in x.statDict[week]}
-        # # print(pdDict)
-        # index = [statName for statName in x.statDict[1]['Fano'].keys()]
-        #
-        # df = pd.DataFrame(pdDict, index)
-        # df = df.transpose()
-        # print(df)
-
-    #     print(f"\nSeason: {year}")
-    #     print(x.playoffs.getFinalResults('Zahir'))
-        # print(x.playoffs.get_PO_totals())
-    # #     print(x.draft.draftScore)
-    # #     print(x.regSsn.getCatStandings())
-    # #     print(x.regSsn.get_WL_standings())
-    # #     print(x.regSsn.getSeasonRankings())
-    #     print(x.regSsn.getWeekRankings(2))
-
-        # y = poSeason(year)
-        # y.make_PO_Matchups()
-        # # print(f"teams: {y.PO_teams}")
-        #
-        # print(y.runPlayoffs())
-        # print(f"Champ: {y.getWinner()}")
-        # print(y.getFinalStandings())
+    pass
 
 
