@@ -53,33 +53,6 @@ def genWeekStats(year, week):
             line = [team]+[statDict.get(stat) for stat in stats]
             statList.append(line)
 
-        # for matchup in matchupListCopy:
-        #     matchup_teams = matchup.teams
-        #
-        #     team1_id = matchup_teams[0].team_id
-        #     team2_id = matchup_teams[1].team_id
-        #     # print([team1_id, team2_id])
-        #
-        #     team1 = yTeamIDs[year].get(team1_id)
-        #     team2 = yTeamIDs[year].get(team2_id)
-        #     # print(team1, team2)
-        #
-        #     teamStat1 = team_stats[team1_id]
-        #     teamStat2 = team_stats[team2_id]
-        #
-        #     statDict1 = {stat: teamStat1.get(yStatMap.get(stat)) for stat in statCats}
-        #     statDict2 = {stat: teamStat2.get(yStatMap.get(stat)) for stat in statCats}
-        #
-        #     line1 = [team1]
-        #     line2 = [team2]
-        #
-        #     for stat in stats:
-        #         line1.append(statDict1.get(stat))
-        #         line2.append(statDict2.get(stat))
-        #
-        #     statList.append(line1)
-        #     statList.append(line2)
-
     return statList
 
 def nthLetter(n):
@@ -214,7 +187,7 @@ def updateStandings(year, extSeason = None):
 
 if __name__ == '__main__':
     year = 2025
-    week = 19
+    week = 21
 
     # createWeekSheet(year, week)
 

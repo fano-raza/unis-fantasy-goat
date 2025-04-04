@@ -1,6 +1,8 @@
 from Models.League import fantasyLeague
 from constants import *
 import datetime
+import pandas as pd
+from StatGenerator import updateStatCSV
 
 gDocName = "All-Time Leaders"
 firstRow = 10
@@ -76,12 +78,19 @@ def updateRSAVGs(league: fantasyLeague):
     write_sheet(sheetname, f"All Time {sheetname}", "A2", bold=True)
 
 def updatePOAVGs(league: fantasyLeague):
-    statList = []
     sheetname = "PO AVGs"
+    statList = []
+
+    # for team in league.historicalMembers:
+    #     statDict = team.get_career_PO_averages()
+    #     row = [team.name]+[statDict[cat] for cat in gDocStatCats]
+    #     statList.append(row)
+
     for team in league.historicalMembers:
-        statDict = team.get_career_PO_averages()
-        row = [team.name]+[statDict[cat] for cat in gDocStatCats]
-        statList.append(row)
+        df = team.get_career_PO_averages_df()
+        pd.set_option('future.no_silent_downcasting', True)
+        df = df.fillna(0)
+        statList.append([team.name]+df[gDocStatCats].values.tolist()[0])
 
     worksheet = gc.open(gDocName).worksheet(sheetname)
     
@@ -109,13 +118,11 @@ def createSheets(baseSheet):
 
     worksheet_to_copy = gc.open(gDocName).worksheet(baseSheet)
 
-    i = 0
-    while i < len(sheets):
+    for i in range(len(sheets)):
         if sheets[i] == baseSheet:
             pass
         else:
             worksheet_to_copy.duplicate(insert_sheet_index=i+2, new_sheet_name=sheets[i])
-        i += 1
 
 def updateTime(sheet, cell):
     now = datetime.datetime.now()
@@ -125,6 +132,7 @@ def updateTime(sheet, cell):
 
 if __name__ == '__main__':
     # createSheets("Career Totals")
+    updateStatCSV(currentYear)
     x = fantasyLeague()
     updateCarTotals(x)
     updateRSTotals(x)

@@ -1,6 +1,8 @@
 import gspread as gs
 import math
 from espn_fr.basketball.constant import STATS_MAP
+import datetime
+import csv
 
 
 ## ESPN league/login info
@@ -33,6 +35,8 @@ mainCats = ['FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PTS']
 statCats = ['FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PTS', 'FGM', 'FGA', 'FTM', 'FTA', '3PTA', '3PT%']
 mainCats_ratings = [cat+"_rating" for cat in mainCats]
 mainCats_rankings = [cat+"_rank" for cat in mainCats]
+posCats = ['FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK', 'PTS']
+negCats = ['TO']
 
 ## season info dict has tuple as value for each key
 ## each tuple will contain ((team1, team2, ...), is ESPN (T/F), is W/L scoring (T/F))
@@ -48,7 +52,7 @@ seasonInfo = {
 
 # was too lazy to rewrite seasonInfo as a dict, but everything should be using this Dict as reference
 seasonInfoDict = {
-    year: {'teams': seasonInfo[year][0], 'is_espn': seasonInfo[year][1], 'is_WL': seasonInfo[year][1]} for year in seasonInfo
+    year: {'teams': seasonInfo[year][0], 'is_espn': seasonInfo[year][1], 'is_WL': seasonInfo[year][2]} for year in seasonInfo
 }
 
 # number of participating teams per year
@@ -102,6 +106,21 @@ playoffRoundLength = {
     2023:2,
     2024:1,
     2025:1
+}
+
+# if the official standings in the league are calculated differently for some reason
+# (e.g. tiebreakers that haven't been accounted for here)
+standingsOverwrite = {
+    2025: {1: "Fano",
+           2: "Sama",
+           3: "Amil",
+           4: "Zahir",
+           5: "Saamrit",
+           6: "Ange",
+           7: "Juan",
+           8: "Sai",
+           9: "Rohil",
+           10: "Chirayu"}
 }
 
 ## ESPN-SPECIFIC INFO
@@ -173,6 +192,34 @@ stat20 = False
 stat19 = True
 stat25 = True
 
+## Functions
+def bs_calList(day, calList): #binary search to find what week/matchup "day" is in
+    if len(calList) == 1:
+        return calList[0][0]
 
+    midInd = len(calList)//2
+    if day < calList[midInd][1]: ## if today is before the start date of the middle week
+        return bs_calList(day, calList[:midInd])
+    elif day > calList[midInd][2]:
+        return bs_calList(day, calList[midInd+1:])
+    else:
+        return calList[midInd][0]
 
+def getLastWeek(year):
+    if year == currentYear:
+        today = datetime.date.today()
+        calPath = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/{year}/{year}_matchup_cal.csv"
+        with open(calPath, 'r') as csvfile:
+            reader = csv.reader(csvfile, delimiter=',')
+            next(reader)
+            calList = [[int(week[0]), datetime.date(int(week[1]), int(week[2]), int(week[3])),
+                        datetime.date(int(week[4]), int(week[5]), int(week[6]))]
+                       for week in reader]
+        lastWeek = min(bs_calList(today, calList), weekCountDict[year]+playoffRounds[year])
+    elif year < currentYear:
+        lastWeek = weekCountDict[year]+playoffRounds[year]
+    elif year > currentYear:
+        print("Invalid Year")
+        return None
 
+    return lastWeek

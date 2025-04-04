@@ -9,7 +9,7 @@ app = Flask(__name__)
 def run_script():
     # Here, you can place the code you want to run
     # For example, a simple return message
-    year = 2025
+    year = currentYear
     calPath = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/{year}/{year}_matchup_cal.csv"
     with open(calPath, 'r') as csvfile:
         reader = csv.reader(csvfile, delimiter=',')
@@ -44,10 +44,10 @@ def run_script():
             time.sleep(120)
 
         else:
+            updateStatCSV(year)
             updateStandings(year)
 
             league = fantasyLeague()
-
             try:
                 updateCarTotals(league)
                 updateRSTotals(league)
@@ -63,7 +63,6 @@ def run_script():
             except gspread.exceptions.APIError:
                 print("Encountered API Error")
                 time.sleep(120)
-
             except:
                 print("Encountered Other Error")
                 time.sleep(60*5)

@@ -1,6 +1,7 @@
 # from espn_fr.basketball.box_score import H2HCategoryBoxScore
 from Models.TeamManager import *
 from StatGenerator import *
+import time
 
 
 # from espn_api.basketball.constant import
@@ -123,7 +124,30 @@ def yahoo():
 if __name__ == '__main__':
     # gdoc()
     # espn()
-    yahoo()
+    # yahoo()
+
+    x = teamManager('Fano')
+    # print(x.compStatDF.columns)
+    # print(x.compStatDF["matchup_length"])
+    # print(x.compStatDF.loc[x.compStatDF["real_matchup"]==1][mainCats])
+    # print(x.get_filtered_df(years=[2025],RS=False)[mainCats])
+    print("df: ", x.get_career_matchups_played_df(RS=True, PO=False))
+    print("dict: ", x.get_career_matchups_played(RS=True, PO=False))
+
+    start = time.time()
+    # print(x.get_avg_opp_rating(rating='rank'))
+    res = x.get_car_opp_records_df(record='record', sortedReturn=False, RS=True, PO=False)
+    print(res)
+    matches = [sum(team.values()) for team in res.values()]
+    print(sum(matches))
+    print("df time: ", time.time()-start)
+
+    start = time.time()
+    res = x.get_car_opp_records()
+    print(res)
+    matches = [sum(team.values()) for team in res.values()]
+    print(sum(matches))
+    print("dict time: ", time.time() - start)
 
     # a = fantasyLeague()
     # for season in a.seasons:

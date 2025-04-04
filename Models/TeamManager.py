@@ -48,21 +48,30 @@ class teamManager():
     def __repr__(self):
         return f"TeamManager({self.name})"
 
-    # def
-
-    def get_career_matchups_played2(self, years = [], weeks = [], RS=True, PO=True):
+    def get_filtered_df(self, years=[], weeks=[], opps=[], RS=True, PO=True, real=True):
         if len(years) == 0:
             years = self.yearsPlayed
-        if len(weeks)==0:
+        if len(weeks) == 0:
             weeks = list(range(1, max(weekCountDict.values()) + max(playoffRounds.values())))
+        if len(opps) == 0:
+            opps = allMembers
 
         season_include = ("M", "P") if RS and PO else ("M") if RS and not PO else ("P") if PO and not RS else ()
 
-        return self.compStatDF.loc[self.compStatDF["Year"].isin(years) &
-                                   (self.compStatDF["Team"] == self.name) &
-                                   self.compStatDF["Week"].isin(weeks) &
-                                   self.compStatDF["Week Name"].str.startswith(season_include)].shape[0]
+        real_include = 1 if real else 0
 
+        filtered_df = self.compStatDF.loc[(self.compStatDF["Year"].isin(years)) &
+                                          (self.compStatDF["Team"]==self.name) &
+                                          (self.compStatDF["Opp"].isin(opps)) &
+                                          (self.compStatDF["Week"].isin(weeks)) &
+                                          (self.compStatDF["Week Name"].str.startswith(season_include)) &
+                                          (self.compStatDF["real_matchup"] >= real_include)
+                                          ]
+
+        return filtered_df
+
+    def get_career_matchups_played_df(self, years = [], weeks = [], RS=True, PO=True):
+        return self.get_filtered_df(years=years, weeks=weeks, RS=RS, PO=PO, real=True).shape[0]
     def get_career_matchups_played(self, startYear = 0, endYear = 0, RS=True, PO=True, weeks=False):
         if endYear == 0 or endYear > self.yearsPlayed[-1]:
             endYear = self.yearsPlayed[-1]
@@ -93,6 +102,18 @@ class teamManager():
             return PO_matchups_played
         elif PO and weeks:
             return PO_weeks_played
+
+    def get_career_RS_totals_df(self, years=[], weeks=[], opps=[]):
+        df = self.get_filtered_df(years=years, weeks=weeks, PO=False, opps=opps)[mainCats]
+        sum_cols = mainCats.copy()
+        sum_cols.remove("FG%")
+        sum_cols.remove("FT%")
+        mean_cols = ["FG%", "FT%"]
+
+        totals = df[sum_cols].sum().to_frame().T
+        averages = df[mean_cols].mean().to_frame().T
+
+        return pd.concat([totals, averages], axis=1)[mainCats]
 
     def get_career_RS_totals(self, startYear = 0, endYear = 0):
         if endYear == 0 or endYear>max(self.yearsPlayed):
@@ -144,10 +165,24 @@ class teamManager():
                     self.career_RS_averages[category] = self.career_RS_totals[category]
         return self.career_RS_totals
 
+    def get_career_RS_averages_df(self, years=[], weeks=[], opps=[]):
+        df = self.get_filtered_df(years=years, weeks=weeks, PO=False, opps=opps)[mainCats].mean().to_frame().T
+        return df[mainCats]
     def get_career_RS_averages(self, startYear = 0, endYear = 0):
         self.get_career_RS_totals(startYear, endYear)
         return self.career_RS_averages
 
+    def get_career_PO_totals_df(self, years=[], weeks=[], opps=[]):
+        df = self.get_filtered_df(years=years, weeks=weeks, RS=False, opps=opps)[mainCats]
+        sum_cols = mainCats.copy()
+        sum_cols.remove("FG%")
+        sum_cols.remove("FT%")
+        mean_cols = ["FG%", "FT%"]
+
+        totals = df[sum_cols].sum().to_frame().T
+        averages = df[mean_cols].mean().to_frame().T
+
+        return pd.concat([totals, averages], axis=1)[mainCats]
     def get_career_PO_totals(self, startYear = 0, endYear = 0):
         if endYear == 0 or endYear > max(self.yearsPlayed):
             endYear = max(self.yearsPlayed)
@@ -212,10 +247,33 @@ class teamManager():
 
         return self.career_PO_totals
 
+    def get_career_PO_averages_df(self, years=[], weeks=[], opps=[]):
+        df = self.get_filtered_df(years=years, weeks=weeks, RS=False, opps=opps)
+        div_cols = mainCats.copy()
+        div_cols.remove("FG%")
+        div_cols.remove("FT%")
+        non_div_cols = ["FG%", "FT%"]
+
+        # print(df[div_cols]/df['matchup_length'])
+
+        divs = df[div_cols].div(df['matchup_length'], axis=0).mean().to_frame().T
+        non_divs = df[non_div_cols].mean().to_frame().T
+
+        return pd.concat([divs, non_divs], axis=1)[mainCats]
     def get_career_PO_averages(self, startYear = 0, endYear = 0):
         self.get_career_PO_totals(startYear, endYear)
         return self.career_PO_averages
 
+    def get_career_totals_df(self, years=[], weeks=[], opps=[]):
+        df = self.get_filtered_df(years=years, weeks=weeks, opps=opps)[mainCats]
+        sum_cols = mainCats.copy()
+        sum_cols.remove("FG%")
+        sum_cols.remove("FT%")
+        mean_cols = ["FG%", "FT%"]
+
+        totals = df[sum_cols].sum().to_frame().T
+        averages = df[mean_cols].mean().to_frame().T
+        return pd.concat([totals, averages], axis=1)[mainCats]
     def get_career_totals(self, startYear = 0, endYear = 0):
         if endYear == 0 or endYear > max(self.yearsPlayed):
             endYear = max(self.yearsPlayed)
@@ -289,6 +347,17 @@ class teamManager():
                     self.career_averages[category] = 'N/A'
         return self.career_totals
 
+    def get_career_averages_df(self, years=[], weeks=[], opps=[]):
+        df = self.get_filtered_df(years=years, weeks=weeks, opps=opps)
+        div_cols = mainCats.copy()
+        div_cols.remove("FG%")
+        div_cols.remove("FT%")
+        non_div_cols = ["FG%", "FT%"]
+
+        divs = df[div_cols].div(df['matchup_length'], axis=0).mean().to_frame().T
+        non_divs = df[non_div_cols].mean().to_frame().T
+
+        return pd.concat([divs, non_divs], axis=1)[mainCats]
     def get_career_averages(self, startYear = 0, endYear = 0):
         self.get_career_totals(startYear, endYear)
         return self.career_averages
@@ -359,6 +428,24 @@ class teamManager():
     def get_average_draft_score(self, startYear = 0, endYear = 0):
         return self.get_career_draft_score(startYear, endYear)/len(self.yearsPlayed)
 
+    def get_career_record_WL_df(self, years=[], weeks=[], opps=[], RS=True, PO=False, format='r'):
+        df = self.get_filtered_df(years=years, weeks=weeks, RS=RS, PO=PO, opps=opps, real=True)
+        self.careerWinsWL = int(df['matchup_win'].sum())
+        self.careerTiesWL = int(df['matchup_tie'].sum())
+        self.careerLossesWL = int(df['matchup_loss'].sum())
+
+        try:
+            self.career_WL_percent = ((self.careerWinsWL + 0.49*self.careerTiesWL)/
+                                      sum((self.careerWinsWL, self.careerTiesWL, self.careerLossesWL)))
+        except ZeroDivisionError:
+            self.career_WL_percent = 0
+
+        if format == 'r':  ## format is record
+            return {'wins': self.careerWinsWL, 'ties': self.careerTiesWL, 'losses': self.careerLossesWL}
+        elif format == 'p' or format == '%':  ## format is percentage
+            return self.career_WL_percent
+        else:
+            return {'wins': self.careerWinsWL, 'ties': self.careerTiesWL, 'losses': self.careerLossesWL}
     def get_career_record_WL(self, startYear = 0, endYear = 0, format = 'r'):
         if endYear == 0 or endYear > max(self.yearsPlayed):
             endYear = max(self.yearsPlayed)
@@ -389,6 +476,24 @@ class teamManager():
         else:
             return {'wins': self.careerWinsWL, 'ties': self.careerTiesWL, 'losses': self.careerLossesWL}
 
+    def get_career_record_Cats_df(self, years=[], weeks=[], opps=[], RS=True, PO=False, format='r'):
+        df = self.get_filtered_df(years=years, weeks=weeks, RS=RS, PO=PO, opps=opps, real=True)
+        self.careerWinsCats = int(df['cat_wins'].sum())
+        self.careerTiesCats = int(df['cat_ties'].sum())
+        self.careerLossesCats = int(df['cat_losses'].sum())
+
+        try:
+            self.career_Cats_percent = ((self.careerWinsCats + 0.49 * self.careerTiesCats) /
+                                      sum((self.careerWinsCats, self.careerTiesCats, self.careerLossesCats)))
+        except ZeroDivisionError:
+            self.career_Cats_percent = 0
+
+        if format == 'r':  ## format is record
+            return {'wins': self.careerWinsCats, 'ties': self.careerTiesCats, 'losses': self.careerLossesCats}
+        elif format == 'p' or format == '%':  ## format is percentage
+            return self.career_Cats_percent
+        else:
+            return {'wins': self.careerWinsCats, 'ties': self.careerTiesCats, 'losses': self.careerLossesCats}
     def get_career_record_Cats(self, startYear = 0, endYear = 0, format = 'r'):
         if endYear == 0 or endYear > max(self.yearsPlayed):
             endYear = max(self.yearsPlayed)
@@ -451,33 +556,71 @@ class teamManager():
         self.get_best_RS_finish(startYear, endYear)
         return self.worstRS
 
-    def get_avg_rating(self, startYear = 0, endYear = 0): #Get average REG SEASON rating across range of years
-        if endYear == 0 or endYear > max(self.yearsPlayed):
-            endYear = max(self.yearsPlayed)
-        if startYear == 0 or startYear < min(self.yearsPlayed):
-            startYear = min(self.yearsPlayed)
+    def get_avg_rating(self, years=[], weeks=[], opps=[], RS=True, PO=False, rating ='rating'):
+        '''
+        :param years: list of years to consider, default to all years
+        :param weeks: list of weeks to consider, default to all weeks
+        :param opps: list of opponents to consider, default to all possible opps
+        :param RS: consider Regular season, defualt to TRUE
+        :param PO: consider Playoffs, default to FALSE since ratings aren't very representative of performance during playoffs
+        :param rating: change to anything other than 'rating' to return ranking, otherwise will default to return rating
+        :return: either average rating or ranking for above filters
+        '''
 
-        yearlyWeightedRatings = []
-        for year in range(startYear, endYear+1):
-            season = self.regSeasons[year]
-            yearlyWeightedRatings.append(season.get_team_avg_rating() * season.get_team_weeks_played())
+        df = self.get_filtered_df(years=years, weeks=weeks, RS=RS, PO=PO, opps=opps, real=True)
+        if rating == 'rating':
+            return df['week_rating'].mean()
+        else:
+            return df['week_rank'].mean()
 
-        return sum(yearlyWeightedRatings)/self.get_career_matchups_played(startYear, endYear, "RS")
+    def get_avg_opp_rating(self, years=[], weeks=[], opps=[], RS=True, PO=False, rating = 'rating'):
+        '''
+        :param years: list of years to consider, default to all years
+        :param weeks: list of weeks to consider, default to all weeks
+        :param opps: list of opponents to consider, default to all possible opps
+        :param RS: consider Regular season, defualt to TRUE
+        :param PO: consider Playoffs, default to FALSE since ratings aren't very representative of performance during playoffs
+        :param rating: change to anything other than 'rating' to return ranking, otherwise will default to return rating
+        :return: either average opponent rating or ranking for above filters
+        '''
 
-    def get_avg_opp_rating(self, startYear=0, endYear=0):
-        if endYear == 0 or endYear > max(self.yearsPlayed):
-            endYear = max(self.yearsPlayed)
-        if startYear == 0 or startYear < min(self.yearsPlayed):
-            startYear = min(self.yearsPlayed)
+        df = self.get_filtered_df(years=years, weeks=weeks, RS=RS, PO=PO, opps=opps, real=True)
+        if rating == 'rating':
+            return df['week_rating_opp'].mean()
+        else:
+            return df['week_rank_opp'].mean()
 
-        oppRatings_weighted = sum([self.regSeasons[year].get_team_avg_opp_rating() * self.regSeasons[year].get_team_weeks_played()
-                                   for year in range(startYear,endYear+1)])
+    def get_avg_car_opp_ratings_df(self, years=[], weeks=[], opps=[], RS=True, PO=False, rating ='rating', sortedReturn=True):
+        '''
+        :param years: list of years to consider, default to all years
+        :param weeks: list of weeks to consider, default to all weeks
+        :param opps: list of opponents to consider, default to all possible opps
+        :param RS: consider Regular season, defualt to TRUE
+        :param PO: consider Playoffs, default to FALSE since ratings aren't very representative of performance during playoffs
+        :param rating: change to anything other than 'rating' to return ranking, otherwise will default to return rating
+        :return: either average opponent rating or ranking for above filters
+        '''
+        if len(opps)==0:
+            opps = allMembers.copy()
+            opps.remove(self.name)
+        oppAvgRatings = {}
+        for opp in opps:
+            df = self.get_filtered_df(years=years, weeks=weeks, RS=RS, PO=PO, opps=[opp], real=True)
+            if rating == 'rating':
+                oppAvgRatings[opp] = float(df['week_rating_opp'].mean())
+            else:
+                oppAvgRatings[opp] = float(df['week_rank_opp'].mean())
 
-        weeksPlayed = sum(self.regSeasons[year].get_team_weeks_played() for year in range(startYear, endYear + 1))
+        sortedOpps = sorted(oppAvgRatings, key=lambda k: oppAvgRatings[k])
+        sortedOppAvgRatings = {i + 1: (sortedOpps[i], oppAvgRatings[sortedOpps[i]])
+                               for i in range(len(sortedOpps))}
 
-        return oppRatings_weighted/weeksPlayed
+        if sortedReturn:
+            return sortedOppAvgRatings
+        else:
+            return oppAvgRatings
 
-    def get_avg_car_opp_ratings(self, startYear = 0, endYear = 0, sortedReturn = True):
+    def get_avg_car_opp_rankings(self, startYear = 0, endYear = 0, sortedReturn = True):
         if endYear == 0 or endYear > max(self.yearsPlayed):
             endYear = max(self.yearsPlayed)
         if startYear == 0 or startYear < min(self.yearsPlayed):
@@ -504,6 +647,48 @@ class teamManager():
         else:
             return oppAvgRatings
 
+    def get_car_opp_records_df(self, years=[], weeks=[], opps=[], RS=True, PO=True,
+                               record ='record', WL=True, sortedReturn=True):
+        '''
+        :param years: list of years to consider, default to all years
+        :param weeks: list of weeks to consider, default to all weeks
+        :param opps: list of opponents to consider, default to all possible opps
+        :param RS: consider Regular season, defualt to TRUE
+        :param PO: consider Playoffs, default to FALSE since ratings aren't very representative of performance during playoffs
+        :param record: return as record by default, any value other than 'record' will return win%
+        :param WL: consider it by matchup WL by default, FALSE->consider it by category WL
+        :param sortedReturn: Default: TRUE->return sorted dictionary with place as keys, FALSE->return dictionary with opps as keys
+        '''
+        if len(opps)==0:
+            opps = allMembers.copy()
+            opps.remove(self.name)
+        oppRecords = {}
+        for opp in opps:
+            df = self.get_filtered_df(years=years, weeks=weeks, RS=RS, PO=PO, opps=[opp], real=True)
+            if WL:
+                wins = int(df['matchup_win'].sum())
+                ties = int(df['matchup_tie'].sum())
+                losses = int(df['matchup_loss'].sum())
+            else:
+                wins = int(df['cat_wins'].sum())
+                ties = int(df['cat_ties'].sum())
+                losses = int(df['cat_losses'].sum())
+            if record == 'record':
+                oppRecords[opp] = {'wins':wins, 'losses': losses, 'ties':ties}
+                sortedOpps = sorted(oppRecords, key=lambda k: oppRecords[k]['wins']+0.49*oppRecords[k]['ties'])
+            else:
+                try:
+                    oppRecords[opp] = (wins+0.49*ties)/sum([wins,ties,losses])
+                except ZeroDivisionError:
+                    pass
+                sortedOpps = sorted(oppRecords, key=lambda k: oppRecords[k])
+
+        sortedOppRecords = {i + 1: (sortedOpps[i], oppRecords[sortedOpps[i]]) for i in range(len(sortedOpps))}
+
+        if sortedReturn:
+            return sortedOppRecords
+        else:
+            return oppRecords
     def get_car_opp_records(self, is_WL=True, startYear=0, endYear=0, format='r'):
         if endYear == 0 or endYear > max(self.yearsPlayed):
             endYear = max(self.yearsPlayed)
@@ -889,7 +1074,7 @@ class team_PO_season(poSeason):
             return roundsPlayed
 
         for week in range(self.RSweekCount+1,self.RSweekCount+1+self.rounds):
-            for matchup_obj in self.POmatchupsByWeek[week]:
+            for matchup_obj in self.PO_matchups_by_week[week]:
                 if matchup_obj.team1 == self.name or matchup_obj.team2 == self.name:
                     roundsPlayed += 1
         return roundsPlayed
@@ -912,7 +1097,7 @@ class team_PO_season(poSeason):
             return self.teamTotals
 
         for week in range(self.RSweekCount+1,self.RSweekCount+1+self.rounds):
-            for matchup_obj in self.POmatchupsByWeek[week]:
+            for matchup_obj in self.PO_matchups_by_week[week]:
                 if matchup_obj.team1 == self.name or matchup_obj.team2 == self.name and matchup_obj.count:
                     teamStats[week] = list(self.statDict[week][self.name].values())
 
@@ -957,7 +1142,7 @@ class team_PO_season(poSeason):
 ## TESTING TESTING TESTING
 if __name__ == '__main__':
     import time
-    testName = 'Fano'
+    testName = 'Sama'
     testNames = allMembers
 
     start = 0
@@ -973,8 +1158,9 @@ if __name__ == '__main__':
     y = teamManager(testName)
     # print(y.compStatDF.loc[(y.compStatDF["Team"]==y.name) & (y.compStatDF["Week Name"].str.startswith("P"))])
     start = time.time()
-    print(y.get_career_matchups_played2())
+    print(y.get_career_matchups_played_df())
     print(f"df took: {time.time()-start}s")
+
     start = time.time()
     print(y.get_career_matchups_played())
     print(f"reg took: {time.time() - start}s")

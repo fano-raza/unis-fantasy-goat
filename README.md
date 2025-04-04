@@ -1,7 +1,20 @@
-### NBA Fantasy Stat Category League Analysis
+# 🏀 NBA Fantasy Stat Category League Analysis
 
-A short project analyzing how different stat categories relate to performance in my particular NBA fantasy league
+This project explores how various **statistical categories correlate with success** in my NBA fantasy league, specifically within a **category-based scoring format**.
 
-In the project report (Fantasy Analysis.ipynb), I go through how I process and analyze the data
+## 📊 Project Overview
 
-I have created custom Python libraries to query and store data from both ESPN and Yahoo fantasy servers. This isn't touched on in the report, but you can look through all the different python files in the root folder to get a better understanding of how it works.
+The main analysis is documented in the [**Fantasy Analysis.ipynb**](./Fantasy%20Analysis.ipynb) notebook, where I walk through the process of:
+
+- Gathering and cleaning fantasy basketball data  
+- Analyzing how specific stat categories influence weekly matchups  
+- Drawing insights that could inform future drafting and roster strategies
+
+## 🧰 Custom Data Tools
+
+While the notebook focuses on analysis, I’ve also developed a set of custom **Python libraries** to:
+
+- Query live data from **ESPN** and **Yahoo** fantasy APIs  
+- Store and update data for historical and ongoing analysis  
+
+These tools are available in the root directory. Feel free to browse through the code to see how the data pipeline is built — it’s not covered in the report, but it powers all the analysis behind the scenes.

@@ -51,6 +51,8 @@ class fantasyLeague():
 
         self.statCats = ['FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PTS']
 
+        self.currentYear = currentYear
+
         print("Fantasy League Initialized")
 
     def __repr__(self):
@@ -58,26 +60,26 @@ class fantasyLeague():
 
     def get_filtered_df(self, years=[], weeks=[], teams=[], opps=[], RS=True, PO=True, real=True):
         if len(years) == 0:
-            years = self.yearsPlayed
+            years = self.include
         if len(weeks)==0:
             weeks = list(range(1, max(weekCountDict.values()) + max(playoffRounds.values())))
         if len(teams)==0:
-            teams = self.teams
+            teams = [team.name for team in self.historicalMembers]
         if len(opps)==0:
-            opps = self.teams
+            opps = [team.name for team in self.historicalMembers]
 
         season_include = ("M", "P") if RS and PO else ("M") if RS and not PO else ("P") if PO and not RS else ()
 
         real_include = 1 if real else 0
 
-        filtered_df = self.compStatDF.loc[self.compStatDF["Year"].isin(years) &
-                           self.compStatDF["Team"].isin(teams) &
-                            self.compStatDF["Opp"].isin(opps) &
-                            self.compStatDF["Week"].isin(weeks) &
-                            self.compStatDF["Week Name"].str.startswith(season_include) &
-                            self.compStatDF["real_matchup"] == real_include
+        filtered_df = self.compStatDF.loc[
+                            (self.compStatDF["Year"].isin(years)) &
+                            (self.compStatDF["Opp"].isin(opps)) &
+                            (self.compStatDF["Week"].isin(weeks)) &
+                            (self.compStatDF["Week Name"].str.startswith(season_include)) &
+                            (self.compStatDF["real_matchup"] >= real_include) &
+                            (self.compStatDF["Team"].isin(teams))
         ]
-
         return filtered_df
 
 class leagueSeason:
@@ -113,6 +115,11 @@ class leagueSeason:
         else:
             self.teamPlayoffs = []
 
+        try:
+            self.currentWeek = self.playoffs.PO_currentWeek
+        except:
+            self.currentWeek = self.regSsn.currentWeek
+
     def __repr__(self):
         return f"leagueSeason({self.year})"
 
@@ -134,13 +141,14 @@ class leagueSeason:
 
 ## TESTING
 if __name__ == '__main__':
-    y = leagueSeason(2025)
+    # y = leagueSeason(2022)
+    # print(y.currentWeek)
     # print(y.get_draft_scores())
-    df = y.regSsn.get_filtered_df(PO=False)
-    df2 = y.regSsn.get_filtered_df()
-    for cat in mainCats:
-        print(df.groupby('Team')[cat].mean().sort_values())
-        print(df2.groupby('Team')[cat].mean().sort_values())
+    # df = y.regSsn.get_filtered_df(PO=False)
+    # df2 = y.regSsn.get_filtered_df()
+    # for cat in mainCats:
+    #     print(df.groupby('Team')[cat].mean().sort_values())
+    #     print(df2.groupby('Team')[cat].mean().sort_values())
     # print(df.loc[df['Week']>y.regSsn.RSweekCount][['Week','Team','Opp']])
     # print(df.loc[df['Week']==1][['PTS','PTS_scaled']].sort_values(['PTS']),"\n")
     # print(df.loc[df['Week']==1][['TO', 'TO_scaled']].sort_values(['TO']),"\n")
@@ -153,8 +161,20 @@ if __name__ == '__main__':
     # for team in y.teamDrafts:
     #     print(team.team, team.teamScore)
 
-    # x = fantasyLeague()
-    # # print(x.compStatDF.groupby(['Team'])['matchup_win'].sum().sort_values())
+    x = fantasyLeague()
+    df = x.compStatDF
+
+    df13 = x.get_filtered_df(weeks=list(range(13,25)))
+    df15 = x.get_filtered_df(weeks=list(range(15,25)))
+
+    print(df13.groupby(['Team'])['matchup_win'].sum().sort_values())
+    print(df15.groupby(['Team'])['matchup_win'].sum().sort_values())
+
+    # df1 = df1.loc[(df1['Team'].isin(['Fano'])) & (df1['Year']==2025)][['Team', 'Year']]
+    # print(df1)
+    # df2 = x.get_filtered_df(teams=["Fano"], years=[2025])[['Team', 'Week', 'real_matchup']]
+    # print(df2)
+    # print(x.compStatDF.groupby(['Team'])['matchup_win'].sum().sort_values())
     # # print(x.compStatDF.groupby(['Team'])['matchup_loss'].sum().sort_values())
     # # print(x.compStatDF.groupby(['Team'])['cat_wins'].sum().sort_values())
     # # print(x.compStatDF.groupby(['Team'])['cat_losses'].sum().sort_values())
