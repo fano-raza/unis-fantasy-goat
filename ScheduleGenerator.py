@@ -9,7 +9,7 @@ espn_s2 = 'AEB10E76tw6SHjpKpDqw7nBJndJfFekcJaC%2FiUC0JrJ2wj1Nb5YcBVZ04ary1%2F%2F
 swid = '{F1B30D95-9F03-4CA9-BE62-D89858BE885E}'
 
 ## YAHOO
-year = 2024
+year = currentYear
 yQuery = YahooFantasySportsQuery('',str(yLeagueIDs[year]),'nba',yGameIDs[year],False,False,yKey,ySec)
 
 gameInfo = yQuery.get_current_game_info()

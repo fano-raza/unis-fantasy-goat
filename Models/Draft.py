@@ -304,7 +304,7 @@ class Pick:
 if __name__ == '__main__':
     # team = "Fano"
     #
-    # y = Draft(2024)
+    y = Draft(currentYear)
     # x = teamDraft("Chirayu", 2025)
     # print(x.teamBestPick, x.teamWorstPick)
     # print(x.bestPick, x.worstPick)
@@ -312,7 +312,7 @@ if __name__ == '__main__':
     # print(x.draftScore)
     # print(y.makeRankDict())
     # print(y.draftScore)
-    # y.makeDraftCSV()
+    y.makeDraftCSV()
     # y.runDraft(True)
     # for year in range(2019,2025):
     #     x = Draft(year)
@@ -324,7 +324,7 @@ if __name__ == '__main__':
         # print(x.draftScore)
     #     print((x.bestPick, x.worstPick))
 
-    x = Draft(2025)
+    # x = Draft(2025)
 
 
     pass

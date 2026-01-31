@@ -1,70 +1,77 @@
 import dash
 from dash import dcc, html, Input, Output, dash_table
-# import dash
 import dash_bootstrap_components as dbc
 import pandas as pd
+import os
+import sys
+
+# Add parent dir to sys.path for module access
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+
 from StatGenerator import *
 from constants import *
 from constants import seasonInfoDict as si
 from Models.League import *
-from style_sheet import *
-import os
-import sys
+from DashApp.style_sheet import *
 
-#instantiate fantasyLeague object
+
+# Determine the parent directory and add it to sys.path
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+
+from StatGenerator import *
+from constants import *
+from Models.League import *
+import DashApp.style_sheet
+
+# Register the page with Dash
+dash.register_page(__name__, path="/weekly-stats", name="Weekly Stats")
+
+# Instantiate the fantasyLeague object
 league = fantasyLeague()
 
-# column definitions
-weekStatColDisplay = ['Team']+mainCats+['Score', 'Rating', 'Rank']
-focusStatColDisplay = mainCats+['Rating', 'Rank']
+# Define column headers
+weekStatColDisplay = ['Team'] + mainCats + ['Score', 'Rating', 'Rank']
 
-# Initialize the Dash app
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP], use_pages=True, pages_folder="")
-
-# Layout of the app
-app.layout = dbc.Container([
-    ## HEADER/TITLE
+# Layout for the Weekly Stats page
+layout = dbc.Container([
     dbc.Row([
         dbc.Col(html.H1("UNIS 2014 Fantasy"), className="mb-4")
     ]),
 
-    ## YEAR SELECT MENU
     dbc.Row([
         dbc.Col(html.Label("Select Year:", style={'margin-right': '10px'}), width="auto"),
         dbc.Col([
             dcc.Dropdown(
                 id='year-dropdown',
                 options=[{'label': str(year), 'value': year} for year in si],
-                value=currentYear,  # Default selected year
+                value=currentYear,
                 clearable=False
             )
         ], width=2, align='middle'),
 
-        ## WEEK SELECT MENU
         dbc.Col([
             html.Label("Select Week:"),
             dcc.Input(id='week-input', type='number',
                       value=league.seasons[currentYear].currentWeek,
                       min=1,
-                      max=20),],
-            width=4),
+                      max=20)
+        ], width=4),
+
         dbc.Col([
             html.Button('Update', id='update-button', n_clicks=0, className="mt-4")
         ], width=4)
     ], className="mb-4"),
 
     dbc.Row([
-        ## FOCUS TEAM SELECT
         dbc.Col([
             html.Label("Select Team:"),
-            dcc.Dropdown(
-                id='focus-team-dropdown',
-                clearable=False,
-                style={'width': '100px'}
-            )
+            dcc.Dropdown(id='focus-team-dropdown', clearable=False, style={'width': '100px'})
         ], style={'marginRight': '50px'}, width=str(width)),
 
-        ## FOCUS TEAM MAIN CATS
         dbc.Col([
             dash_table.DataTable(
                 id='focus-team-stats',
@@ -72,15 +79,12 @@ app.layout = dbc.Container([
                 data=[],
                 style_table={'overflowX': 'auto'},
                 style_cell={'textAlign': 'center', 'padding': f"{padding}px", 'width': '50px',
-                            'font_size':f"{font_size}px"},
-                style_header={
-                    'backgroundColor': 'rgb(230, 230, 230)',
-                    'fontWeight': 'bold', 'font_size':f"{header_font_size}px"
-                }
+                            'font_size': f"{font_size}px"},
+                style_header={'backgroundColor': 'rgb(230, 230, 230)', 'fontWeight': 'bold',
+                              'font_size': f"{header_font_size}px"}
             )
         ], style={'marginRight': '50px'}, width=str(width)),
 
-        ## FOCUS TEAM RATING/RANK
         dbc.Col([
             dash_table.DataTable(
                 id='focus-team-rating',
@@ -88,32 +92,22 @@ app.layout = dbc.Container([
                 data=[],
                 style_table={'overflowX': 'auto'},
                 style_cell={'textAlign': 'center', 'padding': f"{padding}px", 'width': '100px',
-                            'font_size':f"{font_size}px"},
-                style_header={
-                    'backgroundColor': 'rgb(230, 230, 230)',
-                    'fontWeight': 'bold', 'font_size':f"{header_font_size}px"
-                }
+                            'font_size': f"{font_size}px"},
+                style_header={'backgroundColor': 'rgb(230, 230, 230)', 'fontWeight': 'bold',
+                              'font_size': f"{header_font_size}px"}
             )
         ], width=str(width))
-
     ],
         justify='start',
         className='mb-4 g-0',
-        style={
-            'marginRight': f"{pageMargin}px",
-            'marginLeft': f"{pageMargin}px"
-        }
+        style={'marginRight': f"{pageMargin}px", 'marginLeft': f"{pageMargin}px"}
     ),
 
     dbc.Row([
-        ## OTHER TEAM STATS
         dbc.Col([
-            # html.H4("All Teams"),
             dash_table.DataTable(
                 id='opp-stats-table',
-                columns=[
-                    {"name": col, "id": col} for col in weekStatColDisplay
-                ],
+                columns=[{"name": col, "id": col} for col in weekStatColDisplay],
                 data=[],
                 style_table={'overflowX': 'auto'},
                 style_data_conditional=[
@@ -122,26 +116,21 @@ app.layout = dbc.Container([
                     {'if': {'column_id': 'Rank'}, 'width': '100px'},
                 ],
                 style_cell={'textAlign': 'center', 'padding': f"{padding}px", 'width': '50px',
-                            'font_size':f"{font_size}px"},
-                style_header={
-                    'backgroundColor': 'rgb(230, 230, 230)',
-                    'fontWeight': 'bold', 'font_size':f"{header_font_size}px"
-                },
-
+                            'font_size': f"{font_size}px"},
+                style_header={'backgroundColor': 'rgb(230, 230, 230)', 'fontWeight': 'bold',
+                              'font_size': f"{header_font_size}px"}
             )
         ], width=str(width))
     ],
         justify='start',
         className='g-0',
-        style={
-            'marginRight': f"{pageMargin}px",
-            'marginLeft': f"{pageMargin}px"
-        }),
-    dash.page_container  # This is required for multi-page apps
+        style={'marginRight': f"{pageMargin}px", 'marginLeft': f"{pageMargin}px"}
+    )
 ])
 
-# Callback to update week max and current weeks
-@app.callback(
+# Define callbacks for interactivity
+# Example: Callback to update week max and current week
+@dash.callback(
     [Output('week-input', 'max'),
      Output('week-input', 'value')],
     [Input('year-dropdown', 'value')]
@@ -149,7 +138,6 @@ app.layout = dbc.Container([
 def update_week_max(year):
     max_week = RS_weekCountDict[year] + playoffRounds[year]
     current_week = league.seasons[year].currentWeek
-
     return max_week, current_week
 
 def get_week_stats(year, week, focus_team):
@@ -161,57 +149,49 @@ def get_week_stats(year, week, focus_team):
     opp_df['FG%'] = opp_df['FG%'].apply(lambda x: round(x, 3))
     opp_df['FT%'] = opp_df['FT%'].apply(lambda x: round(x, 3))
     opp_df['Score'] = opp_df.apply(lambda row: f"{row['cat_losses']}-{row['cat_wins']}", axis=1)
-    opp_df['Rating'] = opp_df['week_rating'].apply(lambda x: round(x, 3))
-    opp_df['Rank'] = opp_df['week_rank'].apply(lambda x: round(x, 2))
+    opp_df['Rating'] = opp_df['week_rating'].apply(lambda x: round(x, 1))
+    opp_df['Rank'] = opp_df['week_rank']
 
     focus_df = league.get_filtered_df(years=[year], weeks=[week], real=True, teams=[focus_team])
     focus_df['FG%'] = focus_df['FG%'].apply(lambda x: round(x, 3))
     focus_df['FT%'] = focus_df['FT%'].apply(lambda x: round(x, 3))
-    focus_df['Rating'] = focus_df['week_rating'].apply(lambda x: round(x, 3))
-    focus_df['Rank'] = focus_df['week_rank'].apply(lambda x: round(x, 2))
+    focus_df['Rating'] = focus_df['week_rating'].apply(lambda x: round(x, 1))
+    focus_df['Rank'] = focus_df['week_rank']
+
+    opp_df = opp_df.sort_values('week_rank')
 
     return opp_df, focus_df
 
-# Callback to update the table based on the year and week number input
-@app.callback(
+@dash.callback(
     [Output('focus-team-dropdown', 'options'),
      Output('focus-team-dropdown', 'value'),
      Output('opp-stats-table', 'data'),
-     Output('opp-stats-table', 'style_data_conditional'),  # New output for styling
+     Output('opp-stats-table', 'style_data_conditional'),
      Output('focus-team-stats', 'data'),
      Output('focus-team-rating', 'data')],
-
     [Input('update-button', 'n_clicks'),
      Input('year-dropdown', 'value'),
      Input('week-input', 'value'),
      Input('focus-team-dropdown', 'value')]
 )
 def update_table(n_clicks, year, week, focus_team):
-    # Get teams data
-    team_options = [{'label': team, 'value': team} for team in
-                    league.get_filtered_df(years=[year], weeks=[week], real=True)['Team']]
-
+    team_options = [{'label': team, 'value': team} for team in league.get_filtered_df(years=[year], weeks=[week], real=True)['Team']]
     if {'label': focus_team, 'value': focus_team} not in team_options:
         focus_team = team_options[0]['value']
-        # Default to first team in team_options if current focus_team selection is not valid option
 
-    # Get data
     opp_df, focus_df = get_week_stats(year, week, focus_team)
     opp_table_data = opp_df.to_dict('records')
     focus_team_data = focus_df.to_dict('records')
 
-    # Generate initial conditional formatting for opp_stat_table
     style_cond = [{'if': {'column_id': 'Team'}, 'width': '150px'},
-                        {'if': {'column_id': 'Rating'}, 'width': '100px'},
-                        {'if': {'column_id': 'Rank'}, 'width': '100px'}]
-
+                  {'if': {'column_id': 'Rating'}, 'width': '100px'},
+                  {'if': {'column_id': 'Rank'}, 'width': '100px'}]
     style_cond += red_green_cond_style(focus_team_data, opp_table_data)
 
     return team_options, focus_team, opp_table_data, style_cond, focus_team_data, focus_team_data
 
 def red_green_cond_style(main_stats, comp_stats):
     style_cond = []
-
     for i, row in enumerate(comp_stats):
         for cat in mainCats:
             main_val = main_stats[0][cat]
@@ -222,16 +202,18 @@ def red_green_cond_style(main_stats, comp_stats):
             elif main_val < comp_val:
                 color = 'red' if cat in posCats else 'green'
             else:
-                color = 'white'  # No styling
+                color = 'white'
 
             style_cond.append({
                 'if': {'row_index': i, 'column_id': cat},
                 'backgroundColor': color,
                 'color': 'white' if color in ['red', 'green'] else 'black'
-                # 'color': 'black'
             })
     return style_cond
 
-# Run the app
-if __name__ == '__main__':
-    app.run_server(debug=True)
+def update_week_max(year):
+    max_week = totalMatchupCount[year]
+    current_week = league.seasons[year].currentWeek
+    return max_week, current_week
+
+# Additional callbacks should be defined here

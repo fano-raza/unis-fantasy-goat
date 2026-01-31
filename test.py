@@ -110,13 +110,13 @@ def espn():
 
 ## YAHOO YAHOO YAHOO
 def yahoo():
-    year = 2025
+    year = 2026
     yQuery = YahooFantasySportsQuery('',str(yLeagueIDs[year]),'nba',yGameIDs[year],False,False,yKey,ySec)
     # print(yQuery.get_all_yahoo_fantasy_game_keys())
     # leagueKey = yQuery.get_league_key()
 
-    team_stats = yQuery.get_all_team_stats_by_week(19)
-    print(team_stats)
+    # team_stats = yQuery.get_all_team_stats_by_week(19)
+    # print(team_stats)
 
 
 
@@ -126,28 +126,47 @@ if __name__ == '__main__':
     # espn()
     # yahoo()
 
+    rs = regSeason(2021)
+    print(rs.matchups)
+    for matchup in rs.matchups:
+        # print(f"winner: {matchup.winner}")
+        # print(f"loser: {matchup.loser}")
+        if matchup.is_BYE:
+            print(matchup.winner)
+    # print(rs.matchups)
+    # print(len(rs.matchups))
+    # print(rs.hyp_matchups)
+    # print(rs.get_Cats_standings(startWeek = 3, endWeek = 6))
+    # print(rs.get_WL_standings(startWeek=3, endWeek=6))
+    # print(rs.get_league_wins_standings_WL(startWeek = 5, endWeek = 6))
+    # print(rs.get_league_wins_standings_Cats(startWeek = 5, endWeek = 6))
+    #
+    # team_rs = team_reg_season('Fano', 2026)
+    # print(team_rs.get_team_league_wins_record_WL(startWeek=5, endWeek=6))
+    # print(team_rs.get_team_league_wins_record_Cats(startWeek=5, endWeek=6))
+
     x = teamManager('Fano')
     # print(x.compStatDF.columns)
     # print(x.compStatDF["matchup_length"])
     # print(x.compStatDF.loc[x.compStatDF["real_matchup"]==1][mainCats])
     # print(x.get_filtered_df(years=[2025],RS=False)[mainCats])
-    print("df: ", x.get_career_matchups_played_df(RS=True, PO=False))
-    print("dict: ", x.get_career_matchups_played(RS=True, PO=False))
+    # print("df: ", x.get_career_matchups_played_df(RS=True, PO=False))
+    # print("dict: ", x.get_career_matchups_played(RS=True, PO=False))
 
-    start = time.time()
-    # print(x.get_avg_opp_rating(rating='rank'))
-    res = x.get_car_opp_records_df(record='record', sortedReturn=False, RS=True, PO=False)
-    print(res)
-    matches = [sum(team.values()) for team in res.values()]
-    print(sum(matches))
-    print("df time: ", time.time()-start)
-
-    start = time.time()
-    res = x.get_car_opp_records()
-    print(res)
-    matches = [sum(team.values()) for team in res.values()]
-    print(sum(matches))
-    print("dict time: ", time.time() - start)
+    # start = time.time()
+    # # print(x.get_avg_opp_rating(rating='rank'))
+    # res = x.get_car_opp_records_df(record='record', sortedReturn=False, RS=True, PO=False)
+    # print(res)
+    # matches = [sum(team.values()) for team in res.values()]
+    # print(sum(matches))
+    # print("df time: ", time.time()-start)
+    #
+    # start = time.time()
+    # res = x.get_car_opp_records()
+    # print(res)
+    # matches = [sum(team.values()) for team in res.values()]
+    # print(sum(matches))
+    # print("dict time: ", time.time() - start)
 
     # a = fantasyLeague()
     # for season in a.seasons:

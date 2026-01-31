@@ -52,7 +52,7 @@ class teamManager():
         if len(years) == 0:
             years = self.yearsPlayed
         if len(weeks) == 0:
-            weeks = list(range(1, max(weekCountDict.values()) + max(playoffRounds.values())))
+            weeks = list(range(1, max(RS_weekCountDict.values()) + max(playoffRounds.values())))
         if len(opps) == 0:
             opps = allMembers
 
@@ -827,14 +827,16 @@ class team_reg_season(regSeason):
         ## get the value of the specified category for the specified week (for the team)
         return self.statDict[week][self.name].get(cat)
 
-    def get_team_record_WL(self, upToWeek = 0, format ='r'):
+    def get_team_record_WL(self, startWeek = 0, endWeek = 0, format ='r'):
         ## get the WL record of the team (at the specified week (if specified))
-        if upToWeek == 0:
-            upToWeek = self.currentWeek
+        if endWeek <= 0 or endWeek >= self.currentWeek:
+            endWeek = self.currentWeek
+        if startWeek <= 0 or startWeek >= self.currentWeek:
+            startWeek = 1
 
-        self.winsWL = self.get_WL_standings(upToWeek, False)[self.name]['wins']
-        self.lossesWL = self.get_WL_standings(upToWeek, False)[self.name]['losses']
-        self.tiesWL = self.get_WL_standings(upToWeek, False)[self.name]['ties']
+        self.winsWL = self.get_WL_standings(startWeek, endWeek, False)[self.name]['wins']
+        self.lossesWL = self.get_WL_standings(startWeek, endWeek, False)[self.name]['losses']
+        self.tiesWL = self.get_WL_standings(startWeek, endWeek, False)[self.name]['ties']
         self.percentWL = (self.winsWL+0.49*self.tiesWL)/sum((self.winsWL,self.tiesWL,self.lossesWL))
 
         if format == 'p' or format == '%':
@@ -842,21 +844,25 @@ class team_reg_season(regSeason):
         else:
             return {'wins': self.winsWL, 'ties': self.tiesWL, 'losses': self.lossesWL}
 
-    def get_team_position_WL(self, upToWeek = 0):
+    def get_team_position_WL(self, startWeek = 0, endWeek = 0):
         ## get the WL standings position of the team (at the specified week (if specified))
-        if upToWeek == 0:
-            upToWeek = self.currentWeek
+        if endWeek <= 0 or endWeek >= self.currentWeek:
+            endWeek = self.currentWeek
+        if startWeek <= 0 or startWeek >= self.currentWeek:
+            startWeek = 1
 
-        return self.get_WL_standings(upToWeek, False)[self.name]['position']
+        return self.get_WL_standings(startWeek, endWeek, False)[self.name]['position']
 
-    def get_team_record_Cats(self, upToWeek=0, format ='r'):
+    def get_team_record_Cats(self, startWeek = 0, endWeek = 0, format ='r'):
         ## get the Category-WL record of the team (at the specified week (if specified))
-        if upToWeek == 0:
-            upToWeek = self.currentWeek
+        if endWeek <= 0 or endWeek >= self.currentWeek:
+            endWeek = self.currentWeek
+        if startWeek <= 0 or startWeek >= self.currentWeek:
+            startWeek = 1
 
-        self.winsCats = self.get_Cats_standings(upToWeek, False)[self.name]['wins']
-        self.lossesCats = self.get_Cats_standings(upToWeek, False)[self.name]['losses']
-        self.tiesCats = self.get_Cats_standings(upToWeek, False)[self.name]['ties']
+        self.winsCats = self.get_Cats_standings(startWeek, endWeek, False)[self.name]['wins']
+        self.lossesCats = self.get_Cats_standings(startWeek, endWeek, False)[self.name]['losses']
+        self.tiesCats = self.get_Cats_standings(startWeek, endWeek, False)[self.name]['ties']
         self.percentCats = (self.winsCats+0.49*self.tiesCats)/sum((self.winsCats,self.tiesCats,self.lossesCats))
 
         if format == 'p' or format == '%':
@@ -864,12 +870,14 @@ class team_reg_season(regSeason):
         else:
             return {'wins': self.winsCats, 'ties': self.tiesCats, 'losses': self.lossesCats}
 
-    def get_team_position_Cats(self, upToWeek = 0):
+    def get_team_position_Cats(self, startWeek = 0, endWeek = 0):
         ## get the Category-Cats standings position of the team (at the specified week (if specified))
-        if upToWeek == 0:
-            upToWeek = self.currentWeek
+        if endWeek <= 0 or endWeek >= self.currentWeek:
+            endWeek = self.currentWeek
+        if startWeek <= 0 or startWeek >= self.currentWeek:
+            startWeek = 1
 
-        return self.get_Cats_standings(upToWeek, False)[self.name]['position']
+        return self.get_Cats_standings(startWeek, endWeek, False)[self.name]['position']
 
     def get_team_totals(self, startWeek = 0, endWeek = 0):
         ## get the totals of all available categories (up to speicified week (if specified))
@@ -1008,50 +1016,11 @@ class team_reg_season(regSeason):
         else:
             return avgOppRatings
 
-    def get_team_league_record_WL(self, startWeek = 0, endWeek = 0):
-        if endWeek <= 0:
-            endWeek = self.currentWeek
-        if startWeek <= 0:
-            startWeek = 1
+    def get_team_league_wins_record_WL(self, startWeek = 0, endWeek = 0):
+        return self.get_league_wins_standings_WL(startWeek=startWeek, endWeek=endWeek, sortedReturn=False)[self.name]
 
-        wins, ties, losses = 0,0,0
-
-        for week in range(startWeek, endWeek+1):
-            for team in self.otherTeams:
-
-                mUp = matchup(self.year, week, self.name, team)
-                mUp.getStats(self.statDict)
-                mUp.getResults(self.statCats)
-
-                if mUp.is_won:
-                    wins += 1
-                elif mUp.is_tied:
-                    ties += 1
-                else:
-                    losses += 1
-
-        return {'Wins':wins, 'Ties':ties, 'Losses':losses}
-
-    def get_team_league_record_Cats(self, startWeek = 0, endWeek = 0):
-        if endWeek <= 0:
-            endWeek = self.currentWeek
-        if startWeek <= 0:
-            startWeek = 1
-
-        wins, ties, losses = 0,0,0
-
-        for week in range(startWeek, endWeek+1):
-            for team in self.otherTeams:
-
-                mUp = matchup(self.year, week, self.name, team)
-                mUp.getStats(self.statDict)
-                mUp.getResults(self.statCats)
-
-                wins += mUp.wins
-                ties += mUp.ties
-                losses += mUp.losses
-
-        return {'Wins':wins, 'Ties':ties, 'Losses':losses}
+    def get_team_league_wins_record_Cats(self, startWeek = 0, endWeek = 0):
+        return self.get_league_wins_standings_Cats(startWeek=startWeek, endWeek=endWeek, sortedReturn=False)[self.name]
 
 class team_PO_season(poSeason):
     def __init__(self, name, year, extStatDict = None, extStatDF = None):

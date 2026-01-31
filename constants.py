@@ -18,25 +18,27 @@ yRefTok = 'AFRlfGYz42hqZri9tJIlY6d1og_S~000~bkow8_Z7ijMknqCgEQhHIinloToXvkYm'
 
 yLeagueIDs = {
     2024:138772,
-    2025:29987
+    2025:29987,
+    2026:79557,
 }
 
-currentYear = 2025
+currentYear = 2026
 
 ## ALL MEMBERS EVER
 allMembers = sorted(['Jesse', 'Ange', 'Juan', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Amil', 'Sama', 'Sai'])
-abbMembers = {member:
-    member[:2] if member.startswith('A') else
-    member[:3] if member.startswith('S') else
-    member[0] for member in allMembers
-}
+abbMembers = {'Jesse':'JS', 'Ange':'AB', 'Juan':'JA', 'Rohil':'RB',
+              'Saamrit':'SR', 'Fano':'FR', 'Chirayu':'CP', 'Zahir':'ZZ',
+              'Amil':'AO', 'Sama':'SKa', 'Sai':'SKo'}
 
 mainCats = ['FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PTS']
 statCats = ['FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PTS', 'FGM', 'FGA', 'FTM', 'FTA', '3PTA', '3PT%']
 mainCats_ratings = [cat+"_rating" for cat in mainCats]
 mainCats_rankings = [cat+"_rank" for cat in mainCats]
+mainCats_wt_rankings = [cat+"_wt_rank" for cat in mainCats]
 posCats = ['FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK', 'PTS']
 negCats = ['TO']
+mainCatsSum = ['3PTM', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PTS']
+mainCatsPCT = ['FG%', 'FT%']
 
 ## season info dict has tuple as value for each key
 ## each tuple will contain ((team1, team2, ...), is ESPN (T/F), is W/L scoring (T/F))
@@ -47,7 +49,8 @@ seasonInfo = {
     2022: (sorted(('Amil', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Sai')),True,True),
     2023: (sorted(('Amil', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Sai')),True,True),
     2024: (sorted(('Amil', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Sai')),False,False),
-    2025: (sorted(('Amil', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Sai')),False,True)
+    2025: (sorted(('Amil', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Sai')),False,True),
+    2026: (sorted(('Amil', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Sai')),False,False)
 }
 
 # was too lazy to rewrite seasonInfo as a dict, but everything should be using this Dict as reference
@@ -69,18 +72,20 @@ draftOrder = {
     2022: ('Sama', 'Juan', 'Saamrit', 'Zahir', 'Ange', 'Rohil', 'Chirayu', 'Amil', 'Fano', 'Sai'),
     2023: ('Sama', 'Amil', 'Ange', 'Zahir', 'Saamrit', 'Chirayu', 'Fano', 'Juan', 'Rohil', 'Sai'),
     2024: ('Ange', 'Zahir', 'Saamrit', 'Sama', 'Amil', 'Juan', 'Rohil', 'Fano', 'Sai', 'Chirayu'),
-    2025: ('Juan', 'Amil', 'Sai', 'Sama', 'Rohil', 'Ange', 'Fano', 'Saamrit', 'Chirayu', 'Zahir')
+    2025: ('Juan', 'Amil', 'Sai', 'Sama', 'Rohil', 'Ange', 'Fano', 'Saamrit', 'Chirayu', 'Zahir'),
+    2026: ('Rohil', 'Chirayu', 'Ange', 'Fano', 'Sai', 'Amil', 'Sama', 'Juan', 'Zahir', 'Saamrit')
 }
 
 # number of REGULAR SEASON weeks per year
-weekCountDict = {
+RS_weekCountDict = {
     2019:20,
     2020:18,
     2021:18,
     2022:18,
     2023:18,
     2024:18,
-    2025:18
+    2025:18,
+    2026:18,
 }
 
 # number of playoff teams per year
@@ -91,7 +96,8 @@ playoffTeamCount = {
     2022:6,
     2023:6,
     2024:6,
-    2025:6
+    2025:6,
+    2026:6,
 }
 
 # number of rounds in playoffs per year
@@ -105,8 +111,11 @@ playoffRoundLength = {
     2022:2,
     2023:2,
     2024:1,
-    2025:1
+    2025:1,
+    2026:1,
 }
+
+totalMatchupCount = {year: RS_weekCountDict[year] + playoffRounds[year] for year in RS_weekCountDict}
 
 # if the official standings in the league are calculated differently for some reason
 # (e.g. tiebreakers that haven't been accounted for here)
@@ -143,7 +152,8 @@ for key in range(len(espnStatMap)):
 ## YAHOO-SPECIFIC INFO ##
 yTeamIDs = {
     2024: {1:'Fano', 2:"Saamrit", 3:"Ange", 4:"Juan", 5:"Chirayu", 6:"Sai", 7:"Amil", 8:"Sama", 9:"Zahir", 10:"Rohil"},
-    2025: {1:'Fano', 2:"Saamrit", 3:"Zahir", 4:"Chirayu", 5:"Amil", 6:"Juan", 7:"Sai", 8:"Sama", 9:"Ange", 10:"Rohil"}
+    2025: {1:'Fano', 2:"Saamrit", 3:"Zahir", 4:"Chirayu", 5:"Amil", 6:"Juan", 7:"Sai", 8:"Sama", 9:"Ange", 10:"Rohil"},
+    2026: {1:'Fano', 2:"Saamrit", 3:"Zahir", 4:"Chirayu", 5:"Amil", 6:"Juan", 7:"Sai", 8:"Sama", 9:"Ange", 10:"Rohil"},
     }
 for year in yTeamIDs:
     for num in range(1,len(yTeamIDs[year])):
@@ -151,7 +161,8 @@ for year in yTeamIDs:
 
 yGameIDs = {
     2024:428,
-    2025:454
+    2025:454,
+    2026:466,
 }
 
 yStatMap = {
@@ -177,7 +188,8 @@ gDocNames = {
     2022:"21/22 Rankings (The Numbers)",
     2023:"ULTRA 22/23 Rankings",
     2024:"23/24 Rankings (The Numbers)",
-    2025:"24/25 Rankings (The Numbers)"
+    2025:"24/25 Rankings (The Numbers)",
+    2026:"25/26 Rankings (The Numbers)",
 }
 
 # the categories and order they appear on the gdocs
@@ -191,17 +203,27 @@ stat21 = False
 stat20 = False
 stat19 = True
 stat25 = True
+stat26 = True
 
 ## Functions
 def bs_calList(day, calList): #binary search to find what week/matchup "day" is in
+    if day < calList[0][1]: # if day is before start date of first week
+        return calList[0][0]
+
+    if day > calList[-1][2]: # if day is after end date of last week
+        return calList[-1][0]
+
     if len(calList) == 1:
         return calList[0][0]
 
     midInd = len(calList)//2
+
     if day < calList[midInd][1]: ## if today is before the start date of the middle week
         return bs_calList(day, calList[:midInd])
-    elif day > calList[midInd][2]:
+
+    elif day > calList[midInd][2]: ## if today is after the end date of the middle week
         return bs_calList(day, calList[midInd+1:])
+
     else:
         return calList[midInd][0]
 
@@ -215,11 +237,15 @@ def getLastWeek(year):
             calList = [[int(week[0]), datetime.date(int(week[1]), int(week[2]), int(week[3])),
                         datetime.date(int(week[4]), int(week[5]), int(week[6]))]
                        for week in reader]
-        lastWeek = min(bs_calList(today, calList), weekCountDict[year]+playoffRounds[year])
+        lastWeek = min(bs_calList(today, calList), RS_weekCountDict[year] + playoffRounds[year])
     elif year < currentYear:
-        lastWeek = weekCountDict[year]+playoffRounds[year]
+        lastWeek = RS_weekCountDict[year] + playoffRounds[year]
     elif year > currentYear:
         print("Invalid Year")
         return None
 
     return lastWeek
+
+if __name__ == '__main__':
+    day = datetime.datetime.today()
+    x = bs_calList(day, calendars[2025])

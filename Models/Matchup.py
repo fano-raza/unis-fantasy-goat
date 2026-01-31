@@ -9,20 +9,21 @@ class matchup():
     def __init__(self, year, week, team1, team2):
         self.year = year
         self.week = week
-        self.weekName = f"M{week}" if week <= weekCountDict[self.year] else f"P{week % weekCountDict[self.year]}"
+        self.weekName = f"M{week}" if week <= RS_weekCountDict[self.year] else f"P{week % RS_weekCountDict[self.year]}"
         self.team1 = team1
         self.team2 = team2
         self.teams = [self.team1, self.team2]
 
-        if self.team2 != 'BYE':
-            self.is_BYE = False
-            self.count = True ## stats count if NOT a BYE week
-        else:
+        if self.team1 == 'BYE' or self.team2 == 'BYE':
             self.is_BYE = True
-            self.count = False
+            self.count = False ## stats don't count if a BYE week
+        else:
+            self.is_BYE = False
+            self.count = True
+        # self.count can be externally set to false in the case of a hypothetical matchup
 
         ## is it a regular season matchup or playoff?
-        if week < weekCountDict[self.year]+1:
+        if week < RS_weekCountDict[self.year]+1:
             self.is_reg = True
         else:
             self.is_reg = False

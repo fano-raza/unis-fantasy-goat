@@ -4,8 +4,15 @@
 # from constants import *
 # import datetime
 # import time
+import gspread
 import sys
 import os
+import threading, time, csv, datetime
+import gspread.exceptions
+from flask import Flask, jsonify
+from GDoc_AllTime import *
+from datetime import timedelta
+from discord_messages import notify_milestones
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(parent_dir)
 
@@ -86,7 +93,7 @@ def genSched(year):
         league_data = espnLeague._fetch_league()
         sched = league_data.get("schedule")
 
-        for week in range(weekCountDict[year]):
+        for week in range(RS_weekCountDict[year]):
             Opps = {}
             for matchup in sched[(week - 1)*len(seasonInfo[year][0])//2:week*len(seasonInfo[year][0])//2]:
                 try:
@@ -101,7 +108,7 @@ def genSched(year):
             schedule.append(line)
     else:
         yQuery = YahooFantasySportsQuery('',yLeagueIDs[year],'nba',yGameIDs[year],False,False,yKey,ySec)
-        for week in range(1,weekCountDict[year]+1):
+        for week in range(1, RS_weekCountDict[year] + 1):
             matchupListCopy = yQuery.get_league_matchups_by_week(week).copy()
             Opps={}
             for matchup in matchupListCopy:
@@ -122,8 +129,8 @@ def genSched(year):
 
     worksheet = gc.open(gDocNames[year]).worksheet(f"Matchups")
 
-    worksheet.update(teams, f"B1:K1")
-    worksheet.update(schedule, f"B{2+weekCountDict[year]+3}:K{2+2*weekCountDict[year]+2}")
+    worksheet.update([teams], f"B1:K1")
+    worksheet.update(schedule, f"B{2 + RS_weekCountDict[year] + 3}:K{2 + 2 * RS_weekCountDict[year] + 2}")
 
 def createWeekSheet(year, week, copy = 1):
     sheet = gc.open(gDocNames[year])
@@ -143,7 +150,7 @@ def write_gDoc(year, week, text, cell, bold = False, italic = False, underline =
     })
 
 def makeRestOfSheets(year, startWeek = 1):
-    endWeek = weekCountDict[year] + playoffRounds[year]
+    endWeek = RS_weekCountDict[year] + playoffRounds[year]
     week = startWeek
 
     while week <= endWeek:
@@ -151,11 +158,24 @@ def makeRestOfSheets(year, startWeek = 1):
             createWeekSheet(year, week)
             write_gDoc_stats(year, week)
             week += 1
-        except: ## Most errors will be that the API read request/min limit has been reached.
+        except gspread.exceptions.APIError: ## Most errors will be that the API read request/min limit has been reached.
             print("Waiting on Google Docs")
             time.sleep(5)
 
-def updateCurrentSheet(year):
+def updateSheet(year, week):
+    now = datetime.datetime.now()
+    displayTime = f"{now.month}/{now.day}/{now.year - 2000} {now.hour}:{now.minute:02}"
+
+    updateStatCSV(year)
+    updateStandings(year)
+
+    write_gDoc(year, week, "UPDATING", "L2", italic=True)
+    write_gDoc_stats(year, week)
+    write_gDoc(year, week, f"UPDATED {displayTime}", "L2", bold=True)
+
+    return None
+def updateCurrentSheet():
+    year = currentYear
     calPath = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/{year}/{year}_matchup_cal.csv"
     with open(calPath, 'r') as csvfile:
         reader = csv.reader(csvfile, delimiter=',')
@@ -163,10 +183,19 @@ def updateCurrentSheet(year):
         calList = [[int(week[0]), datetime.date(int(week[1]), int(week[2]), int(week[3])),
                     datetime.date(int(week[4]), int(week[5]), int(week[6]))]
                    for week in reader]
-    today = datetime.date.today()
-    currentWeek = bs_calList(today, calList)
 
-    write_gDoc_stats(year, currentWeek)
+    today = datetime.date.today()
+    current_time = datetime.datetime.now().time()
+
+    # if the time is still before or equal to 2AM count it as yesterday
+    # makes sure Sunday games that go past midnight EST are accounted for
+    if current_time <= datetime.time(2, 0):
+        currentWeek = bs_calList(today - timedelta(days=1), calList)
+    else:
+        currentWeek = bs_calList(today, calList)
+
+    print(f"Current Year, Week: {year}, {currentWeek}")
+    return updateSheet(year, currentWeek)
 
 def updateStandings(year, extSeason = None):
     worksheet = gc.open(gDocNames[year]).worksheet(f"Overall Rank")
@@ -186,20 +215,18 @@ def updateStandings(year, extSeason = None):
     worksheet.update(cat_standings_list, f"F32:H41")
 
 if __name__ == '__main__':
-    year = 2025
-    week = 21
+    year = 2026
+    week = 15
 
-    # createWeekSheet(year, week)
+    createWeekSheet(year, week)
 
-    write_gDoc_stats(year,week)
+    # updateSheet(year, week)
 
-    # write_gDoc_sched(year)
+    updateCurrentSheet()
 
-    # makeRestOfSheets(year, startWeek=19)
+    # makeRestOfSheets(year, startWeek=17)
 
-    # updateCurrentSheet(year)
-
-    # genSched(2024)
+    # genSched(year)
 
     # updateStandings(year)
 

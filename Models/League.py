@@ -3,19 +3,17 @@ from Models.Draft import *
 from Models.TeamManager import *
 import pandas as pd
 import numpy as np
-
+from sklearn.preprocessing import MinMaxScaler
 
 class fantasyLeague():
     def __init__(self, startYear: int = 0, endYear: int = 0, include: list = [], exclude: list = []):
         # if startYear is less than the earliest year played OR greater than the latest year played,
         # set it to the earliest year played
-        if startYear < min(si.keys()) or startYear > max(si.keys()):
-            startYear = min(si.keys())
+        startYear = max(min(si.keys()), min(max(si.keys()),startYear))
 
         # if endYear is less than the earliest year played OR greater than the latest year played,
         # set it to the latest year played
-        if endYear < min(si.keys()) or endYear > max(si.keys()):
-            endYear = max(si.keys())
+        endYear = max(si.keys()) if endYear > max(si.keys()) or endYear < min(si.keys()) else endYear
 
         self.include = include
         # if there is no specific include year list provided, include all years within startYear and endYear
@@ -58,11 +56,11 @@ class fantasyLeague():
     def __repr__(self):
         return f"fantasyLeague({self.include})"
 
-    def get_filtered_df(self, years=[], weeks=[], teams=[], opps=[], RS=True, PO=True, real=True):
+    def get_filtered_df(self, years=[], weeks=[], teams=[], opps=[], RS=True, PO=True, real=True) -> pd.DataFrame:
         if len(years) == 0:
             years = self.include
         if len(weeks)==0:
-            weeks = list(range(1, max(weekCountDict.values()) + max(playoffRounds.values())))
+            weeks = list(range(1, max(RS_weekCountDict.values()) + max(playoffRounds.values())))
         if len(teams)==0:
             teams = [team.name for team in self.historicalMembers]
         if len(opps)==0:
@@ -81,6 +79,67 @@ class fantasyLeague():
                             (self.compStatDF["Team"].isin(teams))
         ]
         return filtered_df
+
+    def get_totals_df(self, groupby_col: str | list[str] = 'Team', years=[], weeks=[], teams=[], opps=[], RS=True, PO=True, real=True):
+        if isinstance(groupby_col, str):
+            groupby_col = [groupby_col]
+
+        df = self.get_filtered_df(years=years, weeks=weeks, teams=teams, opps=opps, RS=RS, PO=PO, real=real)[['Team', 'Year', 'Week']+mainCats]
+        # Create a dictionary of aggregations
+        agg_dict = {col: 'mean' for col in mainCatsPCT}
+        agg_dict.update({col: 'sum' for col in mainCatsSum})
+
+        # Perform the groupby + aggregation
+        df = df.groupby(groupby_col, as_index=False).agg(agg_dict)
+
+        scaler = MinMaxScaler()
+        # WEIGHTED RANKING scale; scales values from 1 to 0 (lowest to highest)
+        def minmax_rating_scale(df, columns):
+            return df[columns].transform(
+                lambda x: pd.Series(scaler.fit_transform(x.values.reshape(-1, 1)).flatten(), index=x.index))
+
+        for col in posCats:
+            df[col + '_rank'] = df[col].rank(method='min', ascending=False)
+            df[col + '_rating'] = minmax_rating_scale(df, [col])
+
+        stat_df_copy = df.copy()
+        stat_df_copy[negCats] = -stat_df_copy[negCats]
+        for col in negCats:
+            df[col + '_rank'] = df[col].rank(method='min', ascending=True)
+            df[col + '_rating'] = minmax_rating_scale(stat_df_copy, [col])
+
+        df['avg_rating'] = df[mainCats_ratings].mean(axis=1)
+        df['Rank'] = df['avg_rating'].rank(ascending=False)
+
+        return df
+
+    def get_avg_df(self, groupby_col: str | list[str] = 'Team', years=[], weeks=[], teams=[], opps=[], RS=True, PO=True, real=True):
+        if isinstance(groupby_col, str):
+            groupby_col = [groupby_col]
+
+        df = self.get_filtered_df(years=years, weeks=weeks, teams=teams, opps=opps, RS=RS, PO=PO, real=real)[['Team', 'Year', 'Week']+mainCats]
+        df = df.groupby(groupby_col, as_index=False).mean()
+
+        scaler = MinMaxScaler()
+        # WEIGHTED RANKING scale; scales values from 1 to 0 (lowest to highest)
+        def minmax_rating_scale(df, columns):
+            return df[columns].transform(
+                lambda x: pd.Series(scaler.fit_transform(x.values.reshape(-1, 1)).flatten(), index=x.index))
+
+        for col in posCats:
+            df[col + '_rank'] = df[col].rank(method='min', ascending=False)
+            df[col + '_rating'] = minmax_rating_scale(df, [col])
+
+        stat_df_copy = df.copy()
+        stat_df_copy[negCats] = -stat_df_copy[negCats]
+        for col in negCats:
+            df[col + '_rank'] = df[col].rank(method='min', ascending=True)
+            df[col + '_rating'] = minmax_rating_scale(stat_df_copy, [col])
+
+        df['avg_rating'] = df[mainCats_ratings].mean(axis=1)
+        df['Rank'] = df['avg_rating'].rank(ascending=False)
+
+        return df
 
 class leagueSeason:
     def __init__(self, year):
@@ -162,13 +221,23 @@ if __name__ == '__main__':
     #     print(team.team, team.teamScore)
 
     x = fantasyLeague()
-    df = x.compStatDF
+    print(x.get_totals_df() [["Team"]+mainCats])
+    print(x.get_totals_df(PO = False) [["Team"]+mainCats])
+    print(x.get_totals_df(RS=False) [["Team"]+mainCats])
+    # df_tot = x.get_totals_df(["Team", "Year"])
+    # df_avg = x.get_avg_df(["Team", "Year"])
 
-    df13 = x.get_filtered_df(weeks=list(range(13,25)))
-    df15 = x.get_filtered_df(weeks=list(range(15,25)))
+    # df = df_tot.sort_values(by='PTS', ascending=False)
+    # print(df_avg.sort_values(by='PTS', ascending=False))
+    # print(x.get_filtered_df(real=True)[['Team', 'week_wt_rank', 'week_rank']])
 
-    print(df13.groupby(['Team'])['matchup_win'].sum().sort_values())
-    print(df15.groupby(['Team'])['matchup_win'].sum().sort_values())
+    # df13 = x.get_filtered_df(weeks=list(range(13,25)))
+    # df15 = x.get_filtered_df(weeks=list(range(15,25)))
+
+    # print(df13.groupby(['Team'])['matchup_win'].sum().sort_values())
+    # print(df15.groupby(['Team'])['matchup_win'].sum().sort_values())
+
+    # print(df13.groupby(['Team'])['week_rank'].mean())
 
     # df1 = df1.loc[(df1['Team'].isin(['Fano'])) & (df1['Year']==2025)][['Team', 'Year']]
     # print(df1)

@@ -23,7 +23,7 @@ class regSeason:
         self.is_WL = si[year]['is_WL']
 
         self.statCats = ['FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PTS']
-        self.RSweekCount = weekCountDict[self.year] # from constants
+        self.RSweekCount = RS_weekCountDict[self.year] # from constants
 
         if self.year == currentYear:
             self.currentWeek = min(getLastWeek(self.year), self.RSweekCount)
@@ -38,7 +38,9 @@ class regSeason:
             self.make_stats()
 
         self.matchups = []
+        self.full_matchups = []
         self.make_matchups()
+        self.make_full_matchups()
 
         if 'PTS_opp' not in self.statDF.columns:
             self.df_build_out()
@@ -63,7 +65,7 @@ class regSeason:
     # returns filtered df for use in any future function that uses filtered data
     def get_filtered_df(self, weeks=[], teams=[], opps=[], RS=True, PO=True, real=True):
         if len(weeks)==0:
-            weeks = list(range(1, max(weekCountDict.values()) + max(playoffRounds.values())))
+            weeks = list(range(1, max(RS_weekCountDict.values()) + max(playoffRounds.values())))
         if len(teams)==0:
             teams = self.teams
         if len(opps)==0:
@@ -130,16 +132,35 @@ class regSeason:
             matchupObj.getStats(self.statDict)
             matchupObj.getResults(self.statCats)
 
-    def get_WL_standings(self, week = 0, sortedReturn = True):
+    def make_full_matchups(self):
+        for week in range(1, self.currentWeek+1):
+            if week not in self.statDict:
+                break
+            for team in self.statDict[week]:
+                for opp in self.statDict[week]:
+                    if opp == team:
+                        continue
+                    matchup_obj = matchup(self.year, week, team, opp)
+                    matchup_obj.getStats(self.statDict)
+                    matchup_obj.getResults(self.statCats)
+                    if matchup_obj not in self.matchups:
+                        matchup_obj.count = False
+
+                    self.full_matchups.append(matchup_obj)
+
+    def get_WL_standings(self, startWeek = 0, endWeek = 0, sortedReturn = True):
         recDict = {}
-        if week <= 0 or week > self.currentWeek:
-            week = self.currentWeek
+        if endWeek <= 0 or endWeek >= self.currentWeek:
+            endWeek = self.currentWeek
+        if startWeek <= 0 or startWeek >= self.currentWeek:
+            startWeek = 1
 
         for team in self.teams:
-            recDict[team] = {'wins':0, 'losses':0, 'ties':0, 'score':0}
+            recDict[team] = {'wins': 0, 'losses': 0, 'ties': 0, 'score': 0}
         # print(recDict)
 
-        for matchup in self.matchups[:math.ceil(self.teamCount/2)*week]:
+        for matchup in self.matchups[math.ceil(self.teamCount / 2) * (startWeek - 1):
+        math.ceil(self.teamCount / 2) * endWeek]:
             if matchup.is_reg and matchup.count:
                 # print(matchup)
                 try:
@@ -176,10 +197,7 @@ class regSeason:
         else:
             return recDict
 
-    def get_WL_standings_DF(self, week = 0, sortedReturn = True):
-        if week <= 0 or week > self.currentWeek:
-            week = self.currentWeek
-
+    def get_WL_standings_DF(self, sortedReturn = True):
         recDF = self.statDF.loc[(self.statDF['Week'] <= self.RSweekCount)] \
             .groupby('Team')[['matchup_win', 'matchup_loss', 'matchup_tie']].sum()
 
@@ -211,15 +229,19 @@ class regSeason:
         else:
             return recDict
 
-    def get_Cats_standings(self, week = 0, sortedReturn = True):
+    def get_Cats_standings(self, startWeek = 0, endWeek = 0, sortedReturn = True):
         recDict = {}
-        if week <= 0 or week > self.currentWeek:
-            week = self.currentWeek
+        if endWeek <= 0 or endWeek >= self.currentWeek:
+            endWeek = self.currentWeek
+        if startWeek <= 0 or startWeek >= self.currentWeek:
+            startWeek = 1
 
         for team in self.teams:
             recDict[team] = {'wins': 0, 'losses': 0, 'ties': 0, 'score': 0}
+        # print(recDict)
 
-        for matchup_obj in self.matchups[:math.ceil(self.teamCount / 2) * week]:
+        for matchup_obj in self.matchups[math.ceil(self.teamCount / 2) * (startWeek-1) :
+                                            math.ceil(self.teamCount / 2) * endWeek]:
             if matchup_obj.is_reg and matchup_obj.count:
 
                 recDict[matchup_obj.team1]['wins'] += matchup_obj.wins
@@ -254,6 +276,129 @@ class regSeason:
             return standingsDict
         else:
             return recDict
+
+    def get_swapped_schedule_standings(
+            self,
+            teamA: str,
+            teamB: str,
+            startWeek: int = 0,
+            endWeek: int = 0,
+            format: str = "def",  # "def" | "wl" | "cats" (case-insensitive)
+            sortedReturn: bool = True,
+    ):
+        """
+        Returns standings if teamA and teamB swapped schedules for the given week range.
+        If teamA and teamB play each other in a week, that matchup is kept as-is.
+
+        format:
+          - "wl"   -> matchup W/L standings
+          - "cats" -> category W/L standings
+          - anything else (default "def") -> uses the season's current format (self.is_WL)
+        """
+
+        if teamA == teamB:
+            raise ValueError("teamA and teamB must be different.")
+        if teamA not in self.teams or teamB not in self.teams:
+            raise ValueError("Both teams must be in this season's teams list.")
+
+        startWeek, endWeek = self.get_week_range(startWeek, endWeek)
+        endWeek = min(endWeek, self.RSweekCount)
+
+        fmt = (format or "def").strip().lower()
+        if fmt not in ("wl", "cats"):
+            fmt = "wl" if self.is_WL else "cats"
+
+        # --- Build per-week opponent mapping for the swapped schedule
+        swapped_rows = []
+        for week in range(startWeek, endWeek + 1):
+            if week not in self.statDict:
+                continue
+
+            # base mapping from actual schedule
+            opp_map = {}
+            for t in self.teams:
+                try:
+                    opp_map[t] = self.statDict[week][t]["Opp"]
+                except (KeyError, TypeError):
+                    opp_map[t] = None
+
+            origA = opp_map.get(teamA)
+            origB = opp_map.get(teamB)
+
+            if origA is None or origB is None:
+                continue
+
+            # keep head-to-head week as-is
+            head_to_head = (origA == teamB) or (origB == teamA)
+            if not head_to_head:
+                # Swap teamA and teamB opponents
+                opp_map[teamA] = origB
+                opp_map[teamB] = origA
+
+                # Maintain reciprocity for their opponents (unless BYE)
+                if origB not in ("BYE", None):
+                    opp_map[origB] = teamA
+                if origA not in ("BYE", None):
+                    opp_map[origA] = teamB
+
+            # collect rows for all teams that have a matchup (non-BYE)
+            for t, opp in opp_map.items():
+                if opp in (None, "BYE"):
+                    continue
+                swapped_rows.append({"Week": week, "Team": t, "Opp": opp})
+
+        if not swapped_rows:
+            return {} if sortedReturn else {}
+
+        swap_df = pd.DataFrame(swapped_rows).drop_duplicates()
+
+        # --- Pull the matchup result rows from statDF for those swapped opponents
+        base_df = self.statDF.loc[
+            (self.statDF["Week"].between(startWeek, endWeek)) &
+            (self.statDF["Week"] <= self.RSweekCount) &
+            (self.statDF["Week Name"].str.startswith("M"))
+            ]
+
+        use_df = base_df.merge(swap_df, on=["Week", "Team", "Opp"], how="inner")
+
+        # --- Build standings
+        recDict = {t: {"wins": 0, "losses": 0, "ties": 0, "score": 0} for t in self.teams}
+
+        if fmt == "wl":
+            agg = use_df.groupby("Team")[["matchup_win", "matchup_loss", "matchup_tie"]].sum()
+            for t in agg.index:
+                w = float(agg.loc[t, "matchup_win"])
+                l = float(agg.loc[t, "matchup_loss"])
+                d = float(agg.loc[t, "matchup_tie"])
+                recDict[t]["wins"] = w
+                recDict[t]["losses"] = l
+                recDict[t]["ties"] = d
+                recDict[t]["score"] = w + 0.49 * d
+
+        else:  # fmt == "cats"
+            agg = use_df.groupby("Team")[["cat_wins", "cat_losses", "cat_ties"]].sum()
+            for t in agg.index:
+                w = float(agg.loc[t, "cat_wins"])
+                l = float(agg.loc[t, "cat_losses"])
+                d = float(agg.loc[t, "cat_ties"])
+                recDict[t]["wins"] = w
+                recDict[t]["losses"] = l
+                recDict[t]["ties"] = d
+                recDict[t]["score"] = w + 0.49 * d
+
+        sortedTeams = sorted(recDict, key=lambda k: recDict[k]["score"], reverse=True)
+
+        standingsDict = {}
+        place = 1
+        for t in sortedTeams:
+            standingsDict[place] = (
+                t,
+                f"{int(recDict[t]['wins'])}W-{int(recDict[t]['losses'])}L-{int(recDict[t]['ties'])}D"
+            )
+            recDict[t]["position"] = place
+            place += 1
+
+        return standingsDict if sortedReturn else recDict
 
     def get_RSwinner_WL(self):
         return self.get_WL_standings()[1][0]
@@ -363,7 +508,7 @@ class regSeason:
 
         avgCatRankDict = {team: {cat: 0 for cat in mainCats} for team in self.teams}
 
-        # have to build this separately to accomodate exception for when team has a BYE week
+        # have to build this separately to accommodate exception for when team has a BYE week
         # and doesn't appear in avgCatRankDict
         for team in avgCatRankDict:
             weeksPlayed = 0
@@ -505,9 +650,83 @@ class regSeason:
 
         return catTotals
 
-    #TODO: write league Win standings for WL and Cats
-    def get_league_wins_standings_WL(self, startWeek = 0, endWeek = 0):
-        startWeek, endWeek = self.get_week_range(startWeek, endWeek)
+    def get_league_wins_standings_WL(self, startWeek = 0, endWeek = 0, sortedReturn = True):
+        recDict = {}
+        if endWeek <= 0 or endWeek >= self.currentWeek:
+            endWeek = self.currentWeek
+        if startWeek <= 0 or startWeek >= self.currentWeek:
+            startWeek = 1
+
+        for team in self.teams:
+            recDict[team] = {'wins': 0, 'losses': 0, 'ties': 0, 'score': 0}
+        # print(recDict)
+
+        for matchup in self.full_matchups[self.teamCount * (self.teamCount - 1) * (startWeek - 1) :
+                                            self.teamCount * (self.teamCount-1) * endWeek]:
+            if matchup.is_reg:
+                # print(matchup)
+                try:
+                    if matchup.winner == matchup.team1:
+                        recDict[matchup.team1]['wins'] += 1
+                        recDict[matchup.team1]['score'] += 1
+                    elif matchup.loser == matchup.team1:
+                        recDict[matchup.team1]['losses'] += 1
+                except KeyError:  # if matchup was a tie
+                    # only do team1 because hyp_matchups will have a separate matchup obj for team2 (where team2 is team1)
+                    recDict[matchup.team1]['ties'] += 1
+                    recDict[matchup.team1]['score'] += 0.49
+
+        sortedTeams = sorted(recDict, key=lambda k: recDict[k]['score'])
+        sortedTeams.reverse()
+
+        standingsDict = {}
+        place = 1
+
+        for team in sortedTeams:
+            standingsDict[place] = (
+                team, f"{recDict[team]['wins']}W-{recDict[team]['losses']}L-{recDict[team]['ties']}D")
+            recDict[team]['position'] = place
+            place += 1
+
+        if sortedReturn:
+            return standingsDict
+        else:
+            return recDict
+
+    def get_league_wins_standings_Cats(self, startWeek = 0, endWeek = 0, sortedReturn = True):
+        recDict = {}
+        if endWeek <= 0 or endWeek >= self.currentWeek:
+            endWeek = self.currentWeek
+        if startWeek <= 0 or startWeek >= self.currentWeek:
+            startWeek = 1
+
+        for team in self.teams:
+            recDict[team] = {'wins': 0, 'losses': 0, 'ties': 0, 'score': 0}
+        # print(recDict)
+
+        for matchup in self.full_matchups[self.teamCount * (self.teamCount - 1) * (startWeek - 1):
+        self.teamCount * (self.teamCount - 1) * endWeek]:
+            if matchup.is_reg:
+                recDict[matchup.team1]['wins'] += matchup.wins
+                recDict[matchup.team1]['losses'] += matchup.losses
+                recDict[matchup.team1]['ties'] += matchup.ties
+                recDict[matchup.team1]['score'] += matchup.wins + 0.49 * matchup.ties
+
+        sortedTeams = sorted(recDict, key=lambda k: recDict[k]['score'])
+        sortedTeams.reverse()
+
+        standingsDict = {}
+        place = 1
+        for team in sortedTeams:
+            standingsDict[place] = (
+            team, f"{recDict[team]['wins']}W-{recDict[team]['losses']}L-{recDict[team]['ties']}D")
+            recDict[team]['position'] = place
+            place += 1
+
+        if sortedReturn:
+            return standingsDict
+        else:
+            return recDict
 
     # DATAFRAME PREP FUNCTIONS
     def df_build_out(self):
@@ -517,45 +736,51 @@ class regSeason:
         self.statDF.drop('Count', axis=1)
 
         scaler = MinMaxScaler()
-        # RANKING scale; scales values from 1 to 0 (lowest to highest)
+        # WEIGHTED RANKING scale; scales values from 1 to 0 (lowest to highest)
         def minmax_rank_scale(df, columns):
             return df.groupby('Week')[columns].transform(
                 lambda x: 1-pd.Series(scaler.fit_transform(x.values.reshape(-1, 1)).flatten(), index=x.index))
+
         # RATING scale; scales values from 0 to 1 (lowest to highest)
         def minmax_rating_scale(df, columns):
             return df.groupby('Week')[columns].transform(
-                lambda x: pd.Series(scaler.fit_transform(x.values.reshape(-1, 1)).flatten(), index=x.index))
+                lambda x: pd.Series(scaler.fit_transform(x.values.reshape(-1, 1)).flatten(), index=x.index))*100
 
         # add columns for cat ranks + overall week rank
         for col in posCats:
-            self.statDF[col + '_rank'] = minmax_rank_scale(self.statDF, [col])
+            self.statDF[col + '_rank'] = self.statDF.groupby('Week')[col].rank(method='min', ascending=False)
+            self.statDF[col + '_wt_rank'] = minmax_rank_scale(self.statDF, [col])
             self.statDF[col + '_rating'] = minmax_rating_scale(self.statDF, [col])
 
         # Rank and rate neg Cats on their negative values
         stat_df_copy = self.statDF.copy()
         stat_df_copy[negCats] = -stat_df_copy[negCats]
         for col in negCats:
-            self.statDF[col + '_rank'] = minmax_rank_scale(stat_df_copy, [col])
+            self.statDF[col + '_rank'] = self.statDF.groupby('Week')[col].rank(method='min', ascending=True)
+            self.statDF[col + '_wt_rank'] = minmax_rank_scale(stat_df_copy, [col])
             self.statDF[col + '_rating'] = minmax_rating_scale(stat_df_copy, [col])
 
         rank_cols = [col + '_rank' for col in mainCats]
+        wt_rank_cols = [col + '_wt_rank' for col in mainCats]
         rating_cols = [col + '_rating' for col in mainCats]
 
-        self.statDF['week_rank'] = self.statDF[rank_cols].mean(axis=1)
-        self.statDF['week_rank'] = 1-minmax_rank_scale(self.statDF, ['week_rank'])
+        self.statDF['week_wt_rank'] = self.statDF[wt_rank_cols].mean(axis=1)
+        self.statDF['week_wt_rank'] = 1-minmax_rank_scale(self.statDF, ['week_wt_rank'])
+
+        self.statDF['week_rank'] = self.statDF.groupby('Week')['week_wt_rank'].rank(method='min', ascending=True)
 
         self.statDF['week_rating'] = self.statDF[rating_cols].mean(axis=1)
         self.statDF['week_rating'] = minmax_rating_scale(self.statDF, ['week_rating'])
 
         # re-scale all RANK values so that they range from teamCount to 1 (worst to best)
-        self.statDF[rank_cols+['week_rank']] = self.statDF[rank_cols+['week_rank']].apply(
+        self.statDF[wt_rank_cols+['week_wt_rank']] = self.statDF[wt_rank_cols+['week_wt_rank']].apply(
             lambda x: (self.teamCount-1) * x+1)
 
         self.statDF['real_matchup'] = 1
         # add rows so that there is a row for every hypothetical matchup in which a team played another team
         # these will be used to calculate league wins
         self.statDF = self.statDF.merge(
-            self.statDF[['Week','Team'] + mainCats + ['week_rank', 'week_rating']],
+            self.statDF[['Week','Team'] + mainCats + ['week_wt_rank', 'week_rating']],
             on=["Week"],
             suffixes=("", "_opp"),
             how="left"  # Ensures unmatched rows still exist
@@ -755,10 +980,15 @@ class poSeason(regSeason):
 
 ## TESTING ##
 if __name__ == '__main__':
-    x = poSeason(2025)
-    print(x.PO_currentWeek)
-    print(x.PO_time)
-    print(x.PO_matchups_by_week)
+    rs = regSeason(2020)
+    # print(rs.get_WL_standings())
+    print(rs.get_swapped_schedule_standings('Fano', 'Sama'))
+    print(rs.get_WL_standings())
+
+    # x = poSeason(2025)
+    # print(x.PO_currentWeek)
+    # print(x.PO_time)
+    # print(x.PO_matchups_by_week)
     # print(x.statDF[['Week', 'Team', 'Opp', 'real_matchup', 'week_rating_opp']])
     # print(x.statDF.columns)
     # print(x.statDF.loc[x.statDF['Week']==1][['PTS', 'PTS_rank', 'PTS_rating', 'TO', 'TO_rank', 'TO_rating']].sort_values('TO'))

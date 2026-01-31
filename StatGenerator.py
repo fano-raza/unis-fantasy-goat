@@ -72,7 +72,7 @@ def genStatDict(year):
         league_data = espnLeague._fetch_league()
         sched = league_data.get("schedule")
 
-        statDict = {week:{} for week in range(1, weekCountDict[year] + playoffRounds[year] + 1)}
+        statDict = {week:{} for week in range(1, RS_weekCountDict[year] + playoffRounds[year] + 1)}
         for matchup in sched:
             try:
                 team1 = espnTeamIDs.get(year).get(matchup.get('home').get('teamId'))
@@ -83,7 +83,7 @@ def genStatDict(year):
                 team2 = "BYE"
 
             week = matchup.get('matchupPeriodId')
-            if week > weekCountDict[year] + playoffRounds[year]:
+            if week > RS_weekCountDict[year] + playoffRounds[year]:
                 break
             statDict[week][team1] = {'Opp':team2}
             statDict[week][team2] = {'Opp':team1}
@@ -147,8 +147,8 @@ def genStatList(year, extStatDict = None):
 
     for week in statDict:
         try:
-            weekName = f"M{week}" if week <= weekCountDict[year] else f"P{week % weekCountDict[year]}"
-            reg = 'RS' if week <= weekCountDict[year] else 'PO'
+            weekName = f"M{week}" if week <= RS_weekCountDict[year] else f"P{week % RS_weekCountDict[year]}"
+            reg = 'RS' if week <= RS_weekCountDict[year] else 'PO'
             for team in statDict[week]:
                 count = False if statDict[week][team]['Opp'] == 'BYE' or team == 'BYE' else True
                 statLine = [statDict[week][team].get(stat,"") for stat in statCats]
@@ -172,17 +172,17 @@ def genStatCSV(year, extStatList=[]):
         writer.writerow(header)
         writer.writerows(statList)
 
-def updateStatCSV(year, startWeek = 0, extStatList = []):
+def updateStatCSV(year, startWeek = 0, endWeek = 0, extStatList = []):
     if year not in si:
         print("Invalid Year")
         return None
 
     pathname = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/ref/{year}_CompStats.csv"
     try:
-        with open(pathname, 'r') as csvfile:
+        with (open(pathname, 'r') as csvfile):
             csvList = list(csv.reader(csvfile))
             startWeek = int(csvList[-1][1]) if startWeek <= 0 else startWeek
-            maxWeek = getLastWeek(year)
+            maxWeek = getLastWeek(year) if (endWeek <= 0 or endWeek >= getLastWeek(year)) else endWeek
 
         if si[year]['is_espn']:
             espnLeague = League(espn_leagueID, year, espn_s2, espn_swid)
@@ -201,7 +201,7 @@ def updateStatCSV(year, startWeek = 0, extStatList = []):
                     team2 = "BYE"
 
                 week = matchup.get('matchupPeriodId')
-                if week > weekCountDict[year] + playoffRounds[year]:
+                if week > RS_weekCountDict[year] + playoffRounds[year]:
                     break
                 statDict[week][team1] = {'Opp': team2}
                 statDict[week][team2] = {'Opp': team1}
@@ -250,15 +250,12 @@ def updateStatCSV(year, startWeek = 0, extStatList = []):
                     statDict[week][team1] = statDict1
                     statDict[week][team2] = statDict2
 
-        # for week in statDict:
-        #     print(statDict[week].keys())
-
         lastRow = 0 + 2*-(-teamCount[year] // 2) * (startWeek-1)
         row = lastRow
         csvList = csvList[:lastRow+1]
         for week in statDict:
-            weekName = f"M{week}" if week <= weekCountDict[year] else f"P{week % weekCountDict[year]}"
-            reg = 'RS' if week <= weekCountDict[year] else 'PO'
+            weekName = f"M{week}" if week <= RS_weekCountDict[year] else f"P{week % RS_weekCountDict[year]}"
+            reg = 'RS' if week <= RS_weekCountDict[year] else 'PO'
             for team in statDict[week]:
                 count = False if statDict[week][team]['Opp'] == 'BYE' or team == 'BYE' else True
                 statLine = [statDict[week][team].get(stat, "") for stat in statCats]
@@ -278,7 +275,7 @@ def genStatDF(year, extStatList=None):
         return None
 
     if extStatList:
-        print(f"making df out of existing list")
+        # print(f"making df out of existing list")
         # startTime = time.time()
         data = extStatList
         cols = ['Year', 'Week', 'Week Name', 'Season', 'Count', 'Team', 'Opp'] + statCats
@@ -300,9 +297,9 @@ def genStatDF(year, extStatList=None):
     return stat_df
 
 if __name__ == '__main__':
-    year = 2025
+    year = currentYear
 
-    # genStatCSV(year)
+    genStatCSV(year)
 
     updateStatCSV(year)
 
