@@ -1,7 +1,15 @@
+import os
+import sys
+
+REPO_ROOT = os.path.abspath(os.path.dirname(__file__))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
 from espn_fr.basketball import league
 from yfpy_fr.query import YahooFantasySportsQuery
 from constants import *
 import csv
+from shared.runtime_config import calendar_csv_path
 
 ## ESPN league/login info
 leagueID = 82864377
@@ -21,7 +29,7 @@ for week in gameInfo.game_weeks:
     line = [week.week]+startDate+endDate
     csvList.append(line)
 
-pathname = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/{year}/{year}_matchup_cal.csv"
+pathname = calendar_csv_path(year)
 with open(pathname, 'w') as csvfile:
     header = ["week","start year","start mon", "start day", "end year", "end mon", "end day"]
     writer = csv.writer(csvfile)

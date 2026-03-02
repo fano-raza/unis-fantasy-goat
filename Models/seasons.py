@@ -1,3 +1,10 @@
+import os
+import sys
+
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
 from constants import *
 from constants import seasonInfoDict as si
 from espn_fr.basketball import *
@@ -11,6 +18,7 @@ from StatGenerator import *
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
+from shared.runtime_config import comp_stats_csv_path
 
 class regSeason:
     def __init__(self, year, extStatDict = None, extStatDF = None):
@@ -23,6 +31,11 @@ class regSeason:
         self.is_WL = si[year]['is_WL']
 
         self.statCats = ['FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PTS']
+        self.standings_tiebreakers = [
+            "head_to_head_cat_score",
+            "total_category_wins",
+            "season_category_totals_matchup",
+        ]
         self.RSweekCount = RS_weekCountDict[self.year] # from constants
 
         if self.year == currentYear:
@@ -31,7 +44,7 @@ class regSeason:
             self.currentWeek = self.RSweekCount
 
         # Stat Data Structures
-        self.statCSV = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/ref/{self.year}_CompStats.csv"
+        self.statCSV = comp_stats_csv_path(self.year)
         self.statDict = {} if not extStatDict else extStatDict
         self.statDF = extStatDF if isinstance(extStatDF, pd.DataFrame) else pd.DataFrame()
         if len(self.statDict)==0 or self.statDF.size==0:
@@ -61,6 +74,125 @@ class regSeason:
         if startWeek <=0 or startWeek > self.currentWeek:
             startWeek = 1
         return startWeek, endWeek
+
+    def _get_regular_season_df(self, startWeek, endWeek):
+        startWeek, endWeek = self.get_week_range(startWeek, endWeek)
+        endWeek = min(endWeek, self.RSweekCount)
+
+        return self.statDF.loc[
+            (self.statDF["Week"] >= startWeek) &
+            (self.statDF["Week"] <= endWeek) &
+            (self.statDF["Week Name"].str.startswith("M")) &
+            (self.statDF["Team"].isin(self.teams))
+        ]
+
+    def _get_team_category_profile(self, rs_df, team):
+        team_df = rs_df.loc[(rs_df["Team"] == team) & (rs_df["Opp"] != "BYE")]
+        profile = {cat: 0 for cat in self.statCats}
+
+        if team_df.empty:
+            return profile
+
+        for cat in self.statCats:
+            if cat in ("FG%", "FT%"):
+                profile[cat] = float(team_df[cat].mean())
+            else:
+                profile[cat] = float(team_df[cat].sum())
+
+        return profile
+
+    def _get_profile_matchup_score(self, profile1, profile2):
+        wins = losses = ties = 0
+        for cat in self.statCats:
+            v1, v2 = profile1[cat], profile2[cat]
+            if cat == "TO":
+                if v1 < v2:
+                    wins += 1
+                elif v1 > v2:
+                    losses += 1
+                else:
+                    ties += 1
+            else:
+                if v1 > v2:
+                    wins += 1
+                elif v1 < v2:
+                    losses += 1
+                else:
+                    ties += 1
+        return wins + 0.49 * ties
+
+    def _get_tiebreak_values(self, teams, startWeek, endWeek):
+        rs_df = self._get_regular_season_df(startWeek, endWeek)
+        values = {
+            team: {
+                "head_to_head_cat_score": 0.0,
+                "total_category_wins": 0.0,
+                "season_category_totals_matchup": 0.0,
+            }
+            for team in teams
+        }
+
+        # 1) Head-to-head category score among tied teams
+        h2h_df = rs_df.loc[(rs_df["Team"].isin(teams)) & (rs_df["Opp"].isin(teams))]
+        if not h2h_df.empty:
+            h2h_agg = h2h_df.groupby("Team")[["cat_wins", "cat_ties"]].sum()
+            for team in teams:
+                if team in h2h_agg.index:
+                    values[team]["head_to_head_cat_score"] = float(
+                        h2h_agg.loc[team, "cat_wins"] + 0.49 * h2h_agg.loc[team, "cat_ties"]
+                    )
+
+        # 2) Total category wins across regular season
+        wins_df = rs_df.loc[(rs_df["Team"].isin(teams))]
+        if not wins_df.empty:
+            wins_agg = wins_df.groupby("Team")["cat_wins"].sum()
+            for team in teams:
+                if team in wins_agg.index:
+                    values[team]["total_category_wins"] = float(wins_agg.loc[team])
+
+        # 3) Category battle using season totals (FG%/FT% use averages)
+        profiles = {team: self._get_team_category_profile(rs_df, team) for team in teams}
+        for team1 in teams:
+            score = 0.0
+            for team2 in teams:
+                if team1 == team2:
+                    continue
+                score += self._get_profile_matchup_score(profiles[team1], profiles[team2])
+            values[team1]["season_category_totals_matchup"] = score
+
+        return values
+
+    def _sort_with_tiebreakers(self, recDict, startWeek, endWeek, tiebreaker_order=None):
+        order = tiebreaker_order or self.standings_tiebreakers
+        for tiebreaker in order:
+            if tiebreaker not in self.standings_tiebreakers:
+                raise ValueError(f"Invalid tiebreaker: {tiebreaker}")
+
+        # Start from primary score order, then break ties by requested tiebreakers
+        initial = sorted(recDict.keys(), key=lambda t: (-recDict[t]["score"], t))
+        sorted_teams = []
+        i = 0
+        while i < len(initial):
+            team = initial[i]
+            group = [team]
+            j = i + 1
+            team_score = round(recDict[team]["score"], 6)
+            while j < len(initial) and round(recDict[initial[j]]["score"], 6) == team_score:
+                group.append(initial[j])
+                j += 1
+
+            if len(group) == 1:
+                sorted_teams.extend(group)
+            else:
+                tiebreak_values = self._get_tiebreak_values(group, startWeek, endWeek)
+                group = sorted(
+                    group,
+                    key=lambda t: tuple([-tiebreak_values[t][tb] for tb in order] + [t])
+                )
+                sorted_teams.extend(group)
+            i = j
+
+        return sorted_teams
 
     # returns filtered df for use in any future function that uses filtered data
     def get_filtered_df(self, weeks=[], teams=[], opps=[], RS=True, PO=True, real=True):
@@ -148,7 +280,7 @@ class regSeason:
 
                     self.full_matchups.append(matchup_obj)
 
-    def get_WL_standings(self, startWeek = 0, endWeek = 0, sortedReturn = True):
+    def get_WL_standings(self, startWeek = 0, endWeek = 0, sortedReturn = True, tiebreaker_order=None):
         recDict = {}
         if endWeek <= 0 or endWeek >= self.currentWeek:
             endWeek = self.currentWeek
@@ -174,8 +306,7 @@ class regSeason:
                     recDict[matchup.team2]['score'] += 0.49
 
 
-        sortedTeams = sorted(recDict, key=lambda k: recDict[k]['score'])
-        sortedTeams.reverse()
+        sortedTeams = self._sort_with_tiebreakers(recDict, startWeek, endWeek, tiebreaker_order=tiebreaker_order)
 
         standingsDict = {}
         if self.is_WL and self.year in standingsOverwrite:
@@ -197,7 +328,7 @@ class regSeason:
         else:
             return recDict
 
-    def get_WL_standings_DF(self, sortedReturn = True):
+    def get_WL_standings_DF(self, sortedReturn = True, tiebreaker_order=None):
         recDF = self.statDF.loc[(self.statDF['Week'] <= self.RSweekCount)] \
             .groupby('Team')[['matchup_win', 'matchup_loss', 'matchup_tie']].sum()
 
@@ -207,8 +338,12 @@ class regSeason:
                           'score': recDF.loc[team, 'matchup_win']+0.49*recDF.loc[team, 'matchup_tie']
                           } for team in self.teams}
 
-        sortedTeams = sorted(recDict, key=lambda k: recDict[k]['score'])
-        sortedTeams.reverse()
+        sortedTeams = self._sort_with_tiebreakers(
+            recDict,
+            startWeek=1,
+            endWeek=min(self.currentWeek, self.RSweekCount),
+            tiebreaker_order=tiebreaker_order,
+        )
 
         standingsDict = {}
         if self.is_WL and self.year in standingsOverwrite:
@@ -229,7 +364,7 @@ class regSeason:
         else:
             return recDict
 
-    def get_Cats_standings(self, startWeek = 0, endWeek = 0, sortedReturn = True):
+    def get_Cats_standings(self, startWeek = 0, endWeek = 0, sortedReturn = True, tiebreaker_order=None):
         recDict = {}
         if endWeek <= 0 or endWeek >= self.currentWeek:
             endWeek = self.currentWeek
@@ -255,8 +390,7 @@ class regSeason:
                 recDict[matchup_obj.team2]['ties'] += matchup_obj.ties
                 recDict[matchup_obj.team2]['score'] += matchup_obj.losses + 0.49 * matchup_obj.ties
 
-        sortedTeams = sorted(recDict, key=lambda k: recDict[k]['score'])
-        sortedTeams.reverse()
+        sortedTeams = self._sort_with_tiebreakers(recDict, startWeek, endWeek, tiebreaker_order=tiebreaker_order)
 
         standingsDict = {}
         if not self.is_WL and self.year in standingsOverwrite:

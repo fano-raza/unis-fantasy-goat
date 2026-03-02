@@ -1,9 +1,17 @@
+import os
+import sys
+
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
 from constants import *
 from constants import seasonInfo as si
 from espn_fr.basketball import *
 from yfpy_fr import YahooFantasySportsQuery
 from yfpy_fr.YahooQuery import *
 import csv
+from shared.runtime_config import draft_results_csv_path
 
 class Draft:
     def __init__(self, year, extResults = None):
@@ -17,7 +25,7 @@ class Draft:
         ## Draft Variables
         self.draftResults = extResults if extResults else []
         self.draftDict = {team: [] for team in self.teams}
-        self.draftCSV = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/{self.year}/{self.year} Draft Results.csv"
+        self.draftCSV = draft_results_csv_path(self.year)
         self.bestPick = []
         self.worstPick = []
         self.draftScore = 0
@@ -38,7 +46,7 @@ class Draft:
     def __repr__(self):
         return f"Draft({self.year-1-2000}/{self.year-2000} Season, Score: {self.draftScore})"
 
-    def runDraft(self, extResults = None): #produce self.draftResults
+    def runDraft(self, extResults = None, csv_exists = True): #produce self.draftResults
         if extResults:
             # print("running existing draft")
             self.draftResults = extResults
@@ -46,20 +54,25 @@ class Draft:
                 self.draftDict[player.team].append(player)
             return
 
-        # Draft CSV exists:
-        try:
-            with open(self.draftCSV, 'r') as file:
-                # print("running new draft from csv")
-                csvFile = csv.reader(file)
-                for line in csvFile:
-                    if line[0] != 'Round':  ## skip header row
-                        player = Pick(self.year, int(line[0]), int(line[1]), int(line[2]), line[3], line[4])
+        if csv_exists:
+            # Draft CSV exists:
+            try:
+                with open(self.draftCSV, 'r') as file:
+                    # print("running new draft from csv")
+                    csvFile = csv.reader(file)
+                    for line in csvFile:
+                        if line[0] != 'Round':  ## skip header row
+                            player = Pick(self.year, int(line[0]), int(line[1]), int(line[2]), line[3], line[4])
 
-                        self.draftResults.append(player)
-                        self.draftDict[player.team].append(player)
+                            self.draftResults.append(player)
+                            self.draftDict[player.team].append(player)
 
+            # Draft CSV doesn't exist
+            except FileNotFoundError:
+                csv_exists = False
+
+        if not csv_exists:
         # Draft CSV doesn't exist
-        except FileNotFoundError:
             # print("running new draft from queries")
             # snake draft order: True when forwards, False when backwards
             order = True
@@ -122,6 +135,16 @@ class Draft:
                     self.draftDict[player.team].append(player)
                     # update the "last round" so that the loop can know if the round has changed when it loops back
                     lastRound = self.yDraft[pick].round
+
+    def updateDraft(self, extResults = None):
+        if extResults:
+            # print("running existing draft")
+            self.draftResults = extResults
+            for player in self.draftResults:
+                self.draftDict[player.team].append(player)
+            return
+        else:
+            self.runDraft(csv_exists=False)
 
     def calcDraftScore(self, extResults):
         if extResults:
@@ -305,6 +328,8 @@ if __name__ == '__main__':
     # team = "Fano"
     #
     y = Draft(currentYear)
+    y.updateDraft()
+    y.makeDraftCSV()
     # x = teamDraft("Chirayu", 2025)
     # print(x.teamBestPick, x.teamWorstPick)
     # print(x.bestPick, x.worstPick)
@@ -312,8 +337,8 @@ if __name__ == '__main__':
     # print(x.draftScore)
     # print(y.makeRankDict())
     # print(y.draftScore)
-    y.makeDraftCSV()
-    # y.runDraft(True)
+    # y.makeDraftCSV()
+    # y.runDraft(extResult = True)
     # for year in range(2019,2025):
     #     x = Draft(year)
     #     y = teamDraft(team, year)

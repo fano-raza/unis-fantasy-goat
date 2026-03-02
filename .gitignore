@@ -1,0 +1,15 @@
+# Local environment files
+.env
+.env.*
+!*.env.example
+!**/*.env.example
+
+# Discord bot local secrets
+discord/.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store

@@ -8,7 +8,10 @@ import requests
 
 # === Config ===
 
-DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1442777568179785780/9Gh2uoE895-bbFJG4IIuqKd2w7zRBNMwFylxQOAsSfHR0sL11Z7EjTR3xykDmff-KHy-"
+DISCORD_WEBHOOK_URL = os.getenv(
+    "DISCORD_WEBHOOK_URL",
+    "https://discord.com/api/webhooks/1442777568179785780/9Gh2uoE895-bbFJG4IIuqKd2w7zRBNMwFylxQOAsSfHR0sL11Z7EjTR3xykDmff-KHy-",
+)
 STATS_URL = (
     "https://docs.google.com/spreadsheets/d/"
     "1BTYpWILKa2xgUyB8VFvBxGFn9C5nxo1C0-2-QsJ7AD0/edit?gid=1346622527#gid=1346622527"
@@ -17,8 +20,24 @@ STATS_URL = (
 STATE_FILE = "milestone_state.json"
 
 # Milestone factors
-FACTOR = 1000        # normal milestone step
-BIG_FACTOR = 10000   # big milestone step
+# Per-category factors by stat name ("PTS", "REB", etc.)
+# Example: FACTOR_BY_CATEGORY["PTS"] = 5000
+DEFAULT_FACTOR = 1000
+DEFAULT_BIG_FACTOR = 10000
+FACTOR_BY_CATEGORY: Dict[str, int] = {
+    "PTS": 10000,
+    "REB": 1000,
+    "AST": 1000,
+    "STL": 500,
+    "BLK": 500,
+}
+BIG_FACTOR_BY_CATEGORY: Dict[str, int] = {
+    "PTS": 25000,
+    "REB": 5000,
+    "AST": 5000,
+    "STL": 1000,
+    "BLK": 1000,
+}
 
 
 # === State helpers ===
@@ -57,6 +76,14 @@ def _ordinal(n: int) -> str:
     return f"{n}{suffix}"
 
 
+def _get_factor(stat_name: str) -> int:
+    return FACTOR_BY_CATEGORY.get(stat_name, DEFAULT_FACTOR)
+
+
+def _get_big_factor(stat_name: str) -> int:
+    return BIG_FACTOR_BY_CATEGORY.get(stat_name, DEFAULT_BIG_FACTOR)
+
+
 # === Core logic ===
 
 def notify_milestones(dataframes: Dict[str, pd.DataFrame]) -> bool:
@@ -73,7 +100,7 @@ def notify_milestones(dataframes: Dict[str, pd.DataFrame]) -> bool:
     Behavior:
       1) Milestones:
          For each (context, team, stat), if the stat value has reached or
-         surpassed a new multiple of FACTOR since the last run, send:
+         surpassed a new multiple of the per-category factor since the last run, send:
            **Team** just reached **<milestone>** <context> <stat_name>!
          If that milestone is also a multiple of BIG_FACTOR (e.g. 25,000),
          send a special message with emojis + "BIG MILESTONE REACHED".
@@ -114,8 +141,11 @@ def notify_milestones(dataframes: Dict[str, pd.DataFrame]) -> bool:
                 if num_val <= 0:
                     continue
 
-                # highest FACTOR-multiple reached by this value
-                new_milestone = int(num_val // FACTOR) * FACTOR
+                factor = _get_factor(stat_name)
+                big_factor = _get_big_factor(factor)
+
+                # highest factor-multiple reached by this value
+                new_milestone = int(num_val // factor) * factor
                 if new_milestone <= 0:
                     continue
 
@@ -125,12 +155,12 @@ def notify_milestones(dataframes: Dict[str, pd.DataFrame]) -> bool:
                 if new_milestone > last_milestone:
                     # inside: if new_milestone > last_milestone:
 
-                    prev_big_tier = last_milestone // BIG_FACTOR  # e.g. 0 if < 25k, 1 if 25k–49,999
-                    curr_big_tier = new_milestone // BIG_FACTOR
+                    prev_big_tier = last_milestone // big_factor  # e.g. 0 if < 25k, 1 if 25k–49,999
+                    curr_big_tier = new_milestone // big_factor
 
                     if curr_big_tier > prev_big_tier:
                         # They crossed at least one BIG_FACTOR threshold since last check
-                        crossed_val = curr_big_tier * BIG_FACTOR  # the highest 25k multiple they've now reached/passed
+                        crossed_val = curr_big_tier * big_factor  # the highest BIG multiple they've now reached/passed
                         line = (
                             f"🎉🎉 **BIG MILESTONE REACHED** 🎉🎉\n"
                             f"**{team_name}** just reached **{new_milestone}** {context} {stat_name} "
@@ -260,7 +290,6 @@ def notify_milestones(dataframes: Dict[str, pd.DataFrame]) -> bool:
         *lines,
         "",
         f"See more stats: [Open sheet]({STATS_URL})",
-        "@here",
     ]
 
     payload = {"content": "\n".join(content_parts)}

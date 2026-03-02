@@ -1,0 +1,11 @@
+flask
+gspread
+pandas
+numpy
+scikit-learn
+requests
+disnake
+openai
+aiohttp
+stringcase
+yahoo_oauth

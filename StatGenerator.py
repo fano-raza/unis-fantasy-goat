@@ -1,3 +1,10 @@
+import os
+import sys
+
+REPO_ROOT = os.path.abspath(os.path.dirname(__file__))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
 from constants import *
 import csv
 from espn_fr.basketball import League
@@ -6,6 +13,38 @@ from constants import seasonInfoDict as si
 from yfpy_fr import YahooFantasySportsQuery
 import pandas as pd
 import time
+from shared.runtime_config import comp_stats_csv_path
+
+def _apply_replacement_stats_for_week(stat_dict, year, week, stat_keys):
+    if not replacement_stats:
+        return
+    for entry in replacement_stats:
+        if entry.get("year") != year or entry.get("week") != week:
+            continue
+        team = entry.get("team")
+        if not team or team not in stat_dict:
+            continue
+        for stat in stat_keys:
+            if stat in entry:
+                stat_dict[team][stat] = entry[stat]
+
+
+def _apply_replacement_stats_all(stat_dict, year, stat_keys):
+    if not replacement_stats:
+        return
+    for entry in replacement_stats:
+        if entry.get("year") != year:
+            continue
+        week = entry.get("week")
+        team = entry.get("team")
+        if week is None or not team:
+            continue
+        week_dict = stat_dict.get(week)
+        if not week_dict or team not in week_dict:
+            continue
+        for stat in stat_keys:
+            if stat in entry:
+                week_dict[team][stat] = entry[stat]
 
 def genWeekStatDict(year, week):
     if year not in si:
@@ -60,6 +99,7 @@ def genWeekStatDict(year, week):
             statDict[team2] = {stat: teamStat2.get(yStatMap.get(stat)) for stat in mainCats}
             statDict[team1]['Opp'], statDict[team2]['Opp'] = team2, team1
 
+    _apply_replacement_stats_for_week(statDict, year, week, mainCats)
     return statDict
 def genStatDict(year):
     if year not in si:
@@ -136,6 +176,7 @@ def genStatDict(year):
                 statDict[week][team1] = statDict1
                 statDict[week][team2] = statDict2
 
+    _apply_replacement_stats_all(statDict, year, statCats)
     return statDict
 
 def genStatList(year, extStatDict = None):
@@ -162,7 +203,7 @@ def genStatList(year, extStatDict = None):
 def genStatCSV(year, extStatList=[]):
     print(f"\nGenerating stats for all teams from the {year - 1}/{year} season")
 
-    pathname = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/ref/{year}_CompStats.csv"
+    pathname = comp_stats_csv_path(year)
 
     statList = extStatList if len(extStatList)>0 else genStatList(year)
 
@@ -177,7 +218,7 @@ def updateStatCSV(year, startWeek = 0, endWeek = 0, extStatList = []):
         print("Invalid Year")
         return None
 
-    pathname = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/ref/{year}_CompStats.csv"
+    pathname = comp_stats_csv_path(year)
     try:
         with (open(pathname, 'r') as csvfile):
             csvList = list(csv.reader(csvfile))
@@ -250,6 +291,7 @@ def updateStatCSV(year, startWeek = 0, endWeek = 0, extStatList = []):
                     statDict[week][team1] = statDict1
                     statDict[week][team2] = statDict2
 
+        _apply_replacement_stats_all(statDict, year, statCats)
         lastRow = 0 + 2*-(-teamCount[year] // 2) * (startWeek-1)
         row = lastRow
         csvList = csvList[:lastRow+1]
@@ -284,7 +326,7 @@ def genStatDF(year, extStatList=None):
 
     else:
         try:
-            csv_path = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/ref/{year}_CompStats.csv"
+            csv_path = comp_stats_csv_path(year)
             stat_df = pd.read_csv(csv_path)
         except FileNotFoundError:
             print(f"Generating {year} DF from scratch...may take some time")
@@ -302,7 +344,4 @@ if __name__ == '__main__':
     genStatCSV(year)
 
     updateStatCSV(year)
-
-
-
 

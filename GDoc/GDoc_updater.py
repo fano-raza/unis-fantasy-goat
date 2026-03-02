@@ -1,20 +1,39 @@
 import threading, time, csv, datetime
+import os
+import sys
 import gspread.exceptions
+from zoneinfo import ZoneInfo
+
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
 from flask import Flask, jsonify
 from GDoc_Week import *
 from GDoc_AllTime import *
 from datetime import timedelta
-from discord_messages import notify_milestones
+from discord.discord_messages import notify_milestones
+from shared.runtime_config import calendar_csv_path
 
 app = Flask(__name__)
+EASTERN_TZ = ZoneInfo("America/New_York")
 
 # prevent double-starts
 job_lock = threading.Lock()
 job_thread = None
 
+def ensure_updater_running():
+    global job_thread
+    with job_lock:
+        if job_thread is None or not job_thread.is_alive():
+            job_thread = threading.Thread(target=run_updater, daemon=True)
+            job_thread.start()
+            return True
+        return False
+
 def run_updater():
     year = currentYear
-    calPath = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/{year}/{year}_matchup_cal.csv"
+    calPath = calendar_csv_path(year)
     with open(calPath, 'r') as csvfile:
         reader = csv.reader(csvfile, delimiter=',')
         next(reader)
@@ -23,10 +42,9 @@ def run_updater():
                    for week in reader]
 
     while True:
-        today = datetime.date.today()
-        current_time = datetime.datetime.now().time()
-
-        now = datetime.datetime.now()
+        now = datetime.datetime.now(EASTERN_TZ)
+        today = now.date()
+        current_time = now.replace(tzinfo=None).time()
         displayTime = f"{now.month}/{now.day}/{now.year - 2000} {now.hour}:{now.minute:02}"
 
         # if the time is still before or equal to 2AM count it as yesterday
@@ -79,55 +97,51 @@ def run_updater():
 
                 notify = notify_milestones(dfs)
 
-                target_time = datetime.time(18, 0)
-                delta = datetime.datetime.combine(today, target_time) - datetime.datetime.combine(today, current_time)
-                print("waiting until 6PM...")
-                time.sleep(max(0, delta.total_seconds()))
+                target_dt = now.replace(hour=18, minute=0, second=0, microsecond=0)
+                delta = target_dt - now
+                seconds_until_target = max(0, delta.total_seconds())
+                sleep_seconds = min(60 * 60, seconds_until_target)
+                print(f"waiting {int(sleep_seconds)}s before next time check (toward 6PM EST)...")
+                time.sleep(sleep_seconds)
             except gspread.exceptions.APIError:
                 print("Encountered API Error")
                 time.sleep(120)
             except Exception as e:
-                print("Encountered Other Error:", e)
+                print(f"Encountered Other Error: {e} at {displayTime}")
                 time.sleep(60*5)
 
 @app.route('/')
 def index():
-    return 'OK — go to /run-script to kick off the updater'
+    return 'OK — updater server is running'
+
+@app.route('/status')
+def status():
+    alive = bool(job_thread and job_thread.is_alive())
+    return jsonify({"updater_thread_alive": alive})
 
 @app.route('/run-script')
 def run_script():
-    global job_thread
-    with job_lock:
-        if job_thread is None or not job_thread.is_alive():
-            job_thread = threading.Thread(target=run_updater, daemon=True)
-            job_thread.start()
-            started = True
-        else:
-            started = False
+    started = ensure_updater_running()
     return jsonify({"status": "running", "started_now": started})
 
 if __name__ == '__main__':
+    started = ensure_updater_running()
+    print(f"Updater thread started on boot: {started}")
     # If you’re accessing from another device on your LAN, use host='0.0.0.0'
     app.run(debug=True, use_reloader=False)  # disable reloader to avoid starting the thread twice
 
 ## INSTRUCTIONS TO RUN
 '''
 1. RUN THE FOLLOWING LINE IN THE TERMINAL
-python3 /Users/fano/Documents/Fantasy/Fantasy\ GOAT/unisFantasyGOAT/GDoc/GDoc_updater.py
+python3 GDoc/GDoc_updater.py
 
 OR
 
-PYTHONPATH="/Users/fano/Documents/Fantasy/Fantasy GOAT/unisFantasyGOAT" \
-python3 "/Users/fano/Documents/Fantasy/Fantasy GOAT/unisFantasyGOAT/GDoc/GDoc_updater.py"
+PYTHONPATH="$PWD" python3 GDoc/GDoc_updater.py
+
+THE INSTRUCTIONS BELOW ARE DEPRECATED.
+SIMPLY RUNNING THIS SCRIPT WILL START THE UPDATER SERVER AND SCHEDULE THE UPDATES TO RUN AUTOMATICALLY.
 
 2. THEN RUN THE FOLLOWING LINE
 curl -i http://127.0.0.1:5000/run-script
-
-OR
-
-CLICK ON/OPEN THIS LINK
-http://127.0.0.1:5000/run-script
-
-3. CLICK ON THE SERVER LINK
 '''
-

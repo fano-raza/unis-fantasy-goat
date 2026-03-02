@@ -1,18 +1,26 @@
+import os
 import gspread as gs
 import math
 from espn_fr.basketball.constant import STATS_MAP
 import datetime
 import csv
+from shared.runtime_config import (
+    GOOGLE_SERVICE_ACCOUNT_JSON_PATH,
+    calendar_csv_path,
+)
 
 
 ## ESPN league/login info
 espn_leagueID = 82864377
-espn_s2 = 'AEB10E76tw6SHjpKpDqw7nBJndJfFekcJaC%2FiUC0JrJ2wj1Nb5YcBVZ04ary1%2F%2FEiiqzXaA1UPb0CcRBu%2FMpigZ%2BX6Hr%2FqD0nan6hZfQok4YHbHuVkIAVHzfUnJ%2FLDPNMqtIcS8ZmhAFVwW62RM6HlhFSk1DZz6z29J0TZjioAkFhYwVDaf6ILm%2FrtaSTeBSPwdSOqxxyd%2F%2FzlZwt1avKDdP0fLxEytLrCGjtUpd8LANz6kvqXLgUBjRCz0YBrKbYlfzkc6zhmt2Fx%2Fncfcoi5eEOZbTPlFJRG%2B2k6Qw079Z7g%3D%3D'
-espn_swid = '{F1B30D95-9F03-4CA9-BE62-D89858BE885E}'
+espn_s2 = os.getenv(
+    "ESPN_S2",
+    'AEB10E76tw6SHjpKpDqw7nBJndJfFekcJaC%2FiUC0JrJ2wj1Nb5YcBVZ04ary1%2F%2FEiiqzXaA1UPb0CcRBu%2FMpigZ%2BX6Hr%2FqD0nan6hZfQok4YHbHuVkIAVHzfUnJ%2FLDPNMqtIcS8ZmhAFVwW62RM6HlhFSk1DZz6z29J0TZjioAkFhYwVDaf6ILm%2FrtaSTeBSPwdSOqxxyd%2F%2FzlZwt1avKDdP0fLxEytLrCGjtUpd8LANz6kvqXLgUBjRCz0YBrKbYlfzkc6zhmt2Fx%2Fncfcoi5eEOZbTPlFJRG%2B2k6Qw079Z7g%3D%3D'
+)
+espn_swid = os.getenv("ESPN_SWID", '{F1B30D95-9F03-4CA9-BE62-D89858BE885E}')
 
 ## Yahoo league/login info
-yKey = "dj0yJmk9S0hLcFVjVVZtd2ZMJmQ9WVdrOWVqUk9XazV4YW1zbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PTQ3"
-ySec = "f98bfdf3286771e0b58de7b4062a59b0f867f467"
+yKey = os.getenv("YAHOO_KEY", "dj0yJmk9S0hLcFVjVVZtd2ZMJmQ9WVdrOWVqUk9XazV4YW1zbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PTQ3")
+ySec = os.getenv("YAHOO_SECRET", "f98bfdf3286771e0b58de7b4062a59b0f867f467")
 yTok = "uB0jRRyZ51jlQNiz47T97fln1VPV73fMQHr6EiZOLHq31g20X4pPKGU8dS4vAuDfRV1L1jWSvtuI57mrYF5Gvj1C75qjhbv4yjtrICnLapQ7IqnpjS1cdqXzhK2PG.EeRBAHBt0qE29gg6lUqX5HPFD0IddWjj6PEmbB8tZkJRfEefC1R8uvcyu97E545TbBaR8Aox1FGxReq6IVe_q4knZJ1vJVSxMY2xPgZNT6YrD.DK1vNakcsWys8FSPjOpGt0CdxSntrBXCOmENcjjPjbX7x47MHU1zckZoxmulP312SlcyrOYGZm3Ut5TZVL9dQM9BdAyFXzRkxnVPH0qdt6N1GuuSJ.RdNoTtku7Y5sL_ow..JtrwcXCm05zxsjx9wnyx9Cy_GGUc5EQqfY87a8GwBQN4I3zG2OkYAk7DsA9DFHq5mOTHxazAaTHem2YRaECRr9yxlRckzkcanjXl4Jwb_dvJxaPlXiq2ULhEJj0PGFulmgrpcIkemZL5cjDOYbjL99cSrtsIElNlUDihAgo7jvNflaYoQDSVqYdusIOn1eCjknFv_B72xGyjH9mwjr.mFKSN1GmG7lpBTJjLzAWt9DW6EhoPWI.4Im4Z5dllgTBTrpvy3Bw8CEff0pwhYIMJcx8VoX2m4P8GtR9bDHyMay6ltiurCdOi4C4TkKyCXmb_Svt3p4kpIxjABYK.LIUKC3mktTWMs2dhRUYdfENiZyVI.8SJZlkHp2B9rmgv3e2BLHILKqeZt4bh7cuggPMOpLKUcmwhqGotsBXD1gknm2prbQ5jcTPvT5HE2YKkk4gM3xZPpxs4q8gz3U98ugiH5B1swIyCB4hBHDmPGJ05RtntSYs4Z_FKoumR4j7jKmlLpd4kjuAumHz5LPFx.XEqILuabedRdTBvYA2BNteGtIMCDzfZxszEJMDTm2KaBYclZLLSCXZrl0JNPCGmT889BOK6W7Wu0BaVsALsM8aNSQBZyLeKV3uCa0K7REczBKZ1nRUacU8-"
 yRefTok = 'AFRlfGYz42hqZri9tJIlY6d1og_S~000~bkow8_Z7ijMknqCgEQhHIinloToXvkYm'
 
@@ -40,6 +48,12 @@ negCats = ['TO']
 mainCatsSum = ['3PTM', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PTS']
 mainCatsPCT = ['FG%', 'FT%']
 
+# Manual stat overrides (applied after pulling from ESPN/Yahoo)
+# Each dict should include: year, week, team, and any of the 9 main stats
+# Example:
+# {"year": 2026, "week": 1, "team": "Fano", "FG%": 0.45, "FT%": 0.78, "3PTM": 120, "PTS": 950, "REB": 420, "AST": 260, "STL": 65, "BLK": 40, "TO": 90}
+replacement_stats = [{"year":2026, "week":14, "team":"Zahir", "FG%":0.4859, "FT%":0.783, "3PTM":75, "PTS":676, "REB":250, "AST":177, "STL":42, "BLK":19, "TO":94}]
+
 ## season info dict has tuple as value for each key
 ## each tuple will contain ((team1, team2, ...), is ESPN (T/F), is W/L scoring (T/F))
 seasonInfo = {
@@ -62,7 +76,7 @@ seasonInfoDict = {
 teamCount = {year : len(seasonInfo[year][0]) for year in seasonInfo}
 
 ## Calendars
-calendars = {year:f"/Users/fano/Documents/Fantasy/Fantasy GOAT/{year}/{year}_matchup_cal.csv" for year in seasonInfo}
+calendars = {year: calendar_csv_path(year) for year in seasonInfo}
 
 # Draft order for each season
 draftOrder = {
@@ -177,7 +191,7 @@ yStatMap = {
 
 ## GOOGLE DOC SPECIFIC INFO ##
 gc = gs.service_account(
-        "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gspread/fantasy-goat-306ebfffe1c2.json"
+        GOOGLE_SERVICE_ACCOUNT_JSON_PATH
     )
 
 ## Spreadsheet Names ##
@@ -230,7 +244,7 @@ def bs_calList(day, calList): #binary search to find what week/matchup "day" is 
 def getLastWeek(year):
     if year == currentYear:
         today = datetime.date.today()
-        calPath = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/{year}/{year}_matchup_cal.csv"
+        calPath = calendar_csv_path(year)
         with open(calPath, 'r') as csvfile:
             reader = csv.reader(csvfile, delimiter=',')
             next(reader)

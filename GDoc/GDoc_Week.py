@@ -9,14 +9,22 @@ import sys
 import os
 import threading, time, csv, datetime
 import gspread.exceptions
+from zoneinfo import ZoneInfo
+
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
 from flask import Flask, jsonify
 from GDoc_AllTime import *
 from datetime import timedelta
-from discord_messages import notify_milestones
+from discord.discord_messages import notify_milestones
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(parent_dir)
 
 from Models.seasons import *
+
+EASTERN_TZ = ZoneInfo("America/New_York")
 
 def genWeekStats(year, week):
     stats = gDocStatCats
@@ -50,7 +58,6 @@ def genWeekStats(year, week):
     else:
         yQuery = YahooFantasySportsQuery('',yLeagueIDs[year],'nba',yGameIDs[year],False,False,yKey,ySec)
 
-        matchupListCopy = yQuery.get_league_matchups_by_week(week)
         team_stats = yQuery.get_all_team_stats_by_week(week)
 
         for team_id in team_stats:
@@ -79,8 +86,8 @@ def write_gDoc_stats(year, week):
     writeUpdateTime(year, week, "L2")
 
 def writeUpdateTime(year, week, cell):
-    now = datetime.datetime.now()
-    displayTime = f"{now.month}/{now.day}/{now.year - 2000} {now.hour}:{now.minute:02}"
+    now = datetime.datetime.now(EASTERN_TZ)
+    displayTime = f"{now.month}/{now.day}/{now.year - 2000} {now.hour}:{now.minute:02} EST"
 
     write_gDoc(year, week, f"UPDATED {displayTime}", cell, bold=True)
 
@@ -163,8 +170,8 @@ def makeRestOfSheets(year, startWeek = 1):
             time.sleep(5)
 
 def updateSheet(year, week):
-    now = datetime.datetime.now()
-    displayTime = f"{now.month}/{now.day}/{now.year - 2000} {now.hour}:{now.minute:02}"
+    now = datetime.datetime.now(EASTERN_TZ)
+    displayTime = f"{now.month}/{now.day}/{now.year - 2000} {now.hour}:{now.minute:02} EST"
 
     updateStatCSV(year)
     updateStandings(year)
@@ -176,7 +183,7 @@ def updateSheet(year, week):
     return None
 def updateCurrentSheet():
     year = currentYear
-    calPath = f"/Users/fano/Documents/Fantasy/Fantasy GOAT/{year}/{year}_matchup_cal.csv"
+    calPath = calendar_csv_path(year)
     with open(calPath, 'r') as csvfile:
         reader = csv.reader(csvfile, delimiter=',')
         next(reader)
@@ -216,19 +223,18 @@ def updateStandings(year, extSeason = None):
 
 if __name__ == '__main__':
     year = 2026
-    week = 15
+    week = 17
 
-    createWeekSheet(year, week)
+    updateStatCSV(year, startWeek=week, endWeek=week, extStatList=None)
 
-    # updateSheet(year, week)
+    # createWeekSheet(year, week)
 
-    updateCurrentSheet()
+    updateSheet(year, week)
+
+    # updateCurrentSheet()
 
     # makeRestOfSheets(year, startWeek=17)
 
     # genSched(year)
 
-    # updateStandings(year)
-
-
-
+    updateStandings(year)

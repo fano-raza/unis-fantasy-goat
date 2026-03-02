@@ -2,6 +2,7 @@ from Models.League import fantasyLeague
 from Models.team_profile import build_team_summary_df
 from constants import *
 import datetime
+from zoneinfo import ZoneInfo
 import pandas as pd
 import inspect
 import re
@@ -9,6 +10,7 @@ from StatGenerator import updateStatCSV
 
 gDocName = "All-Time Leaders"
 firstRow = 10
+EASTERN_TZ = ZoneInfo("America/New_York")
 
 def _colnum_to_letter(n: int) -> str:
     s = ""
@@ -210,8 +212,8 @@ def createSheets(baseSheet):
             worksheet_to_copy.duplicate(insert_sheet_index=i+2, new_sheet_name=sheets[i])
 
 def updateTime(sheet, cell):
-    now = datetime.datetime.now()
-    displayTime = f"{now.month}/{now.day}/{now.year - 2000} {now.hour}:{now.minute:02}"
+    now = datetime.datetime.now(EASTERN_TZ)
+    displayTime = f"{now.month}/{now.day}/{now.year - 2000} {now.hour}:{now.minute:02} EST"
 
     write_sheet(sheet, f"UPDATED {displayTime}", cell, bold=True)
 

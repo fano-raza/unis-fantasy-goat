@@ -1,0 +1,25 @@
+[Unit]
+Description=Fantasy Discord Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fantasy
+Group=fantasy
+WorkingDirectory=/opt/unisFantasyGOAT
+EnvironmentFile=/etc/unisfantasy/discord-bot.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/unisFantasyGOAT/.venv/bin/python -m services.discord_bot.entrypoint
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/unisFantasyGOAT /srv/unisfantasy
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

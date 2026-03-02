@@ -1,0 +1,34 @@
+version: "3.9"
+
+services:
+  gdoc-updater:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+    container_name: unisfantasy-gdoc-updater
+    command: ["python", "-m", "services.gdoc_updater.entrypoint"]
+    env_file:
+      - ./env/gdoc-updater.env
+    volumes:
+      - fantasy-data:/srv/unisfantasy/data
+      - fantasy-state:/srv/unisfantasy/state
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+
+  discord-bot:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+    container_name: unisfantasy-discord-bot
+    command: ["python", "-m", "services.discord_bot.entrypoint"]
+    env_file:
+      - ./env/discord-bot.env
+    volumes:
+      - fantasy-data:/srv/unisfantasy/data
+      - fantasy-state:/srv/unisfantasy/state
+    restart: unless-stopped
+
+volumes:
+  fantasy-data:
+  fantasy-state:
