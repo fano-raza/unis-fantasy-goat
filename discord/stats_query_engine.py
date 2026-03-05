@@ -1055,7 +1055,8 @@ def _answer_with_llm(question: str, spec: QuerySpec) -> Optional[str]:
         "Answer ONLY from provided data context and deterministic hint when present. "
         "Prefer concise responses. "
         "If the user asks a simple ranking/place question, answer in one short sentence. "
-        "If the context is insufficient, say what is missing and ask one targeted follow-up."
+        "If the context is insufficient, say what is missing and ask one targeted follow-up. "
+        "Do not include league standings unless the question explicitly asks for standings or seed/place."
     )
 
     try:

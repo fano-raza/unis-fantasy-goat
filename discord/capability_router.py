@@ -251,6 +251,13 @@ def route_question(question: str) -> CapabilityMatch | None:
         direction = "min" if any(tok in q for tok in ["least", "fewest", "worst", "lowest"]) else "max"
         if stat == "TO" and direction == "max" and any(tok in q for tok in ["fewest", "least", "best"]):
             direction = "min"
+        top_n_match = re.search(r"\btop\s*(\d+)\b", q)
+        if top_n_match:
+            top_n_local = int(top_n_match.group(1))
+        elif any(tok in q for tok in ["best", "most", "least", "worst"]):
+            top_n_local = 10
+        else:
+            top_n_local = top_n
         return CapabilityMatch(
             intent="leader_vs_team",
             params={
@@ -259,7 +266,7 @@ def route_question(question: str) -> CapabilityMatch | None:
                 "team": team1,  # target opponent/team filter
                 "direction": direction,
                 "scope": scope,
-                "top_n": max(1, min(30, top_n)),
+                "top_n": max(1, min(30, top_n_local)),
                 "start_week": start_week,
                 "end_week": end_week,
                 "year_range": "ALL" if "all-time" in q or "all time" in q else None,
@@ -273,7 +280,12 @@ def route_question(question: str) -> CapabilityMatch | None:
         if stat == "TO" and any(tok in q for tok in ["worst", "most", "cumulative"]):
             direction = "max"
         top_n_match = re.search(r"\btop\s*(\d+)\b", q)
-        top_n_local = int(top_n_match.group(1)) if top_n_match else top_n
+        if top_n_match:
+            top_n_local = int(top_n_match.group(1))
+        elif any(tok in q for tok in ["best", "most", "least", "worst"]):
+            top_n_local = 10
+        else:
+            top_n_local = top_n
         return CapabilityMatch(
             intent="leader",
             params={
