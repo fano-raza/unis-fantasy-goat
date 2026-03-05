@@ -1,4 +1,5 @@
 import os
+import re
 import math
 from collections import defaultdict
 from functools import lru_cache
@@ -1149,6 +1150,16 @@ def _should_prefer_deterministic(question: str, spec: QuerySpec) -> bool:
     # Keep trivial place/rank responses terse and deterministic.
     if spec.intent == "standings" and spec.place is not None:
         return True
+    if spec.intent in {
+        "record_vs_team",
+        "record_vs_seed",
+        "vs_weekly_top_team",
+        "opponent_uplift",
+        "draft_team_score",
+        "head_to_head",
+        "team_compare",
+    }:
+        return True
     if "first place" in q or "second place" in q or "third place" in q:
         return True
     return False
@@ -1181,6 +1192,54 @@ def _is_ranking_question(question: str) -> bool:
     return any(term in q for term in ranking_terms)
 
 
+def _has_explicit_timeframe(question: str) -> bool:
+    q = question.lower()
+    if re.search(r"\b20\d{2}\b", q):
+        return True
+    explicit_terms = [
+        "all-time",
+        "all time",
+        "career",
+        "entire career",
+        "this season",
+        "current season",
+        "last season",
+        "regular season",
+        "playoffs",
+        "postseason",
+    ]
+    if any(term in q for term in explicit_terms):
+        return True
+    if re.search(r"\bweeks?\b|\bweek\s*\d+\b", q):
+        return True
+    return False
+
+
+def _should_return_both_current_and_all_time(question: str, spec: QuerySpec) -> bool:
+    if _has_explicit_timeframe(question):
+        return False
+    if (spec.year_range or "").upper() == "ALL":
+        return False
+    dual_intents = {
+        "record_vs_team",
+        "record_vs_seed",
+        "opponent_uplift",
+        "vs_weekly_top_team",
+        "draft_team_score",
+    }
+    return spec.intent in dual_intents
+
+
+def _is_current_matchup_question(question: str) -> bool:
+    q = question.lower()
+    return (
+        "current matchup" in q
+        or "currently winning" in q
+        or ("winning" in q and "matchup" in q and "current" in q)
+        or ("winning" in q and "between" in q and "matchup" in q)
+    )
+
+
 def answer_query(question: str, spec: QuerySpec) -> str:
     invalid = _validate_year(spec)
     if invalid:
@@ -1189,6 +1248,22 @@ def answer_query(question: str, spec: QuerySpec) -> str:
     # Keep year defaulted if parser left it empty by mistake.
     if not spec.year:
         spec.year = currentYear
+
+    # Interpret "current matchup" as current-week regular-season head-to-head.
+    if (
+        spec.team
+        and spec.team2
+        and _is_current_matchup_question(question)
+        and spec.week is None
+        and spec.start_week is None
+        and spec.end_week is None
+    ):
+        spec.intent = "head_to_head"
+        spec.scope = "RS"
+        try:
+            spec.week = int(_season(spec.year).currentWeek)
+        except Exception:
+            pass
 
     if spec.intent == "unknown":
         record_unanswered(question, spec, reason="unknown_intent")
@@ -1224,14 +1299,22 @@ def answer_query(question: str, spec: QuerySpec) -> str:
     handler = handlers.get(spec.intent)
     deterministic_response = None
     if handler:
-        response = handler(spec)
+        if _should_return_both_current_and_all_time(question, spec):
+            current_spec = QuerySpec(**vars(spec))
+            current_spec.year_range = None
+            all_time_spec = QuerySpec(**vars(spec))
+            all_time_spec.year_range = "ALL"
+
+            current_resp = handler(current_spec)
+            all_time_resp = handler(all_time_spec)
+            response = (
+                f"Current season ({spec.year}):\n{current_resp}\n\n"
+                f"All-time:\n{all_time_resp}"
+            )
+        else:
+            response = handler(spec)
         if response == "__NO_STAT_FOR_LEADER__":
             record_unanswered(question, spec, reason="missing_stat_for_leader")
-            if spec.deterministic_only:
-                return "For this command, specify a stat (PTS, REB, AST, STL, BLK, TO, 3PTM, FG%, FT%)."
-            llm_answer = _answer_with_llm(question, spec)
-            if llm_answer:
-                return llm_answer
             return (
                 "I couldn't identify the stat. Try one of: PTS, REB, AST, STL, BLK, TO, 3PTM, FG%, FT%, "
                 "or ask standings/rank directly (e.g., 'who is in first place in 2026?')."
@@ -1239,33 +1322,11 @@ def answer_query(question: str, spec: QuerySpec) -> str:
         deterministic_response = response
 
     if deterministic_response and (_should_prefer_deterministic(question, spec) or spec.deterministic_only):
-        if spec.deterministic_only and _requires_llm_for_accuracy(question, spec):
-            record_unanswered(question, spec, reason="requires_llm_in_deterministic_mode")
-            return (
-                "This deterministic command can't reliably answer 'against <team>' phrasing yet. "
-                "Try a more explicit deterministic command or use mention-based free-form mode."
-            )
         if deterministic_response == NO_ANSWER_MSG:
             record_unanswered(question, spec, reason="deterministic_no_answer")
         return deterministic_response
 
-    llm_answer = _answer_with_llm(question, spec)
-    if llm_answer:
-        return llm_answer
-
     if deterministic_response:
-        if _requires_llm_for_accuracy(question, spec):
-            if spec.deterministic_only:
-                record_unanswered(question, spec, reason="requires_llm_in_deterministic_mode")
-                return (
-                    "This deterministic command can't reliably answer 'against <team>' phrasing yet. "
-                    "Try a more explicit deterministic command or use mention-based free-form mode."
-                )
-            record_unanswered(question, spec, reason="requires_llm_but_unavailable")
-            return (
-                "I need LLM answering enabled to reliably handle that phrasing (e.g., 'against <team>'). "
-                "Please verify OPENAI_API_KEY is set, then ask again."
-            )
         if deterministic_response == NO_ANSWER_MSG:
             record_unanswered(question, spec, reason="deterministic_no_answer")
         return deterministic_response
