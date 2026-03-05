@@ -443,6 +443,43 @@ def _answer_opponent_uplift(spec: QuerySpec) -> str:
     return "\n".join(lines)
 
 
+def _answer_vs_weekly_top_team(spec: QuerySpec) -> str:
+    years = _resolve_years(spec)
+    counts = defaultdict(int)
+
+    for year in years:
+        rs = _season(year)
+        df = rs.statDF.copy()
+        df = _filter_df_by_scope(df, "RS")
+        df = df.loc[(df["Team"] != "BYE") & (df["Opp"] != "BYE")]
+        if "real_matchup" in df.columns:
+            df = df.loc[df["real_matchup"] >= 1]
+        if df.empty:
+            continue
+
+        for _, wk in df.groupby("Week Name"):
+            tr = wk.groupby("Team", as_index=False)["week_rating"].mean()
+            if tr.empty:
+                continue
+            mx = tr["week_rating"].max()
+            top_teams = set(tr.loc[tr["week_rating"] == mx, "Team"])
+            pairs = wk[["Team", "Opp"]].drop_duplicates()
+            for _, row in pairs.iterrows():
+                if row["Opp"] in top_teams:
+                    counts[row["Team"]] += 1
+
+    if not counts:
+        return "No qualifying regular-season matchups found for weekly #1-opponent counts."
+
+    rows = sorted(counts.items(), key=lambda x: (-x[1], x[0]))
+    lines = [
+        "Times each team faced an opponent that finished as weekly #1 rating (regular season, all-time scope if requested):"
+    ]
+    for i, (team, c) in enumerate(rows, 1):
+        lines.append(f"{i}. {team} — {c}")
+    return "\n".join(lines)
+
+
 def _answer_correlation(spec: QuerySpec) -> str:
     # Supported initial metric names
     mx = spec.metric_x or "record_vs_seed_1"
@@ -905,12 +942,6 @@ def _build_context_tables(spec: QuerySpec) -> str:
         "FT%": "mean",
     }).sort_values("PTS", ascending=False)
 
-    wl = rs.get_WL_standings()
-    cats = rs.get_Cats_standings()
-
-    wl_rows = [f"{k}. {v[0]} ({v[1]})" for k, v in wl.items()]
-    cat_rows = [f"{k}. {v[0]} ({v[1]})" for k, v in cats.items()]
-
     sample = agg.round(4).to_csv()
 
     extra_sections = []
@@ -921,10 +952,20 @@ def _build_context_tables(spec: QuerySpec) -> str:
             top_opp = opp_df.sort_values("PTS", ascending=False).head(25)[cols]
             extra_sections.append(f"Top rows where Opp == {spec.team} (sorted by PTS):\n{top_opp.to_csv(index=False)}")
 
+    standings_blob = ""
+    if spec.intent in {"standings", "standings_alternate", "predict_champion", "record_vs_seed", "correlation", "correlation_scan"}:
+        wl = rs.get_WL_standings()
+        cats = rs.get_Cats_standings()
+        wl_rows = [f"{k}. {v[0]} ({v[1]})" for k, v in wl.items()]
+        cat_rows = [f"{k}. {v[0]} ({v[1]})" for k, v in cats.items()]
+        standings_blob = (
+            f"WL standings:\n" + "\n".join(wl_rows) + "\n\n"
+            f"Category standings:\n" + "\n".join(cat_rows) + "\n\n"
+        )
+
     return (
         f"Season: {spec.year}, scope: {spec.scope}\n"
-        f"WL standings:\n" + "\n".join(wl_rows) + "\n\n"
-        f"Category standings:\n" + "\n".join(cat_rows) + "\n\n"
+        f"{standings_blob}"
         f"Team aggregate table:\n{sample}\n\n"
         + ("\n\n".join(extra_sections) if extra_sections else "")
     )
@@ -969,6 +1010,7 @@ def _answer_with_llm(question: str, spec: QuerySpec) -> Optional[str]:
         "week_leader",
         "record_vs_seed",
         "opponent_uplift",
+        "vs_weekly_top_team",
         "correlation",
         "correlation_scan",
         "trend_split",
@@ -993,6 +1035,7 @@ def _answer_with_llm(question: str, spec: QuerySpec) -> Optional[str]:
             "week_leader": _answer_week_leader,
             "record_vs_seed": _answer_record_vs_seed,
             "opponent_uplift": _answer_opponent_uplift,
+            "vs_weekly_top_team": _answer_vs_weekly_top_team,
             "correlation": _answer_correlation,
             "correlation_scan": _answer_correlation_scan,
             "trend_split": _answer_trend_split,
@@ -1007,23 +1050,12 @@ def _answer_with_llm(question: str, spec: QuerySpec) -> Optional[str]:
         except Exception:
             deterministic_hint = None
 
-    ranking_instruction = ""
-    if _is_ranking_question(question):
-        ranking_instruction = (
-            "This is a ranking-style question. "
-            "Your answer must include BOTH: "
-            "(1) the direct requested rank result (e.g., best/worst/top item), and "
-            "(2) the full ordered ranking list across all relevant teams/years in the provided scope. "
-            "Use numbered lines for the full ranking. "
-        )
-
     sys_prompt = (
         "You are a fantasy basketball data analyst bot. "
         "Answer ONLY from provided data context and deterministic hint when present. "
         "Prefer concise responses. "
         "If the user asks a simple ranking/place question, answer in one short sentence. "
-        "If the context is insufficient, say what is missing and ask one targeted follow-up. "
-        + ranking_instruction
+        "If the context is insufficient, say what is missing and ask one targeted follow-up."
     )
 
     try:
@@ -1118,6 +1150,7 @@ def answer_query(question: str, spec: QuerySpec) -> str:
         "week_leader": _answer_week_leader,
         "record_vs_seed": _answer_record_vs_seed,
         "opponent_uplift": _answer_opponent_uplift,
+        "vs_weekly_top_team": _answer_vs_weekly_top_team,
         "correlation": _answer_correlation,
         "correlation_scan": _answer_correlation_scan,
         "trend_split": _answer_trend_split,

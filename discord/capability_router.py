@@ -176,6 +176,12 @@ def route_question(question: str) -> CapabilityMatch | None:
     if ("opponents" in q and ("overperform" in q or "underperform" in q or "suppress" in q)) or "avg opp delta" in q:
         return CapabilityMatch(intent="opponent_uplift", params={"year": year, "year_range": "ALL", "scope": "RS"})
 
+    if (
+        ("best ranked team of the week" in q or "weekly #1" in q or "week #1" in q or "top team of the week" in q)
+        and ("played against" in q or "face" in q or "faced" in q or "opponent" in q)
+    ):
+        return CapabilityMatch(intent="vs_weekly_top_team", params={"year": year, "year_range": "ALL", "scope": "RS"})
+
     if "toughest schedule" in q or "easiest schedule" in q or "average opponent rating" in q:
         return CapabilityMatch(intent="strength_of_schedule", params={"year": year, "scope": "RS"})
 

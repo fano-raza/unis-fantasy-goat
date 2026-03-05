@@ -45,6 +45,7 @@ VALID_INTENTS = {
     "consistency",
     "what_if_schedule_swap",
     "recap_regular_season",
+    "vs_weekly_top_team",
     "unknown",
 }
 
@@ -356,6 +357,12 @@ def _llm_parse(question: str) -> Optional[QuerySpec]:
 
 
 def parse_query(question: str, use_llm: bool = True) -> QuerySpec:
+    prefer_llm = os.getenv("DISCORD_PREFER_LLM_PARSE", "1").strip().lower() in {"1", "true", "yes", "on"}
+    if use_llm and prefer_llm:
+        parsed = _llm_parse(question)
+        if parsed and parsed.intent != "unknown":
+            return parsed
+
     routed = route_question(question)
     if routed:
         routed_place = routed.params.get("place")
@@ -391,6 +398,6 @@ def parse_query(question: str, use_llm: bool = True) -> QuerySpec:
 
     if use_llm:
         parsed = _llm_parse(question)
-        if parsed:
+        if parsed and parsed.intent != "unknown":
             return parsed
     return _fallback_parse(question)
