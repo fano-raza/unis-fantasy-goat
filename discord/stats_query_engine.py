@@ -883,6 +883,64 @@ def _answer_head_to_head(spec: QuerySpec) -> str:
     )
 
 
+def _answer_record_vs_team(spec: QuerySpec) -> str:
+    if not spec.team:
+        return "Specify a target team (e.g., 'best record against Juan')."
+
+    target = spec.team
+    years = _resolve_years(spec)
+    rec = defaultdict(lambda: {"W": 0, "L": 0, "T": 0, "G": 0})
+
+    for year in years:
+        rs = _season(year)
+        df = _filter_df_by_scope(rs.statDF, spec.scope)
+        df = _filter_df_by_weeks(df, spec.week, spec.start_week, spec.end_week)
+        df = df[(df["Team"] != "BYE") & (df["Opp"] != "BYE")]
+        if "real_matchup" in df.columns:
+            df = df[df["real_matchup"] >= 1]
+        df = df[(df["Opp"] == target) & (df["Team"] != target)]
+        if df.empty:
+            continue
+
+        gr = (
+            df.groupby("Team")[["matchup_win", "matchup_loss", "matchup_tie"]]
+            .sum()
+            .reset_index()
+        )
+        for _, row in gr.iterrows():
+            team = row["Team"]
+            w = int(row["matchup_win"])
+            l = int(row["matchup_loss"])
+            t = int(row["matchup_tie"])
+            rec[team]["W"] += w
+            rec[team]["L"] += l
+            rec[team]["T"] += t
+            rec[team]["G"] += w + l + t
+
+    rows = []
+    for team, r in rec.items():
+        if r["G"] <= 0:
+            continue
+        pct = (r["W"] + 0.5 * r["T"]) / r["G"]
+        rows.append((team, r["W"], r["L"], r["T"], r["G"], pct))
+
+    if not rows:
+        return f"No qualifying matchups found against {target}."
+
+    metric = spec.metric or "win_pct"
+    if metric == "wins":
+        rows.sort(key=lambda x: (x[1], x[5], -x[2], x[0]), reverse=True)
+        title = f"Most wins vs {target} ({'all-time' if (spec.year_range or '').upper() == 'ALL' else spec.year}, {_scope_name(spec.scope)}):"
+    else:
+        rows.sort(key=lambda x: (x[5], x[1], -x[2], x[0]), reverse=True)
+        title = f"Best record vs {target} ({'all-time' if (spec.year_range or '').upper() == 'ALL' else spec.year}, {_scope_name(spec.scope)}):"
+
+    lines = [title]
+    for i, (team, w, l, t, g, pct) in enumerate(rows, 1):
+        lines.append(f"{i}. {team} — {w}-{l}-{t} ({pct:.3f}, {g} games)")
+    return "\n".join(lines)
+
+
 def _answer_team_summary(spec: QuerySpec) -> str:
     if not spec.team:
         return "For team summary, include a team name (e.g., 'summary for Fano in 2026')."
@@ -1006,6 +1064,7 @@ def _answer_with_llm(question: str, spec: QuerySpec) -> Optional[str]:
         "draft_team_score",
         "team_compare",
         "head_to_head",
+        "record_vs_team",
         "team_summary",
         "week_leader",
         "record_vs_seed",
@@ -1031,6 +1090,7 @@ def _answer_with_llm(question: str, spec: QuerySpec) -> Optional[str]:
             "draft_team_score": _answer_draft_team_score,
             "team_compare": _answer_team_compare,
             "head_to_head": _answer_head_to_head,
+            "record_vs_team": _answer_record_vs_team,
             "team_summary": _answer_team_summary,
             "week_leader": _answer_week_leader,
             "record_vs_seed": _answer_record_vs_seed,
@@ -1147,6 +1207,7 @@ def answer_query(question: str, spec: QuerySpec) -> str:
         "draft_team_score": _answer_draft_team_score,
         "team_compare": _answer_team_compare,
         "head_to_head": _answer_head_to_head,
+        "record_vs_team": _answer_record_vs_team,
         "team_summary": _answer_team_summary,
         "week_leader": _answer_week_leader,
         "record_vs_seed": _answer_record_vs_seed,

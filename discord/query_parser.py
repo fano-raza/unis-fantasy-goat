@@ -35,6 +35,7 @@ VALID_INTENTS = {
     "draft_team_score",
     "team_compare",
     "head_to_head",
+    "record_vs_team",
     "team_summary",
     "week_leader",
     "record_vs_seed",

@@ -177,6 +177,29 @@ def route_question(question: str) -> CapabilityMatch | None:
         return CapabilityMatch(intent="opponent_uplift", params={"year": year, "year_range": "ALL", "scope": "RS"})
 
     if (
+        team1
+        and ("against" in q or "vs " in q or "versus " in q)
+        and (
+            "best record" in q
+            or "most wins" in q
+            or "won the most" in q
+            or "won most games" in q
+            or "wins against" in q
+        )
+    ):
+        metric = "wins" if ("most wins" in q or "won the most" in q or "won most games" in q or "wins against" in q) else "win_pct"
+        return CapabilityMatch(
+            intent="record_vs_team",
+            params={
+                "year": year,
+                "team": team1,
+                "scope": scope if scope in {"RS", "PO"} else "RS",
+                "year_range": "ALL" if ("all-time" in q or "all time" in q or "entire career" in q or "career" in q) else None,
+                "metric": metric,
+            },
+        )
+
+    if (
         ("best ranked team of the week" in q or "weekly #1" in q or "week #1" in q or "top team of the week" in q)
         and ("played against" in q or "face" in q or "faced" in q or "opponent" in q)
     ):
