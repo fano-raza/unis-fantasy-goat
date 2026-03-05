@@ -19,6 +19,10 @@ This checklist reflects the current implementation in `discord/` and the manual 
 - Team season summaries
 - Week-specific and week-range stat leaders
 - Broad/free-form analysis fallback via LLM context answering (if `OPENAI_API_KEY` is set)
+ - Deterministic capability router for additional analytics intents:
+   - `record_vs_seed` (e.g., record vs #1 seed/top-k seeds)
+   - `opponent_uplift` (opponent over/under-performance deltas)
+   - `correlation` (selected metric-pair correlations)
   - Hybrid behavior:
     - Simple place/rank questions stay deterministic and concise.
     - Complex/open-ended statistical questions use LLM with grounded data context.
@@ -123,11 +127,29 @@ Slash command examples:
 - Team names are matched to known league member names.
 - Some very open-ended prompts may require LLM fallback (`OPENAI_API_KEY`) to answer well.
 - For true "any analysis" support, keep prompts explicit with year/scope/stat/team when possible.
+- Docker/VM runs require a valid Google service-account JSON on the host and `GOOGLE_SERVICE_ACCOUNT_JSON` pointing to that mounted path (default deployment path: `/srv/unisfantasy/secrets/google-service-account.json`).
 - Monthly LLM token usage can be capped via `DISCORD_LLM_MAX_TOKENS_MONTH`.
 - Real measured LLM token usage is tracked in:
   - `discord/llm_usage_state.json` (monthly running total)
   - `discord/llm_request_log.jsonl` (per-call logs when enabled)
+- Unanswerable/off-base questions are tracked in:
+  - `discord/unanswered_questions.jsonl` (JSONL append log with timestamp, question, parsed spec, reason)
+  - Logging is enabled by default; disable with `DISCORD_UNANSWERED_LOG_DISABLE=1`.
 - Slash commands never call LLM; they are fully deterministic by design.
+
+## Deterministic routing regression tests
+
+- Golden tests are maintained in:
+  - `analytics/analytics_goldens.jsonl`
+- Run parser/regression checks with:
+```bash
+python analytics/run_golden_tests.py
+```
+- Current behavior:
+  - All tracked deterministic intents are asserted.
+  - Current baseline: `39/39` passed, `0` skipped.
+  - Added deterministic predictive routing for chip/title questions (`predict_champion`) using a recency-weighted model.
+    - Controlled by env var `DISCORD_RECENCY_HALF_LIFE_WEEKS` (default `4`).
 
 ## Always-on deployment checklist
 

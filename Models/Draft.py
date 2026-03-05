@@ -144,7 +144,38 @@ class Draft:
                 self.draftDict[player.team].append(player)
             return
         else:
+            # Rebuild draft picks from live provider data and refresh rankings from Yahoo.
+            self.draftResults = []
+            self.draftDict = {team: [] for team in self.teams}
+            self.bestPick = []
+            self.worstPick = []
+            self.draftScore = 0
+            self.avgPickScore = 0
+
             self.runDraft(csv_exists=False)
+
+            topScore, botScore = 0, 10000
+            rankDict = self.makeRankDict()
+            for player in self.draftResults:
+                player.rank = rankDict.get(player.name, 501)
+                player.score = player.oPick - player.rank
+                self.draftScore += player.score
+
+                if player.score >= topScore:
+                    topScore = player.score
+                    if player.score >= topScore:
+                        self.bestPick.clear()
+                    self.bestPick.append(player)
+                elif player.score <= botScore:
+                    if player.rank != 1000 or player.score < botScore:
+                        botScore = player.score
+                        self.worstPick.clear()
+                    self.worstPick.append(player)
+
+                player.updateList()
+
+            self.avgPickScore = self.draftScore / self.totalPicks
+            self.makeDraftCSV()
 
     def calcDraftScore(self, extResults):
         if extResults:
@@ -164,11 +195,17 @@ class Draft:
                         # if player ranks are still -1, do not use draft CSV to get ranking
                         # player ranks will automatically be set to -1 *IN THE CSV* if the draft instance is of the
                         # current year's draft
-                        if int(line[5]) == -1:
+                        try:
+                            csv_rank = int(str(line[5]).strip())
+                        except (TypeError, ValueError):
+                            # Non-numeric values (e.g. "N/A") mean ranking is unavailable.
+                            # Keep calculation local by assigning the default out-of-range rank.
+                            csv_rank = 501
+                        if csv_rank == -1:
                             raise FileNotFoundError
 
                         player = self.draftResults[i]
-                        player.rank = int(line[5])
+                        player.rank = csv_rank
                         player.score = player.oPick-player.rank
                         self.draftScore += player.score
 

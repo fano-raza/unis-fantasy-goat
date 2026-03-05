@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from constants import allMembers, currentYear, seasonInfo
+from .capability_router import route_question
 from .llm_usage import budget_remaining, extract_usage, record_usage
 
 STAT_SYNONYMS = {
@@ -23,11 +24,27 @@ VALID_STATS = list(STAT_SYNONYMS.keys())
 VALID_SCOPES = ["ALL", "RS", "PO"]
 VALID_INTENTS = {
     "leader",
+    "leader_vs_team",
     "standings",
+    "standings_alternate",
+    "predict_champion",
+    "champions_lounge",
+    "mvp_by_avg_rating",
+    "strength_of_schedule",
+    "draft_pick_value",
+    "draft_team_score",
     "team_compare",
     "head_to_head",
     "team_summary",
     "week_leader",
+    "record_vs_seed",
+    "opponent_uplift",
+    "correlation",
+    "correlation_scan",
+    "trend_split",
+    "consistency",
+    "what_if_schedule_swap",
+    "recap_regular_season",
     "unknown",
 }
 
@@ -47,6 +64,19 @@ class QuerySpec:
     end_week: Optional[int] = None
     standings_format: str = "auto"  # auto | wl | cats
     place: Optional[int] = None
+    seed: Optional[int] = None
+    seed_mode: str = "exact"  # exact | top_k
+    k: Optional[int] = None
+    year_range: Optional[str] = None
+    timing: Optional[str] = None
+    method: Optional[str] = None
+    mode: Optional[str] = None
+    n: Optional[int] = None
+    metric: Optional[str] = None
+    target_metric: Optional[str] = None
+    candidate_metrics: Optional[str] = None
+    metric_x: Optional[str] = None
+    metric_y: Optional[str] = None
     deterministic_only: bool = False
 
 
@@ -213,7 +243,7 @@ def _fallback_parse(question: str) -> QuerySpec:
     top_n = _extract_top_n(question)
     place = _extract_place(question)
 
-    intent = "leader"
+    intent = "unknown"
     standings_format = "auto"
 
     standings_signal = (
@@ -239,6 +269,10 @@ def _fallback_parse(question: str) -> QuerySpec:
         intent = "team_summary"
     elif week or start_week:
         intent = "week_leader"
+    elif stat and team and ("against" in q_low or "vs " in q_low or "versus " in q_low):
+        intent = "leader_vs_team"
+    elif stat:
+        intent = "leader"
 
     return QuerySpec(
         intent=intent,
@@ -322,6 +356,39 @@ def _llm_parse(question: str) -> Optional[QuerySpec]:
 
 
 def parse_query(question: str, use_llm: bool = True) -> QuerySpec:
+    routed = route_question(question)
+    if routed:
+        routed_place = routed.params.get("place")
+        if routed_place == "last":
+            routed_place = len(seasonInfo.get(int(routed.params.get("year", currentYear)), (allMembers,))[0])
+        return QuerySpec(
+            intent=routed.intent,
+            year=int(routed.params.get("year", currentYear)),
+            stat=routed.params.get("stat"),
+            scope=_normalize_scope(routed.params.get("scope")),
+            direction=routed.params.get("direction", "max"),
+            top_n=int(routed.params.get("top_n", 1)),
+            team=_normalize_team(routed.params.get("team"), int(routed.params.get("year", currentYear))),
+            team2=_normalize_team(routed.params.get("team2"), int(routed.params.get("year", currentYear))),
+            start_week=routed.params.get("start_week"),
+            end_week=routed.params.get("end_week"),
+            standings_format=_normalize_standings_format(routed.params.get("standings_format")),
+            place=routed_place,
+            seed=routed.params.get("seed"),
+            seed_mode=routed.params.get("seed_mode", "exact"),
+            k=routed.params.get("k"),
+            year_range=routed.params.get("year_range"),
+            timing=routed.params.get("timing"),
+            method=routed.params.get("method"),
+            mode=routed.params.get("mode"),
+            n=routed.params.get("n"),
+            metric=routed.params.get("metric"),
+            target_metric=routed.params.get("target_metric"),
+            candidate_metrics=routed.params.get("candidate_metrics"),
+            metric_x=routed.params.get("metric_x"),
+            metric_y=routed.params.get("metric_y"),
+        )
+
     if use_llm:
         parsed = _llm_parse(question)
         if parsed:

@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   gdoc-updater:
     build:
@@ -10,8 +8,9 @@ services:
     env_file:
       - ./env/gdoc-updater.env
     volumes:
-      - fantasy-data:/srv/unisfantasy/data
-      - fantasy-state:/srv/unisfantasy/state
+      - /srv/unisfantasy/data:/srv/unisfantasy/data
+      - /srv/unisfantasy/state:/srv/unisfantasy/state
+      - /srv/unisfantasy/secrets:/srv/unisfantasy/secrets:ro
     restart: unless-stopped
     ports:
       - "5000:5000"
@@ -25,10 +24,7 @@ services:
     env_file:
       - ./env/discord-bot.env
     volumes:
-      - fantasy-data:/srv/unisfantasy/data
-      - fantasy-state:/srv/unisfantasy/state
+      - /srv/unisfantasy/data:/srv/unisfantasy/data
+      - /srv/unisfantasy/state:/srv/unisfantasy/state
+      - /srv/unisfantasy/secrets:/srv/unisfantasy/secrets:ro
     restart: unless-stopped
-
-volumes:
-  fantasy-data:
-  fantasy-state:

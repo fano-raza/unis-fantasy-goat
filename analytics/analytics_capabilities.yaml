@@ -1,0 +1,214 @@
+version: 1
+
+routing_policy:
+  mode: hybrid
+  notes:
+    - deterministic-first routing by capability
+    - LLM parse fallback only when intent/params cannot be resolved
+    - LLM answer synthesis optional; deterministic formatting preferred for cost control
+
+shared_defaults:
+  year: current_year
+  scope: regular_season
+  season_phase: regular
+  ranking_direction: desc
+  top_n: 10
+  include_full_ranking_for_superlatives: true
+
+capabilities:
+  - name: standings
+    description: Return standings for a season and format.
+    deterministic_function: analytics.get_standings
+    params:
+      - name: year
+        type: int
+      - name: format
+        type: enum
+        values: [auto, wl, cats]
+      - name: week_start
+        type: int
+        optional: true
+      - name: week_end
+        type: int
+        optional: true
+      - name: place
+        type: int
+        optional: true
+    output_schema: [rank, team, record]
+
+  - name: standings_alternate
+    description: Return standings in the non-official format for a season.
+    deterministic_function: analytics.get_alternate_standings
+    params:
+      - {name: year, type: int}
+    output_schema: [rank, team, record, format_used]
+
+  - name: leaderboard_stat
+    description: Rank teams for one stat over selected scope/time window.
+    deterministic_function: analytics.get_stat_leaderboard
+    params:
+      - {name: year, type: int}
+      - {name: stat, type: enum, values: [FG%, FT%, 3PTM, REB, AST, STL, BLK, TO, PTS]}
+      - {name: scope, type: enum, values: [regular_season, playoffs, full_season]}
+      - {name: direction, type: enum, values: [max, min]}
+      - {name: top_n, type: int, min: 1, max: 30}
+      - {name: week_start, type: int, optional: true}
+      - {name: week_end, type: int, optional: true}
+    output_schema: [rank, team, value]
+
+  - name: leaderboard_all_categories
+    description: Return best and worst team for every stat category plus full ranking per category.
+    deterministic_function: analytics.get_all_category_leaders
+    params:
+      - {name: year, type: int}
+      - {name: scope, type: enum, values: [regular_season, playoffs, full_season]}
+    output_schema: [category, leader_team, leader_value, loser_team, loser_value, rankings]
+
+  - name: weekly_top_performer
+    description: Compute #1 weekly rating counts and rankings.
+    deterministic_function: analytics.get_top_performer_counts
+    params:
+      - {name: year, type: int}
+      - {name: scope, type: enum, values: [regular_season, playoffs, full_season]}
+    output_schema: [rank, team, num_top_weeks]
+
+  - name: mvp_by_avg_rating
+    description: Rank teams by average weekly rating.
+    deterministic_function: analytics.get_avg_rating_ranking
+    params:
+      - {name: year, type: int}
+      - {name: scope, type: enum, values: [regular_season, playoffs, full_season]}
+    output_schema: [rank, team, avg_rating]
+
+  - name: head_to_head
+    description: Return matchup and category records for team A vs team B.
+    deterministic_function: analytics.get_head_to_head
+    params:
+      - {name: team_a, type: team}
+      - {name: team_b, type: team}
+      - {name: year, type: int, optional: true}
+      - {name: scope, type: enum, values: [regular_season, playoffs, full_season, all_time]}
+    output_schema: [team_a_record, team_b_record, category_score, game_count]
+
+  - name: team_summary
+    description: Team summary across selected scope.
+    deterministic_function: analytics.get_team_summary
+    params:
+      - {name: team, type: team}
+      - {name: year, type: int, optional: true}
+      - {name: scope, type: enum, values: [regular_season, playoffs, full_season, all_time]}
+    output_schema: [stat_totals, stat_averages, rating_metrics, record_metrics]
+
+  - name: strength_of_schedule
+    description: Rank teams by average opponent rating (higher = tougher schedule).
+    deterministic_function: analytics.get_strength_of_schedule
+    params:
+      - {name: year, type: int}
+      - {name: scope, type: enum, values: [regular_season, playoffs, full_season]}
+    output_schema: [rank, team, avg_opp_rating]
+
+  - name: opponent_uplift
+    description: Opponent performance delta vs each team relative to opponents' own seasonal averages.
+    deterministic_function: analytics.get_opponent_uplift
+    params:
+      - {name: year_range, type: enum, values: [single_year, all_time]}
+      - {name: year, type: int, optional: true}
+      - {name: scope, type: enum, values: [regular_season, playoffs, full_season]}
+    output_schema: [rank, team, avg_opp_delta, median_opp_delta, games]
+
+  - name: record_vs_seed
+    description: Record against opponents with a specified seed entering matchup week.
+    deterministic_function: analytics.get_record_vs_seed
+    params:
+      - {name: seed, type: int, min: 1, max: 12}
+      - {name: seed_mode, type: enum, values: [exact, top_k]}
+      - {name: k, type: int, optional: true}
+      - {name: year_range, type: enum, values: [single_year, all_time]}
+      - {name: year, type: int, optional: true}
+      - {name: standings_basis, type: enum, values: [league_default, wl, cats]}
+      - {name: timing, type: enum, values: [entering_week]}
+    output_schema: [rank, team, wins, losses, ties, win_pct, games]
+
+  - name: draft_pick_value
+    description: Rank individual draft picks by draft score.
+    deterministic_function: analytics.get_draft_pick_value
+    params:
+      - {name: year, type: int}
+      - {name: mode, type: enum, values: [top, bottom]}
+      - {name: n, type: int, min: 1, max: 50}
+    output_schema: [rank, overall_pick, player, team, draft_score]
+
+  - name: draft_team_score
+    description: Rank teams by aggregate draft score.
+    deterministic_function: analytics.get_draft_team_scores
+    params:
+      - {name: year, type: int, optional: true}
+      - {name: scope, type: enum, values: [single_year, all_time]}
+    output_schema: [rank, team, draft_score]
+
+  - name: correlation
+    description: Correlate two named metrics across teams.
+    deterministic_function: analytics.get_metric_correlation
+    params:
+      - {name: metric_x, type: metric_name}
+      - {name: metric_y, type: metric_name}
+      - {name: year_range, type: enum, values: [single_year, all_time]}
+      - {name: year, type: int, optional: true}
+      - {name: method, type: enum, values: [pearson, spearman], default: pearson}
+    output_schema: [metric_x, metric_y, method, correlation, sample_size]
+
+  - name: trend_split
+    description: Compare first-half vs second-half performance.
+    deterministic_function: analytics.get_split_trends
+    params:
+      - {name: year, type: int}
+      - {name: metric, type: metric_name}
+      - {name: split_week, type: int, optional: true}
+    output_schema: [team, first_half_value, second_half_value, delta, rank]
+
+  - name: consistency
+    description: Rank teams by volatility/consistency (std dev of weekly rating).
+    deterministic_function: analytics.get_consistency_ranking
+    params:
+      - {name: year_range, type: enum, values: [single_year, all_time]}
+      - {name: year, type: int, optional: true}
+    output_schema: [rank, team, std_week_rating]
+
+  - name: what_if_schedule_swap
+    description: Swap two teams schedules over a week window and recompute standings.
+    deterministic_function: regSeason.get_swapped_schedule_standings
+    params:
+      - {name: year, type: int}
+      - {name: team_a, type: team}
+      - {name: team_b, type: team}
+      - {name: format, type: enum, values: [wl, cats]}
+      - {name: week_start, type: int, optional: true}
+      - {name: week_end, type: int, optional: true}
+    output_schema: [rank, team, record]
+
+  - name: recap_regular_season
+    description: Generate full regular season recap markdown artifact.
+    deterministic_function: recaps.write_regular_season_recap
+    params:
+      - {name: year, type: int}
+      - {name: output_path, type: path, optional: true}
+    output_schema: [file_path]
+
+metrics_catalog:
+  - avg_rating
+  - overall_matchup_win_pct
+  - overall_category_win_pct
+  - avg_opp_rating
+  - opp_uplift_delta
+  - record_vs_seed_1
+  - record_vs_top2
+  - draft_score
+  - weekly_top_count
+  - standings_position
+
+response_style_rules:
+  deterministic_short_answer_when_possible: true
+  include_full_ranking_for_superlative_queries: true
+  include_sample_size_for_correlations: true
+  include_method_for_correlations: true
+  include_scope_and_year_in_header: true

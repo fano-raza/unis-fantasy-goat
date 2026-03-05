@@ -9,8 +9,8 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from flask import Flask, jsonify
-from GDoc_Week import *
-from GDoc_AllTime import *
+from GDoc.GDoc_Week import *
+from GDoc.GDoc_AllTime import *
 from datetime import timedelta
 from discord.discord_messages import notify_milestones
 from shared.runtime_config import calendar_csv_path

@@ -1,81 +1,72 @@
 # Deployment Context
 
 ## Goal
-Run `GDoc_updater` and the Discord bot on an always-on server so uptime is independent of your laptop.
+Run `gdoc-updater` and the Discord bot on an always-on server so uptime is independent of your laptop.
 
-## Current State (as of 2026-03-02)
-- Services currently run from local machine.
-- Existing deploy assets:
-  - `deploy/REMOTE_SERVER_SETUP.md`
-  - `deploy/systemd/gdoc-updater.service`
-  - `deploy/env/gdoc-updater.env.example`
-- Discord bot currently supports:
-  - mention-based queries
-  - slash commands (deterministic-only)
-  - optional LLM answering for complex mention-based queries
-  - optional channel allowlist
-  - optional LLM token budget + usage logging
+## Current State (as of 2026-03-04)
+- Infrastructure selected: Docker Compose on a DigitalOcean Ubuntu VM (`134.209.168.108`).
+- Repo cloned on server at `/opt/unisFantasyGOAT`.
+- Runtime directories created:
+  - `/srv/unisfantasy/data`
+  - `/srv/unisfantasy/state`
+  - `/srv/unisfantasy/secrets`
+  - `/srv/unisfantasy/backups`
+- Compose env files created:
+  - `infra/docker/env/discord-bot.env`
+  - `infra/docker/env/gdoc-updater.env`
+- Google service account JSON uploaded to:
+  - `/srv/unisfantasy/secrets/google-service-account.json`
+- Compose file in repo now uses host bind mounts for persistent data/state:
+  - `/srv/unisfantasy/data:/srv/unisfantasy/data`
+  - `/srv/unisfantasy/state:/srv/unisfantasy/state`
+  - `/srv/unisfantasy/secrets:/srv/unisfantasy/secrets:ro`
+- Discord analytics engine has expanded deterministic intent support and unanswered-question logging.
 
-## Constraints
-- Must keep local dev workflow intact (edit locally, push, deploy server).
-- Secrets must not be committed to git.
-- Need a path to scale beyond single process/single host.
+## What Is Already Working
+- Discord bot container can start with mounted secrets/data and env contract.
+- Secret mount path is visible inside containers:
+  - `/srv/unisfantasy/secrets/google-service-account.json`
+- Docker networking and published port `5000` are configured.
 
-## Proposed Target Architecture (Phase 1)
-- Single always-on Linux VM.
-- Two long-running processes/containers:
-  - `gdoc-updater`
-  - `discord-bot`
-- Environment-driven configuration for paths, tokens, and toggles.
-- Runtime data and state stored on server volume (not code dir).
-- Log + restart controls for reliability.
+## Current Blocking Issue
+- No known code-level import blocker in current repo head.
+- Main operational risk is server drift (droplet running an older checkout or stale compose/image).
 
-## Scalability Path
-- Phase 1: single VM + process manager (systemd) or Docker Compose.
-- Phase 2: split service configs and independent restart/deploy controls.
-- Phase 3: optional migration to managed container platform.
+## Immediate Next Commands (Resume Here)
+Run on server in `/opt/unisFantasyGOAT`:
 
-## Data/Secrets Direction
-- Store credentials in server env/secrets files.
-- Move hardcoded local paths to env-based directories.
-- Keep data/state directories explicit and mountable.
+```bash
+git fetch origin main
+git checkout main
+git pull --ff-only origin main
+docker compose -f infra/docker/docker-compose.yml up -d --build
+sleep 8
+docker compose -f infra/docker/docker-compose.yml ps -a
+docker compose -f infra/docker/docker-compose.yml logs --since=5m --tail=160 gdoc-updater
+docker compose -f infra/docker/docker-compose.yml logs --since=5m --tail=160 discord-bot
+curl -sS http://127.0.0.1:5000/status
+```
 
-## Env Contract (Implemented So Far)
-- `FANTASY_DATA_ROOT`: base data root for year folders/calendars.
-- `FANTASY_REF_DIR`: directory for yearly `*_CompStats.csv` files.
-- `GOOGLE_SERVICE_ACCOUNT_JSON`: path to gspread service-account JSON.
-- `ESPN_S2`, `ESPN_SWID`: optional overrides for ESPN auth.
-- `YAHOO_KEY`, `YAHOO_SECRET`: optional overrides for Yahoo auth.
-- `DISCORD_WEBHOOK_URL`: override for milestone webhook.
+If next error is missing data files, sync local data root to server:
 
-Path abstraction module:
-- `shared/runtime_config.py`
-  - `calendar_csv_path(year)`
-  - `comp_stats_csv_path(year)`
-  - `draft_results_csv_path(year)`
+```bash
+rsync -avh --progress --exclude "unisFantasyGOAT/" \
+  "/Users/fano/Documents/Fantasy/Fantasy GOAT/" \
+  root@134.209.168.108:/srv/unisfantasy/data/
+```
 
-## Outstanding Risks
-- Hardcoded absolute local paths still exist in code.
-- Current SSL workaround (`DISCORD_SSL_NO_VERIFY`) should be temporary.
-- API quota limits (OpenAI) can disable LLM branch.
+## Data/Secrets Contract
+- `GOOGLE_SERVICE_ACCOUNT_JSON=/srv/unisfantasy/secrets/google-service-account.json`
+- `FANTASY_DATA_ROOT=/srv/unisfantasy/data`
+- `FANTASY_REF_DIR=/srv/unisfantasy/ref` (or wherever `*_CompStats.csv` are staged)
 
-## Audit Findings (Hardcoded Paths/Secrets)
-- Local absolute paths (`/Users/fano/...`) exist in:
-  - `GDoc/GDoc_updater.py`
-  - `GDoc/GDoc_Week.py`
-  - `StatGenerator.py`
-  - `ScheduleGenerator.py`
-  - `Models/seasons.py`
-  - `Models/Draft.py`
-  - `constants.py`
-- Hardcoded Google service account path in `constants.py`.
-- Hardcoded webhook URL in `discord/discord_messages.py`.
-- Credentials currently embedded in `constants.py`:
-  - ESPN cookies/tokens
-  - Yahoo client credentials
-- Existing deploy docs still include local machine path examples that should be generalized for server use.
+## Risks / Cleanups
+- `discord/discord_messages.py` webhook URL has been exposed; rotate in Discord and update env/config.
+- `constants.py` still contains embedded third-party credentials; migrate to env-only values.
+- If server still reports Compose `version` warning, its checkout is stale and needs pull/restart.
 
 ## Decision Log
-- 2026-03-02: start with explicit docs/checklist before refactor.
-- 2026-03-02: maintain split accountability: `Codex Tasks` vs `User Tasks`.
-- 2026-03-02: completed first-pass hardcoded path/secrets audit; next step is env contract definition.
+- 2026-03-02: Use Docker Compose as Phase 1 deployment.
+- 2026-03-02: Keep data/secrets outside repo under `/srv/unisfantasy/*`.
+- 2026-03-04: Standardize on host bind mounts (no named volumes) for data/state/secrets.
+- 2026-03-04: Keep deterministic analytics in bot runtime; unanswered intents logged for periodic review.
