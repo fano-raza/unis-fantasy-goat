@@ -551,15 +551,6 @@ def parse_query(question: str, use_llm: bool = True) -> QuerySpec:
             except Exception:
                 conf = 0.0
             parsed.parse_confidence = conf
-            if plan.get("needs_clarification") is True and parsed.intent == "unknown":
-                parsed.needs_clarification = True
-                parsed.clarification_question = (
-                    str(plan.get("clarification_question")).strip()
-                    if isinstance(plan.get("clarification_question"), str)
-                    else _default_clarification_question(question)
-                )
-                parsed.suggestions = _build_suggestions(question, routed_intent=routed_spec.intent)
-                return parsed
             if parsed.intent != "unknown" and conf >= llm_threshold:
                 if _prefer_routed_over_llm(question, parsed, routed_spec):
                     return routed_spec

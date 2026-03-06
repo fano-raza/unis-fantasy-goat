@@ -439,6 +439,51 @@ def route_question(question: str) -> CapabilityMatch | None:
     team1, team2 = _extract_teams(question)
     stat = _extract_stat(question)
 
+    if _contains_any(
+        q,
+        [
+            "career totals",
+            "all time totals",
+            "all-time totals",
+            "rs totals",
+            "regular season totals",
+            "po totals",
+            "playoff totals",
+            "career avgs",
+            "career averages",
+            "all time averages",
+            "all-time averages",
+            "rs avgs",
+            "rs averages",
+            "regular season averages",
+            "po avgs",
+            "po averages",
+            "playoff averages",
+        ],
+    ):
+        scope_hint = "ALL"
+        if _contains_any(q, ["rs totals", "rs avgs", "rs averages", "regular season totals", "regular season averages"]):
+            scope_hint = "RS"
+        elif _contains_any(q, ["po totals", "po avgs", "po averages", "playoff totals", "playoff averages"]):
+            scope_hint = "PO"
+        method = "avg" if _contains_any(q, ["avg", "average", "averages"]) else "total"
+        return CapabilityMatch(
+            intent="all_time_stats_table",
+            params={
+                "scope": scope_hint,
+                "method": method,
+                "stat": stat,
+                "team": team1,
+                "direction": "min" if _contains_any(q, ["least", "fewest", "lowest", "worst"]) else "max",
+                "top_n": max(1, min(30, top_n if top_n else 10)),
+            },
+        )
+
+    if _contains_any(q, ["all time summary", "all-time summary", "summary sheet"]) and _contains_any(
+        q, ["all time", "all-time", "career", "summary"]
+    ):
+        return CapabilityMatch(intent="all_time_summary", params={"team": team1, "top_n": max(1, min(30, top_n if top_n else 10))})
+
     if ("dead last" in q) or ("last place" in q):
         return CapabilityMatch(intent="standings", params={"year": year, "place": "last", "standings_format": "auto"})
 
@@ -522,12 +567,22 @@ def route_question(question: str) -> CapabilityMatch | None:
     if (
         "champions lounge" in q
         or "champion's lounge" in q
+        or "most championships" in q
+        or "most chips" in q
+        or "most titles" in q
+        or "championship leaderboard" in q
         or "won a championship" in q
         or "won championship" in q
+        or "won championships" in q
         or "won a chip" in q
+        or "won chips" in q
+        or "won titles" in q
+        or "won a title" in q
+        or "when did" in q and _contains_any(q, ["win", "won"]) and _contains_any(q, ["championship", "championships", "chip", "chips", "title", "titles"])
+        or "what year did" in q and _contains_any(q, ["win", "won"]) and _contains_any(q, ["championship", "championships", "chip", "chips", "title", "titles"])
         or ("all-time champions" in q)
     ):
-        return CapabilityMatch(intent="champions_lounge", params={"year_range": "ALL"})
+        return CapabilityMatch(intent="champions_lounge", params={"year_range": "ALL", "team": team1})
 
     if ("most likely" in q or "likely" in q or "odds" in q) and (
         "chip" in q or "champ" in q or "title" in q or "win it all" in q
