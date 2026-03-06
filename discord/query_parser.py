@@ -26,6 +26,7 @@ VALID_INTENTS = {
     "leader",
     "leader_vs_team",
     "standings",
+    "best_team_snapshot",
     "standings_alternate",
     "predict_champion",
     "champions_lounge",

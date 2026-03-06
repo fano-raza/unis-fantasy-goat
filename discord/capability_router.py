@@ -430,10 +430,10 @@ def route_question(question: str) -> CapabilityMatch | None:
             params={"year": year, "place": _extract_place_hint(q), "standings_format": "auto"},
         )
 
-    if (
-        ("who is #1" in q or "who's #1" in q or "#1 rn" in q or "#1 right now" in q)
-        or (_contains_any(q, ["best team", "top team"]) and _contains_any(q, ["right now", "currently", "this season", "current season"]))
-    ):
+    if _contains_any(q, ["best team", "top team"]) and _contains_any(q, ["right now", "currently", "this season", "current season", "rn"]):
+        return CapabilityMatch(intent="best_team_snapshot", params={"year": year, "scope": "RS"})
+
+    if ("who is #1" in q or "who's #1" in q or "#1 rn" in q or "#1 right now" in q):
         return CapabilityMatch(intent="standings", params={"year": year, "place": 1, "standings_format": "auto"})
 
     if _contains_any(q, ["best regular season record", "worst regular season record"]):
