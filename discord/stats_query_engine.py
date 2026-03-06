@@ -86,6 +86,31 @@ def _rank_for_scope(year: int, stat: str, scope: str, direction: str, week: Opti
     return agg.sort_values(ascending=ascending)
 
 
+def _top_teams_for_stat(
+    year: int,
+    stat: str,
+    direction: str,
+    scope: str,
+    top_n: int = 1,
+    week: Optional[int] = None,
+    start_week: Optional[int] = None,
+    end_week: Optional[int] = None,
+) -> list[tuple[str, float]]:
+    ranked = _rank_for_scope(
+        year,
+        stat,
+        scope,
+        direction,
+        week=week,
+        start_week=start_week,
+        end_week=end_week,
+    )
+    if ranked.empty:
+        return []
+    sample = ranked.head(max(1, min(int(top_n or 1), len(ranked))))
+    return [(str(team), float(val)) for team, val in sample.items()]
+
+
 def _format_value(stat: str, value: float) -> str:
     if stat in ("FG%", "FT%"):
         return f"{value:.4f}"
@@ -537,8 +562,23 @@ def _answer_vs_weekly_top_team(spec: QuerySpec) -> str:
 
 def _answer_correlation(spec: QuerySpec) -> str:
     # Supported initial metric names
-    mx = spec.metric_x or "record_vs_seed_1"
-    my = spec.metric_y or "overall_matchup_win_pct"
+    mx = (spec.metric_x or "record_vs_seed_1").strip().lower()
+    my = (spec.metric_y or "overall_matchup_win_pct").strip().lower()
+
+    aliases = {
+        "regular season finish": "standings_position",
+        "regular_season_finish": "standings_position",
+        "playoff finish": "standings_position",
+        "playoff_finish": "standings_position",
+        "finish": "standings_position",
+        "position": "standings_position",
+        "standing position": "standings_position",
+        "standings_position": "standings_position",
+        "draft score": "draft_score",
+        "draft_score": "draft_score",
+    }
+    mx = aliases.get(mx, mx)
+    my = aliases.get(my, my)
 
     base = defaultdict(lambda: {"w": 0, "l": 0, "t": 0, "g": 0})
     overall = defaultdict(lambda: {"w": 0, "l": 0, "t": 0, "g": 0, "cat_w": 0, "cat_l": 0, "cat_t": 0, "rating_sum": 0.0, "weeks": 0})
@@ -603,7 +643,34 @@ def _answer_correlation(spec: QuerySpec) -> str:
                 "avg_rating": (o["rating_sum"] / o["weeks"]) if o["weeks"] else float("nan"),
             }
         )
-    df = pd.DataFrame(rows).dropna(subset=[mx, my])
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return f"Not enough data to correlate {mx} vs {my}."
+
+    # Lower standings_position is better. We proxy from cumulative matchup win%.
+    if "standings_position" in (mx, my):
+        df["standings_position"] = df["overall_matchup_win_pct"].rank(ascending=False, method="average")
+
+    if "draft_score" in (mx, my):
+        draft_tables = []
+        for y in years:
+            path = DATA_ROOT / str(y) / f"{y} Draft Results.csv"
+            if path.exists():
+                draft_tables.append(_load_draft_table(y)[["Team", "final_score"]])
+        if draft_tables:
+            draft_df = (
+                pd.concat(draft_tables, ignore_index=True)
+                .groupby("Team", as_index=False)["final_score"]
+                .sum()
+                .rename(columns={"final_score": "draft_score"})
+            )
+            df = df.merge(draft_df, on="Team", how="left")
+
+    for m in (mx, my):
+        if m not in df.columns:
+            return f"Unsupported correlation metric '{m}'."
+
+    df = df.dropna(subset=[mx, my])
     if df.empty:
         return f"Not enough data to correlate {mx} vs {my}."
 
@@ -1131,17 +1198,35 @@ def _answer_record_vs_team(spec: QuerySpec) -> str:
     metric = spec.metric or "win_pct"
     direction = (spec.direction or "max").lower()
     asc = direction == "min"
+    period = "all-time" if (spec.year_range or "").upper() == "ALL" else str(spec.year)
+    scope_label = _scope_name(spec.scope)
+
+    def _fmt_rows(sorted_rows, n: int = 10) -> list[str]:
+        lines = []
+        for i, (team, w, l, t, g, pct) in enumerate(sorted_rows[:n], 1):
+            lines.append(f"{i}. {team} — {w}-{l}-{t} ({pct:.3f}, {g} games)")
+        return lines
+
+    if metric == "both":
+        wins_rows = sorted(rows, key=lambda x: (x[1], x[5], -x[2], x[0]), reverse=not asc)
+        pct_rows = sorted(rows, key=lambda x: (x[5], x[1], -x[2], x[0]), reverse=not asc)
+        wins_title = f"{'Fewest' if asc else 'Most'} wins vs {target} ({period}, {scope_label}):"
+        pct_title = f"{'Worst' if asc else 'Best'} record vs {target} ({period}, {scope_label}):"
+        return "\n".join(
+            [wins_title, *_fmt_rows(wins_rows), "", pct_title, *_fmt_rows(pct_rows)]
+        )
+
     if metric == "wins":
         rows.sort(key=lambda x: (x[1], x[5], -x[2], x[0]), reverse=not asc)
         title = (
             f"{'Fewest' if asc else 'Most'} wins vs {target} "
-            f"({'all-time' if (spec.year_range or '').upper() == 'ALL' else spec.year}, {_scope_name(spec.scope)}):"
+            f"({period}, {scope_label}):"
         )
     else:
         rows.sort(key=lambda x: (x[5], x[1], -x[2], x[0]), reverse=not asc)
         title = (
             f"{'Worst' if asc else 'Best'} record vs {target} "
-            f"({'all-time' if (spec.year_range or '').upper() == 'ALL' else spec.year}, {_scope_name(spec.scope)}):"
+            f"({period}, {scope_label}):"
         )
 
     lines = [title]
@@ -1649,6 +1734,9 @@ def _is_current_matchup_question(question: str) -> bool:
     return (
         "current matchup" in q
         or "currently winning" in q
+        or "this week" in q
+        or "who would win this week" in q
+        or "who wins this week" in q
         or ("winning" in q and "matchup" in q and "current" in q)
         or ("winning" in q and "between" in q and "matchup" in q)
     )

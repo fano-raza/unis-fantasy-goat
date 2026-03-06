@@ -302,13 +302,18 @@ def _fallback_parse(question: str) -> QuerySpec:
 
     stat = None
     q_low = question.lower()
+
+    def _has_alias(text: str, alias: str) -> bool:
+        if re.search(r"[^a-z0-9 ]", alias):
+            return alias in text
+        if len(alias) <= 3:
+            return re.search(rf"\b{re.escape(alias)}\b", text) is not None
+        return alias in text
+
     for canonical, aliases in STAT_SYNONYMS.items():
         canon = canonical.lower()
-        canon_match = re.search(rf"\\b{re.escape(canon)}\\b", q_low) if len(canon) <= 3 else canon in q_low
-        alias_match = any(
-            re.search(rf"\\b{re.escape(alias)}\\b", q_low) if len(alias) <= 3 else alias in q_low
-            for alias in aliases
-        )
+        canon_match = _has_alias(q_low, canon)
+        alias_match = any(_has_alias(q_low, alias) for alias in aliases)
         if canon_match or alias_match:
             stat = canonical
             break
@@ -343,7 +348,24 @@ def _fallback_parse(question: str) -> QuerySpec:
             place = 1
     elif any(k in q_low for k in ["head to head", "head-to-head", "h2h"]):
         intent = "head_to_head"
+    elif team and team2 and any(k in q_low for k in ["who would win", "who wins", "currently winning", "current matchup", "this week"]):
+        intent = "head_to_head"
+        if week is None and start_week is None and end_week is None and "this week" in q_low:
+            week = None
     elif team and team2 and any(k in q_low for k in ["vs", "versus", "compare", "between"]):
+        intent = "team_compare"
+    elif team and team2 and any(
+        k in q_low
+        for k in [
+            "who was better",
+            "who is better",
+            "better in",
+            "better team",
+            "stronger team",
+            "better season",
+            "who did better",
+        ]
+    ):
         intent = "team_compare"
     elif team and stat is None and any(k in q_low for k in ["summary", "profile", "how did", "show me"]):
         intent = "team_summary"

@@ -50,7 +50,11 @@ def _extract_stat(question: str) -> str | None:
     }
     for stat, aliases in mapping.items():
         if any(
-            (re.search(rf"\b{re.escape(alias)}\b", q) if len(alias) <= 3 else alias in q)
+            (
+                alias in q
+                if re.search(r"[^a-z0-9 ]", alias)
+                else (re.search(rf"\b{re.escape(alias)}\b", q) if len(alias) <= 3 else alias in q)
+            )
             for alias in aliases
         ):
             return stat
@@ -163,6 +167,10 @@ def _extract_place_hint(q: str) -> int | None:
 
 
 def _infer_record_vs_team_metric(q: str) -> str:
+    explicit_record_terms = ["best record", "worst record", "win percentage", "win%"]
+    if _contains_any(q, explicit_record_terms):
+        return "win_pct"
+
     wins_terms = [
         "most wins",
         "won the most",
@@ -175,7 +183,15 @@ def _infer_record_vs_team_metric(q: str) -> str:
         "beaten by",
         "beat me the most",
     ]
-    return "wins" if _contains_any(q, wins_terms) else "win_pct"
+    if _contains_any(q, wins_terms):
+        return "wins"
+
+    # Ambiguous phrasing like "beaten X the most" can mean either
+    # most wins or best win percentage vs that target.
+    if ("beat" in q or "beaten" in q) and _contains_any(q, ["most", "best", "least", "worst"]):
+        return "both"
+
+    return "win_pct"
 
 
 def _infer_record_vs_team_direction(q: str, metric: str) -> str:
@@ -283,20 +299,29 @@ def _match_head_to_head(
         "currently winning",
         "matchup between",
         "record between",
+        "who would win",
+        "who wins",
     ]
     if not _contains_any(q, h2h_terms):
         return None
 
+    inferred_scope = scope if scope in {"RS", "PO"} else "ALL"
+    params = {
+        "year": year,
+        "team": team1,
+        "team2": team2,
+        "scope": inferred_scope,
+        "start_week": start_week,
+        "end_week": end_week,
+    }
+
+    # "this week" phrasing should be interpreted as current regular-season matchup.
+    if "this week" in q:
+        params["scope"] = "RS"
+
     return CapabilityMatch(
         intent="head_to_head",
-        params={
-            "year": year,
-            "team": team1,
-            "team2": team2,
-            "scope": scope if scope in {"RS", "PO"} else "ALL",
-            "start_week": start_week,
-            "end_week": end_week,
-        },
+        params=params,
     )
 
 
@@ -432,6 +457,29 @@ def route_question(question: str) -> CapabilityMatch | None:
 
     if _contains_any(q, ["best team", "top team"]) and _contains_any(q, ["right now", "currently", "this season", "current season", "rn"]):
         return CapabilityMatch(intent="best_team_snapshot", params={"year": year, "scope": "RS"})
+
+    if _contains_any(q, ["best team", "top team"]) and not _contains_any(q, ["right now", "currently", "rn"]):
+        return CapabilityMatch(intent="standings", params={"year": year, "place": 1, "standings_format": "auto"})
+
+    if _contains_any(q, ["worst team", "bottom team"]) and not _contains_any(q, ["right now", "currently", "rn"]):
+        return CapabilityMatch(intent="standings", params={"year": year, "place": "last", "standings_format": "auto"})
+
+    if team1 and team2 and _contains_any(
+        q,
+        [
+            "who was better",
+            "who is better",
+            "better in",
+            "better team",
+            "stronger team",
+            "better season",
+            "who did better",
+        ],
+    ):
+        return CapabilityMatch(
+            intent="team_compare",
+            params={"year": year, "scope": scope if scope in {"RS", "PO"} else "RS", "team": team1, "team2": team2},
+        )
 
     if ("who is #1" in q or "who's #1" in q or "#1 rn" in q or "#1 right now" in q):
         return CapabilityMatch(intent="standings", params={"year": year, "place": 1, "standings_format": "auto"})

@@ -60,8 +60,20 @@ def _load_maps() -> tuple[dict[str, str], dict[str, str]]:
                 team = (row.get("team") or "").strip()
                 if team not in allMembers:
                     continue
-                uid = (row.get("discord_user_id") or "").strip()
-                dname = _normalize(row.get("discord_name"))
+                uid = (
+                    row.get("discord_user_id")
+                    or row.get("user_id")
+                    or row.get("discord_id")
+                    or row.get("id")
+                    or ""
+                )
+                uid = str(uid).strip()
+                dname = _normalize(
+                    row.get("discord_name")
+                    or row.get("display_name")
+                    or row.get("username")
+                    or row.get("name")
+                )
                 if uid:
                     by_user_id[uid] = team
                 if dname:
