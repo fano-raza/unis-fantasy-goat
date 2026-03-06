@@ -30,14 +30,20 @@ VALID_INTENTS = {
     "predict_champion",
     "champions_lounge",
     "mvp_by_avg_rating",
+    "category_sweep",
     "strength_of_schedule",
     "draft_pick_value",
+    "draft_player_score",
     "draft_team_score",
     "team_compare",
     "head_to_head",
     "record_vs_team",
     "team_summary",
+    "team_rating_by_season",
     "week_leader",
+    "schedule_toughest_stretch",
+    "half_split_improvement",
+    "weekly_top_performer_count",
     "record_vs_seed",
     "opponent_uplift",
     "correlation",
@@ -263,6 +269,11 @@ def _fallback_parse(question: str) -> QuerySpec:
             standings_format = "cats"
         elif "w/l" in q_low or "matchup" in q_low or "record" in q_low:
             standings_format = "wl"
+    elif (week or start_week) and stat is None and any(k in q_low for k in ["record", "wins", "won", "winning"]):
+        intent = "standings"
+        standings_format = "wl"
+        if any(k in q_low for k in ["best", "most", "top", "first"]):
+            place = 1
     elif any(k in q_low for k in ["head to head", "head-to-head", "h2h"]):
         intent = "head_to_head"
     elif team and team2 and any(k in q_low for k in ["vs", "versus", "compare", "between"]):

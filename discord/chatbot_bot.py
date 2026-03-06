@@ -1,6 +1,7 @@
 import asyncio
 import os
 import ssl
+import time
 from pathlib import Path
 
 import aiohttp
@@ -9,6 +10,8 @@ from disnake.ext import commands
 
 from .query_parser import QuerySpec, parse_query
 from .stats_query_engine import answer_query
+from .team_identity import resolve_user_team
+from .usage_metrics import record_usage_event
 
 
 def _ensure_ssl_ca_bundle() -> None:
@@ -80,9 +83,84 @@ def _strip_bot_mention(content: str, bot_user_id: int) -> str:
     )
 
 
-def _run_answer_pipeline(question: str) -> str:
+def _run_answer_pipeline(question: str) -> tuple[str, QuerySpec]:
     spec = parse_query(question)
-    return answer_query(question, spec)
+    return answer_query(question, spec), spec
+
+
+def _record_message_usage(
+    message: disnake.Message,
+    question: str,
+    response: str,
+    spec: QuerySpec | None,
+    ok: bool,
+    latency_ms: int,
+    error: str | None = None,
+) -> None:
+    team_match = resolve_user_team(
+        user_id=getattr(message.author, "id", None),
+        display_name=getattr(message.author, "display_name", None),
+        username=getattr(message.author, "name", None),
+    )
+    record_usage_event(
+        {
+            "source": "mention",
+            "guild_id": getattr(message.guild, "id", None),
+            "channel_id": getattr(message.channel, "id", None),
+            "message_id": getattr(message, "id", None),
+            "user_id": getattr(message.author, "id", None),
+            "username": getattr(message.author, "name", None),
+            "display_name": getattr(message.author, "display_name", None),
+            "mapped_team": team_match.team,
+            "team_map_source": team_match.source,
+            "question": question,
+            "intent": getattr(spec, "intent", None),
+            "year": getattr(spec, "year", None),
+            "scope": getattr(spec, "scope", None),
+            "ok": ok,
+            "latency_ms": latency_ms,
+            "error": error,
+            "response_preview": response,
+        }
+    )
+
+
+def _record_slash_usage(
+    inter: disnake.ApplicationCommandInteraction,
+    question: str,
+    response: str,
+    spec: QuerySpec | None,
+    ok: bool,
+    latency_ms: int,
+    error: str | None = None,
+) -> None:
+    author = getattr(inter, "author", None)
+    team_match = resolve_user_team(
+        user_id=getattr(author, "id", None),
+        display_name=getattr(author, "display_name", None),
+        username=getattr(author, "name", None),
+    )
+    record_usage_event(
+        {
+            "source": "slash",
+            "command": getattr(getattr(inter, "application_command", None), "name", None),
+            "guild_id": getattr(inter.guild, "id", None),
+            "channel_id": getattr(inter.channel, "id", None),
+            "user_id": getattr(author, "id", None),
+            "username": getattr(author, "name", None),
+            "display_name": getattr(author, "display_name", None),
+            "mapped_team": team_match.team,
+            "team_map_source": team_match.source,
+            "question": question,
+            "intent": getattr(spec, "intent", None),
+            "year": getattr(spec, "year", None),
+            "scope": getattr(spec, "scope", None),
+            "ok": ok,
+            "latency_ms": latency_ms,
+            "error": error,
+            "response_preview": response,
+        }
+    )
 
 
 def _parse_test_guild_ids() -> list[int] | None:
@@ -166,12 +244,19 @@ def run_bot() -> None:
         if not await _ensure_allowed_interaction(inter):
             return
         await inter.response.defer()
+        start = time.perf_counter()
+        spec = None
+        ok = True
+        err = None
         try:
             spec = parse_query(question, use_llm=False)
             spec.deterministic_only = True
             response = await asyncio.to_thread(answer_query, question, spec)
         except Exception as exc:
+            ok = False
+            err = str(exc)
             response = f"I hit an error while processing that question: {exc}"
+        _record_slash_usage(inter, question, response, spec, ok, int((time.perf_counter() - start) * 1000), err)
         await inter.edit_original_response(response)
 
     @bot.slash_command(name="standings", description="Get standings for a season.", **slash_kwargs)
@@ -183,8 +268,18 @@ def run_bot() -> None:
         if not await _ensure_allowed_interaction(inter):
             return
         await inter.response.defer()
+        q = f"standings {year}"
         spec = QuerySpec(intent="standings", year=year, standings_format=format, deterministic_only=True)
-        response = await asyncio.to_thread(answer_query, f"standings {year}", spec)
+        start = time.perf_counter()
+        ok = True
+        err = None
+        try:
+            response = await asyncio.to_thread(answer_query, q, spec)
+        except Exception as exc:
+            ok = False
+            err = str(exc)
+            response = f"I hit an error while processing that question: {exc}"
+        _record_slash_usage(inter, q, response, spec, ok, int((time.perf_counter() - start) * 1000), err)
         await inter.edit_original_response(response)
 
     @bot.slash_command(name="leader", description="Get leader(s) for a stat.", **slash_kwargs)
@@ -208,7 +303,17 @@ def run_bot() -> None:
             direction=direction,
             deterministic_only=True,
         )
-        response = await asyncio.to_thread(answer_query, f"leader {year} {stat}", spec)
+        q = f"leader {year} {stat}"
+        start = time.perf_counter()
+        ok = True
+        err = None
+        try:
+            response = await asyncio.to_thread(answer_query, q, spec)
+        except Exception as exc:
+            ok = False
+            err = str(exc)
+            response = f"I hit an error while processing that question: {exc}"
+        _record_slash_usage(inter, q, response, spec, ok, int((time.perf_counter() - start) * 1000), err)
         await inter.edit_original_response(response)
 
     @bot.slash_command(name="compare", description="Compare two teams.", **slash_kwargs)
@@ -235,7 +340,17 @@ def run_bot() -> None:
             stat=None if stat == "none" else stat,
             deterministic_only=True,
         )
-        response = await asyncio.to_thread(answer_query, f"compare {team1} vs {team2}", spec)
+        q = f"compare {team1} vs {team2}"
+        start = time.perf_counter()
+        ok = True
+        err = None
+        try:
+            response = await asyncio.to_thread(answer_query, q, spec)
+        except Exception as exc:
+            ok = False
+            err = str(exc)
+            response = f"I hit an error while processing that question: {exc}"
+        _record_slash_usage(inter, q, response, spec, ok, int((time.perf_counter() - start) * 1000), err)
         await inter.edit_original_response(response)
 
     @bot.slash_command(name="head_to_head", description="Head-to-head record and category score.", **slash_kwargs)
@@ -257,7 +372,17 @@ def run_bot() -> None:
             scope=scope,
             deterministic_only=True,
         )
-        response = await asyncio.to_thread(answer_query, f"head to head {team1} vs {team2}", spec)
+        q = f"head to head {team1} vs {team2}"
+        start = time.perf_counter()
+        ok = True
+        err = None
+        try:
+            response = await asyncio.to_thread(answer_query, q, spec)
+        except Exception as exc:
+            ok = False
+            err = str(exc)
+            response = f"I hit an error while processing that question: {exc}"
+        _record_slash_usage(inter, q, response, spec, ok, int((time.perf_counter() - start) * 1000), err)
         await inter.edit_original_response(response)
 
     @bot.slash_command(name="team_summary", description="Get a season summary for one team.", **slash_kwargs)
@@ -271,7 +396,17 @@ def run_bot() -> None:
             return
         await inter.response.defer()
         spec = QuerySpec(intent="team_summary", year=year, team=team, scope=scope, deterministic_only=True)
-        response = await asyncio.to_thread(answer_query, f"team summary {team}", spec)
+        q = f"team summary {team}"
+        start = time.perf_counter()
+        ok = True
+        err = None
+        try:
+            response = await asyncio.to_thread(answer_query, q, spec)
+        except Exception as exc:
+            ok = False
+            err = str(exc)
+            response = f"I hit an error while processing that question: {exc}"
+        _record_slash_usage(inter, q, response, spec, ok, int((time.perf_counter() - start) * 1000), err)
         await inter.edit_original_response(response)
 
     @bot.event
@@ -293,12 +428,27 @@ def run_bot() -> None:
             )
             return
 
+        start = time.perf_counter()
+        parsed_spec = None
+        ok = True
+        err = None
         async with message.channel.typing():
             try:
-                response = await asyncio.to_thread(_run_answer_pipeline, question)
+                response, parsed_spec = await asyncio.to_thread(_run_answer_pipeline, question)
             except Exception as exc:
+                ok = False
+                err = str(exc)
                 response = f"I hit an error while processing that question: {exc}"
 
+        _record_message_usage(
+            message,
+            question,
+            response,
+            parsed_spec,
+            ok,
+            int((time.perf_counter() - start) * 1000),
+            err,
+        )
         await message.reply(response, mention_author=False)
         await bot.process_commands(message)
 

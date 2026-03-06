@@ -90,6 +90,26 @@ def _extract_teams(question: str) -> tuple[str | None, str | None]:
     return t1, t2
 
 
+def _normalize_casual_text(question: str) -> str:
+    q = question.lower().strip()
+    replacements = {
+        " rn ": " right now ",
+        " rn?": " right now?",
+        " rn.": " right now.",
+        " this yr ": " this year ",
+        " this szn ": " this season ",
+        " reg szn ": " regular season ",
+        " h2h ": " head to head ",
+        " who's ": " who is ",
+        " whats ": " what is ",
+        " w/ ": " with ",
+    }
+    q = f" {q} "
+    for src, dst in replacements.items():
+        q = q.replace(src, dst)
+    return " ".join(q.split())
+
+
 def _contains_any(q: str, terms: list[str]) -> bool:
     return any(term in q for term in terms)
 
@@ -98,12 +118,46 @@ def _is_all_time(q: str) -> bool:
     return _contains_any(q, ["all-time", "all time", "entire career", "career"])
 
 
+def _extract_place_hint(q: str) -> int | None:
+    # numeric ordinals: "2nd", "3rd", ...
+    m = re.search(r"\b(\d+)(?:st|nd|rd|th)\b", q)
+    if m:
+        return int(m.group(1))
+    # word ordinals
+    word_map = {
+        "first": 1,
+        "second": 2,
+        "third": 3,
+        "fourth": 4,
+        "fifth": 5,
+        "sixth": 6,
+        "seventh": 7,
+        "eighth": 8,
+        "ninth": 9,
+        "tenth": 10,
+    }
+    for w, p in word_map.items():
+        if re.search(rf"\b{w}\b", q):
+            return p
+    return None
+
+
 def _infer_record_vs_team_metric(q: str) -> str:
     wins_terms = ["most wins", "won the most", "won most games", "wins against", "wins over", "most wins over"]
     return "wins" if _contains_any(q, wins_terms) else "win_pct"
 
 
-def _match_record_vs_team(q: str, team1: str | None, scope: str, year: int) -> CapabilityMatch | None:
+def _match_record_vs_team(
+    q: str,
+    stat: str | None,
+    team1: str | None,
+    scope: str,
+    year: int,
+    start_week: int | None,
+    end_week: int | None,
+) -> CapabilityMatch | None:
+    if stat is not None:
+        return None
     if not team1:
         return None
 
@@ -142,20 +196,216 @@ def _match_record_vs_team(q: str, team1: str | None, scope: str, year: int) -> C
             "scope": scope if scope in {"RS", "PO"} else "RS",
             "year_range": "ALL" if _is_all_time(q) else None,
             "metric": _infer_record_vs_team_metric(q),
+            "start_week": start_week,
+            "end_week": end_week,
         },
     )
 
 
+def _match_head_to_head(
+    q: str,
+    team1: str | None,
+    team2: str | None,
+    scope: str,
+    year: int,
+    start_week: int | None,
+    end_week: int | None,
+) -> CapabilityMatch | None:
+    if not team1 or not team2:
+        return None
+
+    h2h_terms = [
+        "head to head",
+        "head-to-head",
+        "h2h",
+        "current matchup",
+        "currently winning",
+        "matchup between",
+        "record between",
+    ]
+    if not _contains_any(q, h2h_terms):
+        return None
+
+    return CapabilityMatch(
+        intent="head_to_head",
+        params={
+            "year": year,
+            "team": team1,
+            "team2": team2,
+            "scope": scope if scope in {"RS", "PO"} else "ALL",
+            "start_week": start_week,
+            "end_week": end_week,
+        },
+    )
+
+
+def _match_leader_vs_team(
+    q: str,
+    stat: str | None,
+    team1: str | None,
+    scope: str,
+    year: int,
+    start_week: int | None,
+    end_week: int | None,
+    top_n: int,
+) -> CapabilityMatch | None:
+    if not stat or not team1:
+        return None
+    if not _contains_any(q, ["against", "vs ", "versus ", "vs."]):
+        return None
+
+    direction = "min" if _contains_any(q, ["least", "fewest", "worst", "lowest"]) else "max"
+    if stat == "TO" and direction == "max" and _contains_any(q, ["fewest", "least", "best"]):
+        direction = "min"
+
+    top_n_match = re.search(r"\btop\s*(\d+)\b", q)
+    if top_n_match:
+        top_n_local = int(top_n_match.group(1))
+    elif _contains_any(q, ["best", "most", "least", "worst"]):
+        top_n_local = 10
+    else:
+        top_n_local = top_n
+
+    return CapabilityMatch(
+        intent="leader_vs_team",
+        params={
+            "year": year,
+            "stat": stat,
+            "team": team1,
+            "direction": direction,
+            "scope": scope if scope in {"RS", "PO"} else "ALL",
+            "top_n": max(1, min(30, top_n_local)),
+            "start_week": start_week,
+            "end_week": end_week,
+            "year_range": "ALL" if _is_all_time(q) else None,
+        },
+    )
+
+
+def _match_draft_questions(q: str, year: int, top_n: int) -> CapabilityMatch | None:
+    if "draft" not in q:
+        return None
+
+    mode = "bottom" if _contains_any(q, ["worst", "bottom", "bust"]) else "top"
+    year_range = "ALL" if _is_all_time(q) or _contains_any(q, ["across seasons", "overall", "total"]) else None
+    n = max(1, min(50, int(top_n or 10)))
+    if n == 1 and _contains_any(q, ["best", "worst", "top", "bottom", "most", "least"]):
+        n = 10
+
+    # Explicit "draft pick value" phrasing.
+    if _contains_any(q, ["draft pick value", "pick value", "pick score"]):
+        if year_range == "ALL":
+            return CapabilityMatch(
+                intent="draft_player_score",
+                params={"year": year, "year_range": "ALL", "mode": mode, "n": n},
+            )
+        return CapabilityMatch(
+            intent="draft_pick_value",
+            params={"year": year, "mode": mode, "n": n},
+        )
+
+    if _contains_any(q, ["draft bust", "biggest bust"]):
+        return CapabilityMatch(
+            intent="draft_player_score",
+            params={"year": year, "year_range": year_range, "mode": "bottom", "n": 1},
+        )
+
+    # Player-focused draft value queries.
+    if _contains_any(q, ["player", "nba player", "pick", "picks"]) and _contains_any(q, ["best", "worst", "top", "bottom", "value", "score"]):
+        return CapabilityMatch(
+            intent="draft_player_score",
+            params={
+                "year": year,
+                "year_range": year_range,
+                "mode": mode,
+                "n": n,
+            },
+        )
+
+    # Team/manager draft score ranking queries.
+    if _contains_any(q, ["team", "teams", "manager", "managers", "rank teams", "team score", "draft score", "drafted the most value"]):
+        return CapabilityMatch(
+            intent="draft_team_score",
+            params={"year": year, "year_range": year_range or "single_year"},
+        )
+
+    # Generic "draft pick(s)" phrasing.
+    if _contains_any(q, ["draft pick", "draft picks"]):
+        if year_range == "ALL":
+            return CapabilityMatch(
+                intent="draft_player_score",
+                params={"year": year, "year_range": "ALL", "mode": mode, "n": n},
+            )
+        return CapabilityMatch(
+            intent="draft_pick_value",
+            params={"year": year, "mode": mode, "n": n},
+        )
+
+    return None
+
+
 def route_question(question: str) -> CapabilityMatch | None:
-    q = question.lower().strip()
+    q = _normalize_casual_text(question)
     year = _extract_year(question)
     scope = _extract_scope(question)
     start_week, end_week = _extract_weeks(question)
     top_n = _extract_top_n(question)
     team1, team2 = _extract_teams(question)
+    stat = _extract_stat(question)
 
     if ("dead last" in q) or ("last place" in q):
         return CapabilityMatch(intent="standings", params={"year": year, "place": "last", "standings_format": "auto"})
+
+    if "barely made playoffs" in q or "just made playoffs" in q:
+        cutoff = max(1, len(allMembers) // 2)
+        return CapabilityMatch(intent="standings", params={"year": year, "place": cutoff, "standings_format": "auto"})
+
+    if (
+        ("who is currently in" in q or "who is in" in q or "which team is in" in q)
+        and _extract_place_hint(q) is not None
+    ):
+        return CapabilityMatch(
+            intent="standings",
+            params={"year": year, "place": _extract_place_hint(q), "standings_format": "auto"},
+        )
+
+    if ("who is #1" in q or "who's #1" in q or "#1 rn" in q or "#1 right now" in q):
+        return CapabilityMatch(intent="standings", params={"year": year, "place": 1, "standings_format": "auto"})
+
+    if _contains_any(q, ["best regular season record", "worst regular season record"]):
+        place = 1 if "best" in q else "last"
+        return CapabilityMatch(intent="standings", params={"year": year, "place": place, "standings_format": "wl"})
+
+    if (
+        (start_week is not None or end_week is not None)
+        and stat is None
+        and _contains_any(q, ["record", "wins", "won", "winning"])
+        and not _contains_any(
+            q,
+            [
+                "against",
+                "vs ",
+                "versus ",
+                "beaten",
+                "beat ",
+                "wins over",
+                "won against",
+                "record against",
+                "record vs",
+            ],
+        )
+    ):
+        place = 1 if _contains_any(q, ["best", "most", "top", "first"]) else None
+        return CapabilityMatch(
+            intent="standings",
+            params={
+                "year": year,
+                "standings_format": "wl",
+                "start_week": start_week,
+                "end_week": end_week,
+                "place": place,
+            },
+        )
 
     if (
         "champions lounge" in q
@@ -170,6 +420,9 @@ def route_question(question: str) -> CapabilityMatch | None:
     if ("most likely" in q or "likely" in q or "odds" in q) and (
         "chip" in q or "champ" in q or "title" in q or "win it all" in q
     ):
+        return CapabilityMatch(intent="predict_champion", params={"year": year, "scope": "RS", "top_n": 10})
+
+    if _contains_any(q, ["playoff odds", "projected final standings", "current pace", "most likely to finish first", "most likely to win playoffs"]):
         return CapabilityMatch(intent="predict_champion", params={"year": year, "scope": "RS", "top_n": 10})
 
     if "generate regular season recap" in q or "regular season recap" in q and "generate" in q:
@@ -229,12 +482,36 @@ def route_question(question: str) -> CapabilityMatch | None:
             },
         )
 
+    if ("top-seeded" in q or "top seeded" in q or "top seed" in q) and ("worst" in q or "best" in q):
+        return CapabilityMatch(
+            intent="record_vs_seed",
+            params={
+                "year": year,
+                "seed": 3,
+                "seed_mode": "top_k",
+                "k": 3,
+                "year_range": "ALL",
+                "timing": "entering_week",
+                "direction": "min" if "worst" in q else "max",
+            },
+        )
+
     if ("opponents" in q and ("overperform" in q or "underperform" in q or "suppress" in q)) or "avg opp delta" in q:
         return CapabilityMatch(intent="opponent_uplift", params={"year": year, "year_range": "ALL", "scope": "RS"})
 
-    record_vs_team_match = _match_record_vs_team(q, team1, scope, year)
+    if _contains_any(q, ["#1 weekly ratings", "number 1 weekly ratings", "most #1 weeks", "most #1 weekly"]):
+        return CapabilityMatch(
+            intent="weekly_top_performer_count",
+            params={"year": year, "year_range": "ALL" if _is_all_time(q) else None, "scope": "RS"},
+        )
+
+    record_vs_team_match = _match_record_vs_team(q, stat, team1, scope, year, start_week, end_week)
     if record_vs_team_match:
         return record_vs_team_match
+
+    head_to_head_match = _match_head_to_head(q, team1, team2, scope, year, start_week, end_week)
+    if head_to_head_match:
+        return head_to_head_match
 
     if (
         ("best ranked team of the week" in q or "weekly #1" in q or "week #1" in q or "top team of the week" in q)
@@ -259,6 +536,24 @@ def route_question(question: str) -> CapabilityMatch | None:
             },
         )
 
+    if _contains_any(q, ["leaders for every category", "leader for every category", "every category leaders", "category leaders"]):
+        return CapabilityMatch(
+            intent="category_sweep",
+            params={"year": year, "scope": scope if scope != "ALL" else "RS", "mode": "best"},
+        )
+
+    if _contains_any(q, ["losers for every category", "worst for every category", "category losers"]):
+        return CapabilityMatch(
+            intent="category_sweep",
+            params={"year": year, "scope": scope if scope != "ALL" else "RS", "mode": "worst"},
+        )
+
+    if "likely category leaders" in q:
+        return CapabilityMatch(
+            intent="category_sweep",
+            params={"year": year, "scope": scope if scope != "ALL" else "RS", "mode": "best"},
+        )
+
     if ("year-over-year" in q or "year over year" in q) and ("avg rating" in q or "rating" in q):
         return CapabilityMatch(intent="trend_split", params={"year": year, "metric": "avg_rating", "year_range": "ALL"})
 
@@ -271,21 +566,9 @@ def route_question(question: str) -> CapabilityMatch | None:
             params={"year": year, "team": team1, "team2": team2, "standings_format": "wl"},
         )
 
-    if "draft pick" in q and ("best" in q or "worst" in q):
-        return CapabilityMatch(
-            intent="draft_pick_value",
-            params={
-                "year": year,
-                "mode": "bottom" if "worst" in q else "top",
-                "n": top_n,
-            },
-        )
-
-    if "draft score" in q and ("manager" in q or "teams" in q or "rank teams" in q or "all-time" in q or "all time" in q):
-        return CapabilityMatch(
-            intent="draft_team_score",
-            params={"year": year, "year_range": "ALL" if ("all-time" in q or "all time" in q) else "single_year"},
-        )
+    draft_match = _match_draft_questions(q, year, top_n)
+    if draft_match:
+        return draft_match
 
     if ("standings" in q or "place" in q) and ("if we used" in q or "alternate" in q):
         return CapabilityMatch(intent="standings_alternate", params={"year": year})
@@ -303,49 +586,34 @@ def route_question(question: str) -> CapabilityMatch | None:
                 break
         return CapabilityMatch(intent="standings", params={"year": year, "place": place, "standings_format": "auto"})
 
-    if (
-        team1
-        and team2
-        and (
-            "current matchup" in q
-            or "currently winning" in q
-            or ("winning" in q and "matchup" in q and "between" in q)
-        )
-    ):
-        return CapabilityMatch(
-            intent="head_to_head",
-            params={"year": year, "team": team1, "team2": team2, "scope": "RS"},
-        )
-
     if "summarize" in q or "summary" in q or "profile" in q:
         return CapabilityMatch(intent="team_summary", params={"year": year, "scope": scope, "team": team1})
 
-    stat = _extract_stat(question)
-    if stat and team1 and ("against " in q or "vs " in q or "versus " in q):
-        direction = "min" if any(tok in q for tok in ["least", "fewest", "worst", "lowest"]) else "max"
-        if stat == "TO" and direction == "max" and any(tok in q for tok in ["fewest", "least", "best"]):
-            direction = "min"
-        top_n_match = re.search(r"\btop\s*(\d+)\b", q)
-        if top_n_match:
-            top_n_local = int(top_n_match.group(1))
-        elif any(tok in q for tok in ["best", "most", "least", "worst"]):
-            top_n_local = 10
-        else:
-            top_n_local = top_n
+    if _contains_any(q, ["strongest and weakest categories", "strongest categories", "weakest categories"]):
+        return CapabilityMatch(intent="team_summary", params={"year": year, "scope": scope if scope != "ALL" else "RS", "team": team1})
+
+    if _contains_any(q, ["average rating by season", "avg rating by season"]):
+        return CapabilityMatch(intent="team_rating_by_season", params={"year": year, "team": team1, "year_range": "ALL", "scope": "RS"})
+
+    if _contains_any(q, ["toughest 5-week stretch", "toughest five-week stretch", "toughest stretch"]) and team1:
+        m = re.search(r"(\d+)\s*-\s*week|(\d+)\s*week", q)
+        window = 5
+        if m:
+            window = int(next(g for g in m.groups() if g))
         return CapabilityMatch(
-            intent="leader_vs_team",
-            params={
-                "year": year,
-                "stat": stat,
-                "team": team1,  # target opponent/team filter
-                "direction": direction,
-                "scope": scope,
-                "top_n": max(1, min(30, top_n_local)),
-                "start_week": start_week,
-                "end_week": end_week,
-                "year_range": "ALL" if "all-time" in q or "all time" in q else None,
-            },
+            intent="schedule_toughest_stretch",
+            params={"year": year, "team": team1, "scope": scope if scope != "ALL" else "RS", "n": window},
         )
+
+    if _contains_any(q, ["first half to second half", "first half", "second half"]) and _contains_any(q, ["improved", "improvement"]):
+        return CapabilityMatch(intent="half_split_improvement", params={"year": year, "scope": scope if scope != "ALL" else "RS"})
+
+    if _contains_any(q, ["most volatile", "volatile team", "volatile by week_rating"]):
+        return CapabilityMatch(intent="consistency", params={"year": year, "year_range": "ALL", "mode": "volatile"})
+
+    leader_vs_team_match = _match_leader_vs_team(q, stat, team1, scope, year, start_week, end_week, top_n)
+    if leader_vs_team_match:
+        return leader_vs_team_match
 
     if stat and ("leader" in q or "most" in q or "least" in q or "best" in q or "worst" in q or "top " in q or "selling in" in q):
         direction = "min" if any(tok in q for tok in ["least", "fewest", "worst", "lowest"]) else "max"

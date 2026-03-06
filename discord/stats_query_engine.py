@@ -1,7 +1,7 @@
 import os
 import re
 import math
-from collections import defaultdict
+from collections import Counter, defaultdict
 from functools import lru_cache
 from pathlib import Path
 from typing import Dict, Optional
@@ -233,12 +233,31 @@ def _answer_standings(spec: QuerySpec) -> str:
     if fmt == "auto":
         fmt = "wl" if rs.is_WL else "cats"
 
+    start_week = spec.start_week
+    end_week = spec.end_week
+    if spec.week is not None:
+        start_week = spec.week
+        end_week = spec.week
+    use_week_window = start_week is not None or end_week is not None
+
     if fmt == "wl":
-        standings = rs.get_WL_standings()
-        title = "W/L standings"
+        if use_week_window:
+            sw = int(start_week) if start_week is not None else 1
+            ew = int(end_week) if end_week is not None else sw
+            standings = rs.get_WL_standings(sw, ew)
+            title = f"W/L standings (weeks {sw}-{ew})"
+        else:
+            standings = rs.get_WL_standings()
+            title = "W/L standings"
     else:
-        standings = rs.get_Cats_standings()
-        title = "Category standings"
+        if use_week_window:
+            sw = int(start_week) if start_week is not None else 1
+            ew = int(end_week) if end_week is not None else sw
+            standings = rs.get_Cats_standings(sw, ew)
+            title = f"Category standings (weeks {sw}-{ew})"
+        else:
+            standings = rs.get_Cats_standings()
+            title = "Category standings"
 
     if spec.place is not None:
         if spec.place not in standings:
@@ -393,7 +412,8 @@ def _answer_record_vs_seed(spec: QuerySpec) -> str:
             continue
         pct = (r["W"] + 0.5 * r["T"]) / r["G"]
         rows.append((team, r["W"], r["L"], r["T"], r["G"], pct))
-    rows.sort(key=lambda x: (x[5], x[1], -x[2], x[0]), reverse=True)
+    reverse = (spec.direction or "max") != "min"
+    rows.sort(key=lambda x: (x[5], x[1], -x[2], x[0]), reverse=reverse)
 
     if not rows:
         return "No qualifying matchups found for that seed filter."
@@ -579,6 +599,20 @@ def _answer_mvp_by_avg_rating(spec: QuerySpec) -> str:
     return "\n".join(lines)
 
 
+def _answer_category_sweep(spec: QuerySpec) -> str:
+    stats = ["FG%", "FT%", "3PTM", "REB", "AST", "STL", "BLK", "TO", "PTS"]
+    mode = (spec.mode or "best").lower()
+    direction = "min" if mode == "worst" else "max"
+    lines = [f"Category {'losers' if direction == 'min' else 'leaders'} ({spec.year}, {_scope_name(spec.scope)}):"]
+    for stat in stats:
+        row = _top_teams_for_stat(spec.year, stat, direction=direction, scope=spec.scope, top_n=1, start_week=spec.start_week, end_week=spec.end_week)
+        if not row:
+            continue
+        team, val = row[0]
+        lines.append(f"- {stat}: {team} ({_format_value(stat, float(val))})")
+    return "\n".join(lines)
+
+
 def _answer_strength_of_schedule(spec: QuerySpec) -> str:
     rs = _season(spec.year)
     df = _filter_df_by_scope(rs.statDF, spec.scope)
@@ -593,6 +627,92 @@ def _answer_strength_of_schedule(spec: QuerySpec) -> str:
     lines = ["Strength of schedule (avg opponent rating, higher=tougher):"]
     for i, (team, val) in enumerate(rank.items(), 1):
         lines.append(f"{i}. {team} ({val:.2f})")
+    return "\n".join(lines)
+
+
+def _answer_team_rating_by_season(spec: QuerySpec) -> str:
+    if not spec.team:
+        return "Specify a team (e.g., 'average rating by season for Zahir')."
+    years = sorted(seasonInfo.keys()) if (spec.year_range or "").upper() == "ALL" else [spec.year]
+    rows = []
+    for year in years:
+        rs = _season(year)
+        df = _filter_df_by_scope(rs.statDF, "RS")
+        df = df[(df["Week Name"].str.startswith("M")) & (df["Team"] == spec.team)]
+        if "real_matchup" in df.columns:
+            df = df[df["real_matchup"] >= 1]
+        if df.empty:
+            continue
+        rows.append((year, float(df["week_rating"].mean())))
+    if not rows:
+        return f"No average-rating rows found for {spec.team}."
+    lines = [f"{spec.team} average rating by season:"]
+    for y, v in rows:
+        lines.append(f"- {y}: {v:.2f}")
+    return "\n".join(lines)
+
+
+def _answer_schedule_toughest_stretch(spec: QuerySpec) -> str:
+    if not spec.team:
+        return "Specify a team for toughest stretch."
+    window = max(2, min(10, int(spec.n or 5)))
+    rs = _season(spec.year)
+    df = _filter_df_by_scope(rs.statDF, spec.scope)
+    df = df[(df["Week Name"].str.startswith("M")) & (df["Team"] == spec.team)]
+    if "real_matchup" in df.columns:
+        df = df[df["real_matchup"] >= 1]
+    if df.empty:
+        return f"No schedule rows found for {spec.team} in {spec.year}."
+
+    wk = (
+        df.groupby("Week", as_index=False)["week_rating_opp"]
+        .mean()
+        .sort_values("Week")
+        .reset_index(drop=True)
+    )
+    if len(wk) < window:
+        return f"Not enough weeks for a {window}-week stretch."
+
+    best = None
+    for i in range(0, len(wk) - window + 1):
+        seg = wk.iloc[i : i + window]
+        avg = float(seg["week_rating_opp"].mean())
+        s = int(seg["Week"].iloc[0])
+        e = int(seg["Week"].iloc[-1])
+        if best is None or avg > best[0]:
+            best = (avg, s, e)
+    avg, s, e = best
+    return (
+        f"Toughest {window}-week stretch for {spec.team} in {spec.year} "
+        f"({_scope_name(spec.scope)}): weeks {s}-{e}, avg opp rating {avg:.2f}."
+    )
+
+
+def _answer_half_split_improvement(spec: QuerySpec) -> str:
+    rs = _season(spec.year)
+    df = _filter_df_by_scope(rs.statDF, spec.scope)
+    df = df[(df["Week Name"].str.startswith("M")) & (df["Team"] != "BYE")]
+    if "real_matchup" in df.columns:
+        df = df[df["real_matchup"] >= 1]
+    if df.empty:
+        return "No rows found for first-half vs second-half analysis."
+
+    max_week = int(df["Week"].max())
+    mid = max(1, max_week // 2)
+    first = df[df["Week"] <= mid].groupby("Team")["week_rating"].mean()
+    second = df[df["Week"] > mid].groupby("Team")["week_rating"].mean()
+    joined = (
+        pd.DataFrame({"first_half": first, "second_half": second})
+        .dropna()
+        .assign(delta=lambda t: t["second_half"] - t["first_half"])
+        .sort_values("delta", ascending=False)
+    )
+    if joined.empty:
+        return "No team had both first-half and second-half data."
+
+    lines = [f"First-half to second-half improvement ({spec.year}, split at week {mid}):"]
+    for i, (team, row) in enumerate(joined.iterrows(), 1):
+        lines.append(f"{i}. {team} — {row['delta']:+.2f} ({row['first_half']:.2f} -> {row['second_half']:.2f})")
     return "\n".join(lines)
 
 
@@ -625,6 +745,46 @@ def _answer_draft_pick_value(spec: QuerySpec) -> str:
     for i, (_, row) in enumerate(ranked.reset_index(drop=True).iterrows(), 1):
         lines.append(
             f"{i}. #{int(row['Overall_num'])} {row['Player']} ({row['Team']}) — {float(row['final_score']):.2f}"
+        )
+    return "\n".join(lines)
+
+
+def _answer_draft_player_score(spec: QuerySpec) -> str:
+    scope = (spec.year_range or "ALL").upper()
+    mode = spec.mode or "top"
+    n = spec.n or spec.top_n or 10
+    n = max(1, min(50, int(n)))
+
+    tables = []
+    if scope == "ALL":
+        years = sorted(seasonInfo.keys())
+    else:
+        years = [spec.year]
+
+    for y in years:
+        path = DATA_ROOT / str(y) / f"{y} Draft Results.csv"
+        if not path.exists():
+            continue
+        df = _load_draft_table(y)[["Player", "final_score"]].copy()
+        df["Year"] = y
+        tables.append(df)
+
+    if not tables:
+        return "No draft tables found for player-level aggregation."
+
+    all_df = pd.concat(tables, ignore_index=True)
+    agg = (
+        all_df.groupby("Player")
+        .agg(total_score=("final_score", "sum"), selections=("final_score", "count"), avg_score=("final_score", "mean"))
+        .reset_index()
+    )
+    ranked = agg.sort_values("total_score", ascending=(mode == "bottom")).head(n)
+
+    title_scope = "all-time" if scope == "ALL" else str(spec.year)
+    lines = [f"Draft player scores ({mode} {n}, {title_scope}):"]
+    for i, row in enumerate(ranked.itertuples(index=False), 1):
+        lines.append(
+            f"{i}. {row.Player} — total {float(row.total_score):.2f}, selections {int(row.selections)}, avg {float(row.avg_score):.2f}"
         )
     return "\n".join(lines)
 
@@ -764,8 +924,9 @@ def _answer_consistency(spec: QuerySpec) -> str:
             rows.append({"Team": team, "std": float(val)})
     if not rows:
         return "No consistency rows available."
-    rdf = pd.DataFrame(rows).groupby("Team")["std"].mean().sort_values()
-    lines = ["Consistency ranking (lower std = more consistent):"]
+    volatile = (spec.mode or "").lower() == "volatile"
+    rdf = pd.DataFrame(rows).groupby("Team")["std"].mean().sort_values(ascending=volatile)
+    lines = ["Volatility ranking (higher std = more volatile):" if volatile else "Consistency ranking (lower std = more consistent):"]
     for i, (team, val) in enumerate(rdf.items(), 1):
         lines.append(f"{i}. {team} ({val:.2f})")
     return "\n".join(lines)
@@ -978,6 +1139,36 @@ def _answer_week_leader(spec: QuerySpec) -> str:
     return _answer_leader(spec)
 
 
+def _answer_weekly_top_performer_count(spec: QuerySpec) -> str:
+    years = _resolve_years(spec)
+    counts = Counter()
+
+    for year in years:
+        rs = _season(year)
+        df = _filter_df_by_scope(rs.statDF, spec.scope)
+        df = df[(df["Week Name"].str.startswith("M")) & (df["Team"] != "BYE") & (df["Opp"] != "BYE")]
+        if "real_matchup" in df.columns:
+            df = df[df["real_matchup"] >= 1]
+        if df.empty:
+            continue
+
+        for _, wk in df.groupby("Week Name"):
+            mx = wk["week_rating"].max()
+            winners = wk.loc[wk["week_rating"] == mx, "Team"].unique().tolist()
+            for team in winners:
+                counts[str(team)] += 1
+
+    if not counts:
+        return "No weekly top-performer data found."
+
+    rows = sorted(counts.items(), key=lambda x: (-x[1], x[0]))
+    title = f"Most #1 weekly ratings ({'all-time' if (spec.year_range or '').upper() == 'ALL' else spec.year}):"
+    lines = [title]
+    for i, (team, n) in enumerate(rows, 1):
+        lines.append(f"{i}. {team} ({n})")
+    return "\n".join(lines)
+
+
 def _build_context_tables(spec: QuerySpec) -> str:
     rs = _season(spec.year)
     df = _filter_df_by_scope(rs.statDF, spec.scope)
@@ -1060,14 +1251,20 @@ def _answer_with_llm(question: str, spec: QuerySpec) -> Optional[str]:
         "predict_champion",
         "champions_lounge",
         "mvp_by_avg_rating",
+        "category_sweep",
         "strength_of_schedule",
         "draft_pick_value",
+        "draft_player_score",
         "draft_team_score",
         "team_compare",
         "head_to_head",
         "record_vs_team",
         "team_summary",
+        "team_rating_by_season",
         "week_leader",
+        "schedule_toughest_stretch",
+        "half_split_improvement",
+        "weekly_top_performer_count",
         "record_vs_seed",
         "opponent_uplift",
         "vs_weekly_top_team",
@@ -1086,14 +1283,20 @@ def _answer_with_llm(question: str, spec: QuerySpec) -> Optional[str]:
             "predict_champion": _answer_predict_champion,
             "champions_lounge": _answer_champions_lounge,
             "mvp_by_avg_rating": _answer_mvp_by_avg_rating,
+            "category_sweep": _answer_category_sweep,
             "strength_of_schedule": _answer_strength_of_schedule,
             "draft_pick_value": _answer_draft_pick_value,
+            "draft_player_score": _answer_draft_player_score,
             "draft_team_score": _answer_draft_team_score,
             "team_compare": _answer_team_compare,
             "head_to_head": _answer_head_to_head,
             "record_vs_team": _answer_record_vs_team,
             "team_summary": _answer_team_summary,
+            "team_rating_by_season": _answer_team_rating_by_season,
             "week_leader": _answer_week_leader,
+            "schedule_toughest_stretch": _answer_schedule_toughest_stretch,
+            "half_split_improvement": _answer_half_split_improvement,
+            "weekly_top_performer_count": _answer_weekly_top_performer_count,
             "record_vs_seed": _answer_record_vs_seed,
             "opponent_uplift": _answer_opponent_uplift,
             "vs_weekly_top_team": _answer_vs_weekly_top_team,
@@ -1154,10 +1357,16 @@ def _should_prefer_deterministic(question: str, spec: QuerySpec) -> bool:
         "record_vs_team",
         "record_vs_seed",
         "vs_weekly_top_team",
+        "weekly_top_performer_count",
         "opponent_uplift",
+        "draft_player_score",
         "draft_team_score",
         "head_to_head",
         "team_compare",
+        "category_sweep",
+        "team_rating_by_season",
+        "schedule_toughest_stretch",
+        "half_split_improvement",
     }:
         return True
     if "first place" in q or "second place" in q or "third place" in q:
@@ -1225,6 +1434,8 @@ def _should_return_both_current_and_all_time(question: str, spec: QuerySpec) -> 
         "record_vs_seed",
         "opponent_uplift",
         "vs_weekly_top_team",
+        "weekly_top_performer_count",
+        "draft_player_score",
         "draft_team_score",
     }
     return spec.intent in dual_intents
@@ -1277,14 +1488,20 @@ def answer_query(question: str, spec: QuerySpec) -> str:
         "predict_champion": _answer_predict_champion,
         "champions_lounge": _answer_champions_lounge,
         "mvp_by_avg_rating": _answer_mvp_by_avg_rating,
+        "category_sweep": _answer_category_sweep,
         "strength_of_schedule": _answer_strength_of_schedule,
         "draft_pick_value": _answer_draft_pick_value,
+        "draft_player_score": _answer_draft_player_score,
         "draft_team_score": _answer_draft_team_score,
         "team_compare": _answer_team_compare,
         "head_to_head": _answer_head_to_head,
         "record_vs_team": _answer_record_vs_team,
         "team_summary": _answer_team_summary,
+        "team_rating_by_season": _answer_team_rating_by_season,
         "week_leader": _answer_week_leader,
+        "schedule_toughest_stretch": _answer_schedule_toughest_stretch,
+        "half_split_improvement": _answer_half_split_improvement,
+        "weekly_top_performer_count": _answer_weekly_top_performer_count,
         "record_vs_seed": _answer_record_vs_seed,
         "opponent_uplift": _answer_opponent_uplift,
         "vs_weekly_top_team": _answer_vs_weekly_top_team,
