@@ -10,7 +10,7 @@ import pandas as pd
 
 from Models.seasons import regSeason
 from Models.seasons import poSeason
-from constants import currentYear, seasonInfo
+from constants import currentYear, seasonInfo, gDocStatCats, allMembers
 from recaps.recap_utils import write_regular_season_recap
 from shared.runtime_config import DATA_ROOT
 from .llm_usage import budget_remaining, extract_usage, record_usage
@@ -39,6 +39,15 @@ LLM_BUDGET_EXHAUSTED_MSG = (
     "I hit this month's LLM token limit. "
     "I can still answer deterministic stats queries, but natural-language interpretation is currently limited."
 )
+
+
+def _clarification_response(spec: QuerySpec) -> str:
+    prompt = spec.clarification_question or "I couldn't confidently map that request."
+    suggestions = [s for s in (spec.suggestions or ()) if s]
+    if suggestions:
+        rows = "\n".join(f"- {s}" for s in suggestions[:4])
+        return f"{prompt}\n\nClosest things I can answer:\n{rows}"
+    return prompt
 
 
 
@@ -144,6 +153,36 @@ def _resolve_years(spec: QuerySpec) -> list[int]:
     if spec.year in seasonInfo:
         return [spec.year]
     return sorted(seasonInfo.keys())
+
+
+def _all_time_stats_df(scope: str, method: str) -> pd.DataFrame:
+    years = sorted(seasonInfo.keys())
+    frames = []
+    for y in years:
+        rs = _season(y)
+        df = rs.statDF.copy()
+        if scope == "RS":
+            df = df[df["Week Name"].str.startswith("M")]
+        elif scope == "PO":
+            df = df[df["Week Name"].str.startswith("P")]
+        else:
+            df = df[df["Week Name"].str.startswith(("M", "P"))]
+        df = df[(df["Team"] != "BYE") & (df["Opp"] != "BYE")]
+        if "real_matchup" in df.columns:
+            df = df[df["real_matchup"] >= 1]
+        frames.append(df)
+
+    all_df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    if all_df.empty:
+        return pd.DataFrame()
+
+    method = (method or "total").lower()
+    if method in {"avg", "average", "averages"}:
+        agg = all_df.groupby("Team", as_index=False)[gDocStatCats].mean()
+    else:
+        agg_dict = {cat: ("mean" if cat in {"FG%", "FT%"} else "sum") for cat in gDocStatCats}
+        agg = all_df.groupby("Team", as_index=False).agg(agg_dict)
+    return agg
 
 
 def _get_llm_max_output_tokens() -> int:
@@ -431,6 +470,13 @@ def _answer_champions_lounge(spec: QuerySpec) -> str:
 
     if not champs:
         return NO_ANSWER_MSG
+
+    if spec.team:
+        years = sorted(champs.get(spec.team, []))
+        if not years:
+            return f"{spec.team} has not won a league championship in the available data."
+        years_str = ", ".join(str(y) for y in years)
+        return f"{spec.team} won {len(years)} championship(s): {years_str}."
 
     rows = sorted(champs.items(), key=lambda kv: (-len(kv[1]), kv[0]))
     lines = ["Champions lounge (teams with at least one league championship):"]
@@ -1411,6 +1457,114 @@ def _answer_team_summary(spec: QuerySpec) -> str:
     return "\n".join(lines)
 
 
+def _answer_all_time_stats_table(spec: QuerySpec) -> str:
+    scope = spec.scope if spec.scope in {"ALL", "RS", "PO"} else "ALL"
+    method = (spec.method or "total").lower()
+    method = "avg" if method in {"avg", "average", "averages"} else "total"
+    df = _all_time_stats_df(scope, method)
+    if df.empty:
+        return "No all-time stats rows found."
+
+    if spec.team:
+        row = df.loc[df["Team"].str.lower() == str(spec.team).lower()]
+        if row.empty:
+            return f"{spec.team} is not recognized for all-time stats."
+        row = row.iloc[0]
+        lines = [f"{row['Team']} {scope} {'averages' if method == 'avg' else 'totals'}:"]
+        for cat in gDocStatCats:
+            lines.append(f"- {cat}: {_format_value(cat, float(row[cat]))}")
+        return "\n".join(lines)
+
+    if spec.stat and spec.stat in gDocStatCats:
+        ranked = df[["Team", spec.stat]].sort_values(spec.stat, ascending=(spec.direction == "min"))
+        n = max(1, min(int(spec.top_n or 10), len(ranked)))
+        title = f"All-time {scope} {'averages' if method == 'avg' else 'totals'} by {spec.stat}:"
+        lines = [title]
+        for i, (_, r) in enumerate(ranked.head(n).iterrows(), 1):
+            lines.append(f"{i}. {r['Team']} ({_format_value(spec.stat, float(r[spec.stat]))})")
+        return "\n".join(lines)
+
+    lines = [f"All-time {scope} {'averages' if method == 'avg' else 'totals'} (GDoc table coverage):"]
+    for _, r in df.sort_values("Team").iterrows():
+        vals = ", ".join(f"{cat}={_format_value(cat, float(r[cat]))}" for cat in gDocStatCats)
+        lines.append(f"- {r['Team']}: {vals}")
+    return "\n".join(lines)
+
+
+def _answer_all_time_summary(spec: QuerySpec) -> str:
+    teams = list(allMembers)
+    years = sorted(seasonInfo.keys())
+
+    chips = Counter()
+    finals = Counter()
+    playoffs = Counter()
+    team_rows = []
+
+    for y in years:
+        po = poSeason(y)
+        champ = getattr(po, "PO_champ", None)
+        if champ:
+            chips[champ] += 1
+        po_teams = list(getattr(po, "PO_teams", []) or [])
+        for t in po_teams:
+            playoffs[t] += 1
+        for t in po_teams:
+            try:
+                standing = po.standings.get(t)
+                if standing in (1, 2):
+                    finals[t] += 1
+            except Exception:
+                pass
+
+    # Build lightweight all-time summary table.
+    for t in teams:
+        # Approx all-time avg rating from weekly rating means across RS.
+        vals = []
+        for y in years:
+            sdf = _season(y).statDF
+            tdf = sdf[(sdf["Week Name"].str.startswith("M")) & (sdf["Team"] == t)]
+            if "real_matchup" in tdf.columns:
+                tdf = tdf[tdf["real_matchup"] >= 1]
+            if not tdf.empty:
+                vals.append(float(tdf["week_rating"].mean()))
+        avg_rating = float(sum(vals) / len(vals)) if vals else 0.0
+        team_rows.append(
+            {
+                "Team": t,
+                "Chips": int(chips.get(t, 0)),
+                "Finals": int(finals.get(t, 0)),
+                "Playoffs": int(playoffs.get(t, 0)),
+                "Avg Rating": avg_rating,
+            }
+        )
+
+    smry = pd.DataFrame(team_rows)
+    if smry.empty:
+        return "No all-time summary rows found."
+
+    if spec.team:
+        row = smry.loc[smry["Team"].str.lower() == str(spec.team).lower()]
+        if row.empty:
+            return f"{spec.team} is not recognized in all-time summary."
+        r = row.iloc[0]
+        return (
+            f"{r['Team']} all-time summary:\n"
+            f"- Chips: {int(r['Chips'])}\n"
+            f"- Finals: {int(r['Finals'])}\n"
+            f"- Playoffs: {int(r['Playoffs'])}\n"
+            f"- Avg Rating: {float(r['Avg Rating']):.2f}"
+        )
+
+    ranked = smry.sort_values(["Chips", "Finals", "Playoffs", "Avg Rating"], ascending=False)
+    n = max(1, min(int(spec.top_n or 10), len(ranked)))
+    lines = ["All-time summary (top teams by Chips, Finals, Playoffs, Avg Rating):"]
+    for i, (_, r) in enumerate(ranked.head(n).iterrows(), 1):
+        lines.append(
+            f"{i}. {r['Team']} — Chips {int(r['Chips'])}, Finals {int(r['Finals'])}, Playoffs {int(r['Playoffs'])}, AvgRating {float(r['Avg Rating']):.2f}"
+        )
+    return "\n".join(lines)
+
+
 def _answer_week_leader(spec: QuerySpec) -> str:
     if spec.week is None and spec.start_week is None:
         return "Specify a week (e.g., 'week 5') or range (e.g., 'weeks 3 to 8')."
@@ -1546,6 +1700,8 @@ def _answer_with_llm(question: str, spec: QuerySpec) -> Optional[str]:
         "matchup_tie_history",
         "team_summary",
         "team_rating_by_season",
+        "all_time_stats_table",
+        "all_time_summary",
         "week_leader",
         "schedule_toughest_stretch",
         "half_split_improvement",
@@ -1581,6 +1737,8 @@ def _answer_with_llm(question: str, spec: QuerySpec) -> Optional[str]:
             "matchup_tie_history": _answer_matchup_tie_history,
             "team_summary": _answer_team_summary,
             "team_rating_by_season": _answer_team_rating_by_season,
+            "all_time_stats_table": _answer_all_time_stats_table,
+            "all_time_summary": _answer_all_time_summary,
             "week_leader": _answer_week_leader,
             "schedule_toughest_stretch": _answer_schedule_toughest_stretch,
             "half_split_improvement": _answer_half_split_improvement,
@@ -1656,6 +1814,8 @@ def _should_prefer_deterministic(question: str, spec: QuerySpec) -> bool:
         "team_compare",
         "category_sweep",
         "team_rating_by_season",
+        "all_time_stats_table",
+        "all_time_summary",
         "schedule_toughest_stretch",
         "half_split_improvement",
     }:
@@ -1751,6 +1911,17 @@ def _is_current_matchup_question(question: str) -> bool:
     )
 
 
+def _is_matchup_winner_question(question: str) -> bool:
+    q = question.lower()
+    return (
+        "who would win" in q
+        or "who wins" in q
+        or "currently winning" in q
+        or "current matchup" in q
+        or ("winning" in q and "matchup" in q)
+    )
+
+
 def answer_query(question: str, spec: QuerySpec) -> str:
     invalid = _validate_year(spec)
     if invalid:
@@ -1776,7 +1947,20 @@ def answer_query(question: str, spec: QuerySpec) -> str:
         except Exception:
             pass
 
+    # Normalize week-based "who wins" phrasing into head-to-head instead of weekly stat leaders.
+    if (
+        spec.intent == "week_leader"
+        and spec.stat is None
+        and _is_matchup_winner_question(question)
+    ):
+        spec.intent = "head_to_head"
+        spec.scope = "RS"
+        if spec.week is None and spec.start_week is not None and spec.end_week is not None and spec.start_week == spec.end_week:
+            spec.week = spec.start_week
+
     if spec.intent == "unknown":
+        if spec.needs_clarification:
+            return _clarification_response(spec)
         if re.search(r"\b(me|my|myself)\b", question.lower()):
             return (
                 "I couldn't map 'me' to a team. Add your Discord user ID to the user-team map CSV "
@@ -1786,6 +1970,13 @@ def answer_query(question: str, spec: QuerySpec) -> str:
             return LLM_BUDGET_EXHAUSTED_MSG
         record_unanswered(question, spec, reason="unknown_intent")
         return NO_ANSWER_MSG
+
+    if spec.intent == "head_to_head" and (not spec.team or not spec.team2):
+        if re.search(r"\b(me|my|myself)\b", question.lower()):
+            return (
+                "I couldn't map 'me' to a team. Add your Discord user ID to the user-team map CSV "
+                "and restart the bot."
+            )
 
     handlers = {
         "leader": _answer_leader,
@@ -1808,6 +1999,8 @@ def answer_query(question: str, spec: QuerySpec) -> str:
         "matchup_tie_history": _answer_matchup_tie_history,
         "team_summary": _answer_team_summary,
         "team_rating_by_season": _answer_team_rating_by_season,
+        "all_time_stats_table": _answer_all_time_stats_table,
+        "all_time_summary": _answer_all_time_summary,
         "week_leader": _answer_week_leader,
         "schedule_toughest_stretch": _answer_schedule_toughest_stretch,
         "half_split_improvement": _answer_half_split_improvement,
