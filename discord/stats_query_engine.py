@@ -35,6 +35,10 @@ STAT_LABELS = {
 }
 
 NO_ANSWER_MSG = "I can't answer that with the data/functions I have right now."
+LLM_BUDGET_EXHAUSTED_MSG = (
+    "I hit this month's LLM token limit. "
+    "I can still answer deterministic stats queries, but natural-language interpretation is currently limited."
+)
 
 
 
@@ -1669,6 +1673,11 @@ def _requires_llm_for_accuracy(question: str, spec: QuerySpec) -> bool:
     return False
 
 
+def _is_llm_budget_exhausted() -> bool:
+    remaining, limit = budget_remaining()
+    return limit > 0 and remaining <= 0
+
+
 def _is_ranking_question(question: str) -> bool:
     q = question.lower()
     ranking_terms = [
@@ -1768,6 +1777,13 @@ def answer_query(question: str, spec: QuerySpec) -> str:
             pass
 
     if spec.intent == "unknown":
+        if re.search(r"\b(me|my|myself)\b", question.lower()):
+            return (
+                "I couldn't map 'me' to a team. Add your Discord user ID to the user-team map CSV "
+                "and restart the bot."
+            )
+        if _is_llm_budget_exhausted():
+            return LLM_BUDGET_EXHAUSTED_MSG
         record_unanswered(question, spec, reason="unknown_intent")
         return NO_ANSWER_MSG
 
@@ -1834,14 +1850,20 @@ def answer_query(question: str, spec: QuerySpec) -> str:
 
     if deterministic_response and (_should_prefer_deterministic(question, spec) or spec.deterministic_only):
         if deterministic_response == NO_ANSWER_MSG:
+            if _is_llm_budget_exhausted():
+                return LLM_BUDGET_EXHAUSTED_MSG
             record_unanswered(question, spec, reason="deterministic_no_answer")
         return deterministic_response
 
     if deterministic_response:
         if deterministic_response == NO_ANSWER_MSG:
+            if _is_llm_budget_exhausted():
+                return LLM_BUDGET_EXHAUSTED_MSG
             record_unanswered(question, spec, reason="deterministic_no_answer")
         return deterministic_response
 
     # Final fallback when no deterministic handler matched.
+    if _is_llm_budget_exhausted():
+        return LLM_BUDGET_EXHAUSTED_MSG
     record_unanswered(question, spec, reason="no_supported_handler")
     return NO_ANSWER_MSG

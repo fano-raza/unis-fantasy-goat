@@ -459,7 +459,7 @@ def route_question(question: str) -> CapabilityMatch | None:
         return CapabilityMatch(intent="best_team_snapshot", params={"year": year, "scope": "RS"})
 
     if _contains_any(q, ["best team", "top team"]) and not _contains_any(q, ["right now", "currently", "rn"]):
-        return CapabilityMatch(intent="standings", params={"year": year, "place": 1, "standings_format": "auto"})
+        return CapabilityMatch(intent="best_team_snapshot", params={"year": year, "scope": "RS"})
 
     if _contains_any(q, ["worst team", "bottom team"]) and not _contains_any(q, ["right now", "currently", "rn"]):
         return CapabilityMatch(intent="standings", params={"year": year, "place": "last", "standings_format": "auto"})
