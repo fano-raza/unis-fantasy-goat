@@ -229,9 +229,26 @@ def _extract_teams(question: str, year: int):
     return t1, t2
 
 
+def _resolve_relative_year(question: str) -> int:
+    q = question.lower()
+    year_match = re.search(r"\b(20\d{2})\b", q)
+    if year_match:
+        return int(year_match.group(1))
+    if "last season" in q:
+        return currentYear - 1
+    if "this season" in q or "current season" in q or "this year" in q:
+        return currentYear
+    ago = re.search(r"\b(\d+)\s*(?:season|seasons|year|years)\s+ago\b", q)
+    if ago:
+        return currentYear - int(ago.group(1))
+    prev = re.search(r"\bprevious\s+(\d+)\s*(?:season|seasons|year|years)\b", q)
+    if prev:
+        return currentYear - int(prev.group(1))
+    return currentYear
+
+
 def _fallback_parse(question: str) -> QuerySpec:
-    year_match = re.search(r"\b(20\d{2})\b", question)
-    year = int(year_match.group(1)) if year_match else currentYear
+    year = _resolve_relative_year(question)
 
     stat = None
     q_low = question.lower()
@@ -368,45 +385,66 @@ def _llm_parse(question: str) -> Optional[QuerySpec]:
         return None
 
 
+def _spec_from_routed(routed) -> QuerySpec:
+    routed_year = int(routed.params.get("year", currentYear))
+    routed_place = routed.params.get("place")
+    if routed_place == "last":
+        routed_place = len(seasonInfo.get(routed_year, (allMembers,))[0])
+    return QuerySpec(
+        intent=routed.intent,
+        year=routed_year,
+        stat=routed.params.get("stat"),
+        scope=_normalize_scope(routed.params.get("scope")),
+        direction=routed.params.get("direction", "max"),
+        top_n=int(routed.params.get("top_n", 1)),
+        team=_normalize_team(routed.params.get("team"), routed_year),
+        team2=_normalize_team(routed.params.get("team2"), routed_year),
+        start_week=routed.params.get("start_week"),
+        end_week=routed.params.get("end_week"),
+        standings_format=_normalize_standings_format(routed.params.get("standings_format")),
+        place=routed_place,
+        seed=routed.params.get("seed"),
+        seed_mode=routed.params.get("seed_mode", "exact"),
+        k=routed.params.get("k"),
+        year_range=routed.params.get("year_range"),
+        timing=routed.params.get("timing"),
+        method=routed.params.get("method"),
+        mode=routed.params.get("mode"),
+        n=routed.params.get("n"),
+        metric=routed.params.get("metric"),
+        target_metric=routed.params.get("target_metric"),
+        candidate_metrics=routed.params.get("candidate_metrics"),
+        metric_x=routed.params.get("metric_x"),
+        metric_y=routed.params.get("metric_y"),
+    )
+
+
+def _prefer_routed_over_llm(question: str, llm_spec: QuerySpec, routed_spec: QuerySpec) -> bool:
+    q = question.lower()
+    record_terms = ["record", "wins", "won", "beaten", "beat ", "against", "vs ", "versus "]
+    if any(t in q for t in record_terms):
+        if routed_spec.intent in {"record_vs_team", "head_to_head", "standings"} and llm_spec.intent in {"leader", "leader_vs_team"}:
+            return True
+    if any(t in q for t in ["last season", "this season", "current season", "years ago", "seasons ago"]):
+        if routed_spec.year != llm_spec.year:
+            return True
+    return False
+
+
 def parse_query(question: str, use_llm: bool = True) -> QuerySpec:
     prefer_llm = os.getenv("DISCORD_PREFER_LLM_PARSE", "1").strip().lower() in {"1", "true", "yes", "on"}
+    routed = route_question(question)
     if use_llm and prefer_llm:
         parsed = _llm_parse(question)
         if parsed and parsed.intent != "unknown":
+            if routed:
+                routed_spec = _spec_from_routed(routed)
+                if _prefer_routed_over_llm(question, parsed, routed_spec):
+                    return routed_spec
             return parsed
 
-    routed = route_question(question)
     if routed:
-        routed_place = routed.params.get("place")
-        if routed_place == "last":
-            routed_place = len(seasonInfo.get(int(routed.params.get("year", currentYear)), (allMembers,))[0])
-        return QuerySpec(
-            intent=routed.intent,
-            year=int(routed.params.get("year", currentYear)),
-            stat=routed.params.get("stat"),
-            scope=_normalize_scope(routed.params.get("scope")),
-            direction=routed.params.get("direction", "max"),
-            top_n=int(routed.params.get("top_n", 1)),
-            team=_normalize_team(routed.params.get("team"), int(routed.params.get("year", currentYear))),
-            team2=_normalize_team(routed.params.get("team2"), int(routed.params.get("year", currentYear))),
-            start_week=routed.params.get("start_week"),
-            end_week=routed.params.get("end_week"),
-            standings_format=_normalize_standings_format(routed.params.get("standings_format")),
-            place=routed_place,
-            seed=routed.params.get("seed"),
-            seed_mode=routed.params.get("seed_mode", "exact"),
-            k=routed.params.get("k"),
-            year_range=routed.params.get("year_range"),
-            timing=routed.params.get("timing"),
-            method=routed.params.get("method"),
-            mode=routed.params.get("mode"),
-            n=routed.params.get("n"),
-            metric=routed.params.get("metric"),
-            target_metric=routed.params.get("target_metric"),
-            candidate_metrics=routed.params.get("candidate_metrics"),
-            metric_x=routed.params.get("metric_x"),
-            metric_y=routed.params.get("metric_y"),
-        )
+        return _spec_from_routed(routed)
 
     if use_llm:
         parsed = _llm_parse(question)

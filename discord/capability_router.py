@@ -14,8 +14,25 @@ class CapabilityMatch:
 
 
 def _extract_year(question: str) -> int:
-    m = re.search(r"\b(20\d{2})\b", question)
-    return int(m.group(1)) if m else currentYear
+    q = question.lower()
+    m = re.search(r"\b(20\d{2})\b", q)
+    if m:
+        return int(m.group(1))
+
+    if "last season" in q:
+        return currentYear - 1
+    if "this season" in q or "current season" in q or "this year" in q:
+        return currentYear
+
+    ago = re.search(r"\b(\d+)\s*(?:season|seasons|year|years)\s+ago\b", q)
+    if ago:
+        return currentYear - int(ago.group(1))
+
+    prev = re.search(r"\bprevious\s+(\d+)\s*(?:season|seasons|year|years)\b", q)
+    if prev:
+        return currentYear - int(prev.group(1))
+
+    return currentYear
 
 
 def _extract_stat(question: str) -> str | None:
@@ -32,7 +49,10 @@ def _extract_stat(question: str) -> str | None:
         "FT%": ["ft%", "free throw percentage", "free throw"],
     }
     for stat, aliases in mapping.items():
-        if any(alias in q for alias in aliases):
+        if any(
+            (re.search(rf"\b{re.escape(alias)}\b", q) if len(alias) <= 3 else alias in q)
+            for alias in aliases
+        ):
             return stat
     return None
 
