@@ -1157,6 +1157,98 @@ def _answer_matchup_tie_leaders(spec: QuerySpec) -> str:
     return "\n".join(lines)
 
 
+def _answer_matchup_tie_history(spec: QuerySpec) -> str:
+    if not spec.team:
+        return "Specify a team (e.g., 'what years did Ange tie matchups?')."
+
+    years = sorted(_resolve_years(spec))
+    rows = []
+    for year in years:
+        rs = _season(year)
+        df = _filter_df_by_scope(rs.statDF, spec.scope)
+        df = _filter_df_by_weeks(df, spec.week, spec.start_week, spec.end_week)
+        df = df[(df["Team"] != "BYE") & (df["Opp"] != "BYE")]
+        if "real_matchup" in df.columns:
+            df = df[df["real_matchup"] >= 1]
+        tdf = df.loc[df["Team"] == spec.team]
+        if tdf.empty:
+            continue
+        t = int(tdf["matchup_tie"].sum())
+        g = int(tdf["matchup_win"].sum() + tdf["matchup_loss"].sum() + tdf["matchup_tie"].sum())
+        rows.append((year, t, g))
+
+    if not rows:
+        return f"No matchup tie history found for {spec.team}."
+
+    years_with = [(y, t, g) for y, t, g in rows if t > 0]
+    years_without = [(y, t, g) for y, t, g in rows if t == 0]
+    mode = (spec.mode or "years_with_ties").lower()
+
+    if mode == "first_zero_check":
+        cur = next(((y, t, g) for y, t, g in rows if y == spec.year), None)
+        if not cur:
+            return f"No data for {spec.team} in {spec.year}."
+        _, cur_t, _ = cur
+        if cur_t > 0:
+            return f"No. {spec.team} has {cur_t} matchup ties in {spec.year}."
+        prior_zero = [y for y, t, _ in rows if y < spec.year and t == 0]
+        if not prior_zero:
+            return f"Yes. {spec.year} is the first season {spec.team} had 0 matchup ties."
+        return f"No. {spec.team} also had 0 matchup ties in: {', '.join(map(str, prior_zero))}."
+
+    if mode == "first_tie_check":
+        cur = next(((y, t, g) for y, t, g in rows if y == spec.year), None)
+        if not cur:
+            return f"No data for {spec.team} in {spec.year}."
+        _, cur_t, _ = cur
+        if cur_t == 0:
+            return f"No. {spec.team} has 0 matchup ties in {spec.year}."
+        prior_tie = [y for y, t, _ in rows if y < spec.year and t > 0]
+        if not prior_tie:
+            return f"Yes. {spec.year} is the first season {spec.team} had matchup ties."
+        return f"No. {spec.team} had matchup ties before: {', '.join(map(str, prior_tie))}."
+
+    if mode == "first_tie_season":
+        if not years_with:
+            return f"{spec.team} has never had a matchup tie."
+        y, t, g = min(years_with, key=lambda x: x[0])
+        return f"First season {spec.team} had matchup ties: {y} ({t} ties in {g} games)."
+
+    if mode == "last_tie_season":
+        if not years_with:
+            return f"{spec.team} has never had a matchup tie."
+        y, t, g = max(years_with, key=lambda x: x[0])
+        return f"Last season {spec.team} had matchup ties: {y} ({t} ties in {g} games)."
+
+    if mode == "first_zero_season":
+        if not years_without:
+            return f"{spec.team} has matchup ties in every season with data."
+        y, _, g = min(years_without, key=lambda x: x[0])
+        return f"First season {spec.team} had 0 matchup ties: {y} ({g} games)."
+
+    if mode == "last_zero_season":
+        if not years_without:
+            return f"{spec.team} has matchup ties in every season with data."
+        y, _, g = max(years_without, key=lambda x: x[0])
+        return f"Last season {spec.team} had 0 matchup ties: {y} ({g} games)."
+
+    if mode == "years_without_ties":
+        if not years_without:
+            return f"{spec.team} has matchup ties in every season with data."
+        lines = [f"Seasons {spec.team} had 0 matchup ties:"]
+        for y, _, g in years_without:
+            lines.append(f"- {y} ({g} games)")
+        return "\n".join(lines)
+
+    # default: years_with_ties
+    if not years_with:
+        return f"{spec.team} has no seasons with matchup ties."
+    lines = [f"Seasons {spec.team} had matchup ties:"]
+    for y, t, g in years_with:
+        lines.append(f"- {y}: {t} ties ({g} games)")
+    return "\n".join(lines)
+
+
 def _answer_team_summary(spec: QuerySpec) -> str:
     if not spec.team:
         return "For team summary, include a team name (e.g., 'summary for Fano in 2026')."
@@ -1314,6 +1406,7 @@ def _answer_with_llm(question: str, spec: QuerySpec) -> Optional[str]:
         "head_to_head",
         "record_vs_team",
         "matchup_tie_leaders",
+        "matchup_tie_history",
         "team_summary",
         "team_rating_by_season",
         "week_leader",
@@ -1347,6 +1440,7 @@ def _answer_with_llm(question: str, spec: QuerySpec) -> Optional[str]:
             "head_to_head": _answer_head_to_head,
             "record_vs_team": _answer_record_vs_team,
             "matchup_tie_leaders": _answer_matchup_tie_leaders,
+            "matchup_tie_history": _answer_matchup_tie_history,
             "team_summary": _answer_team_summary,
             "team_rating_by_season": _answer_team_rating_by_season,
             "week_leader": _answer_week_leader,
@@ -1412,6 +1506,7 @@ def _should_prefer_deterministic(question: str, spec: QuerySpec) -> bool:
     if spec.intent in {
         "record_vs_team",
         "matchup_tie_leaders",
+        "matchup_tie_history",
         "record_vs_seed",
         "vs_weekly_top_team",
         "weekly_top_performer_count",
@@ -1555,6 +1650,7 @@ def answer_query(question: str, spec: QuerySpec) -> str:
         "head_to_head": _answer_head_to_head,
         "record_vs_team": _answer_record_vs_team,
         "matchup_tie_leaders": _answer_matchup_tie_leaders,
+        "matchup_tie_history": _answer_matchup_tie_history,
         "team_summary": _answer_team_summary,
         "team_rating_by_season": _answer_team_rating_by_season,
         "week_leader": _answer_week_leader,

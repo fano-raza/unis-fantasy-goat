@@ -525,6 +525,48 @@ def route_question(question: str) -> CapabilityMatch | None:
             params={"year": year, "year_range": "ALL" if _is_all_time(q) else None, "scope": "RS"},
         )
 
+    if team1 and _contains_any(q, ["tie", "tied", "draw", "drew"]) and _contains_any(
+        q,
+        [
+            "first time",
+            "last time",
+            "first season",
+            "last season",
+            "what years",
+            "which years",
+            "what seasons",
+            "which seasons",
+            "didn't tie",
+            "did not tie",
+            "no ties",
+            "without ties",
+        ],
+    ):
+        mode = "years_with_ties"
+        no_tie_terms = ["didn't tie", "did not tie", "no ties", "without ties"]
+        is_no_tie_query = _contains_any(q, no_tie_terms)
+        if _contains_any(q, ["what years", "which years", "what seasons", "which seasons"]):
+            mode = "years_without_ties" if is_no_tie_query else "years_with_ties"
+        elif "is this the first season" in q:
+            mode = "first_zero_check" if is_no_tie_query else "first_tie_check"
+        elif "first" in q and ("this season" in q or "current season" in q):
+            mode = "first_zero_check" if is_no_tie_query else "first_tie_check"
+        elif "first" in q:
+            mode = "first_zero_season" if is_no_tie_query else "first_tie_season"
+        elif "last" in q:
+            mode = "last_zero_season" if is_no_tie_query else "last_tie_season"
+
+        return CapabilityMatch(
+            intent="matchup_tie_history",
+            params={
+                "year": year,
+                "team": team1,
+                "scope": scope if scope in {"RS", "PO"} else "RS",
+                "year_range": "ALL",
+                "mode": mode,
+            },
+        )
+
     if _contains_any(q, ["tie", "tied", "draw", "drew"]) and (
         _contains_any(q, ["matchup", "matchups", "games", "game", "record"])
         or _contains_any(q, ["most", "least", "fewest", "best", "worst", "top", "bottom"])
