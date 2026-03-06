@@ -2,12 +2,14 @@ import asyncio
 import os
 import ssl
 import time
+import re
 from pathlib import Path
 
 import aiohttp
 import disnake
 from disnake.ext import commands
 
+from constants import allMembers
 from .query_parser import QuerySpec, parse_query
 from .stats_query_engine import answer_query
 from .team_identity import resolve_user_team
@@ -83,9 +85,27 @@ def _strip_bot_mention(content: str, bot_user_id: int) -> str:
     )
 
 
-def _run_answer_pipeline(question: str) -> tuple[str, QuerySpec]:
-    spec = parse_query(question)
-    return answer_query(question, spec), spec
+def _question_mentions_team(question: str) -> bool:
+    q = question.lower()
+    return any(str(team).lower() in q for team in allMembers)
+
+
+def _expand_first_person_question(question: str, requester_team: str | None) -> str:
+    if not requester_team:
+        return question
+    q = question.strip()
+    q_low = q.lower()
+    if _question_mentions_team(q_low):
+        return q
+    if re.search(r"\b(my|me|i)\b", q_low):
+        return f"{q} for {requester_team}"
+    return q
+
+
+def _run_answer_pipeline(question: str, requester_team: str | None = None) -> tuple[str, QuerySpec]:
+    effective_question = _expand_first_person_question(question, requester_team)
+    spec = parse_query(effective_question)
+    return answer_query(effective_question, spec), spec
 
 
 def _record_message_usage(
@@ -248,10 +268,17 @@ def run_bot() -> None:
         spec = None
         ok = True
         err = None
+        author = getattr(inter, "author", None)
+        team_match = resolve_user_team(
+            user_id=getattr(author, "id", None),
+            display_name=getattr(author, "display_name", None),
+            username=getattr(author, "name", None),
+        )
         try:
-            spec = parse_query(question, use_llm=False)
+            effective_question = _expand_first_person_question(question, team_match.team)
+            spec = parse_query(effective_question, use_llm=False)
             spec.deterministic_only = True
-            response = await asyncio.to_thread(answer_query, question, spec)
+            response = await asyncio.to_thread(answer_query, effective_question, spec)
         except Exception as exc:
             ok = False
             err = str(exc)
@@ -434,7 +461,12 @@ def run_bot() -> None:
         err = None
         async with message.channel.typing():
             try:
-                response, parsed_spec = await asyncio.to_thread(_run_answer_pipeline, question)
+                team_match = resolve_user_team(
+                    user_id=getattr(message.author, "id", None),
+                    display_name=getattr(message.author, "display_name", None),
+                    username=getattr(message.author, "name", None),
+                )
+                response, parsed_spec = await asyncio.to_thread(_run_answer_pipeline, question, team_match.team)
             except Exception as exc:
                 ok = False
                 err = str(exc)
