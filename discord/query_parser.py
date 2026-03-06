@@ -1,4 +1,3 @@
-import json
 import os
 import re
 from dataclasses import dataclass
@@ -6,7 +5,8 @@ from typing import Optional
 
 from constants import allMembers, currentYear, seasonInfo
 from .capability_router import route_question
-from .llm_usage import budget_remaining, extract_usage, record_usage
+from .capability_registry import VALID_INTENTS, lexical_retrieve
+from .llm_planner import plan_query_with_llm
 
 STAT_SYNONYMS = {
     "PTS": ["pts", "point", "points", "scoring"],
@@ -22,78 +22,6 @@ STAT_SYNONYMS = {
 
 VALID_STATS = list(STAT_SYNONYMS.keys())
 VALID_SCOPES = ["ALL", "RS", "PO"]
-VALID_INTENTS = {
-    "leader",
-    "leader_vs_team",
-    "standings",
-    "best_team_snapshot",
-    "standings_alternate",
-    "predict_champion",
-    "champions_lounge",
-    "mvp_by_avg_rating",
-    "category_sweep",
-    "strength_of_schedule",
-    "draft_pick_value",
-    "draft_player_score",
-    "draft_team_score",
-    "team_compare",
-    "head_to_head",
-    "record_vs_team",
-    "matchup_tie_leaders",
-    "matchup_tie_history",
-    "team_summary",
-    "team_rating_by_season",
-    "week_leader",
-    "schedule_toughest_stretch",
-    "half_split_improvement",
-    "weekly_top_performer_count",
-    "record_vs_seed",
-    "opponent_uplift",
-    "correlation",
-    "correlation_scan",
-    "trend_split",
-    "consistency",
-    "what_if_schedule_swap",
-    "recap_regular_season",
-    "vs_weekly_top_team",
-    "unknown",
-}
-
-CAPABILITY_CATALOG: list[dict[str, str]] = [
-    {"intent": "leader", "description": "Top/bottom teams for a stat (PTS/REB/AST/etc.) in a season/scope."},
-    {"intent": "leader_vs_team", "description": "Top/bottom teams in a stat specifically against a target team."},
-    {"intent": "standings", "description": "Category or W-L standings, optionally by place/rank or specific team."},
-    {"intent": "best_team_snapshot", "description": "Best team right now summary (standings + current metrics)."},
-    {"intent": "standings_alternate", "description": "Alternative standings format comparison (category vs W-L)."},
-    {"intent": "predict_champion", "description": "Champion prediction style ranking for a season."},
-    {"intent": "champions_lounge", "description": "Historical champions summary across years."},
-    {"intent": "mvp_by_avg_rating", "description": "MVP style ranking by average team rating."},
-    {"intent": "category_sweep", "description": "Category leaders/laggards across multiple stats."},
-    {"intent": "strength_of_schedule", "description": "Schedule difficulty by opponent quality."},
-    {"intent": "draft_pick_value", "description": "Best/worst single draft picks in a season."},
-    {"intent": "draft_player_score", "description": "Best/worst players by aggregate draft score across seasons."},
-    {"intent": "draft_team_score", "description": "Best/worst drafting teams by aggregate draft score."},
-    {"intent": "team_compare", "description": "Compare two teams on season stats/rankings."},
-    {"intent": "head_to_head", "description": "Direct matchup result between two teams (week/current)."},
-    {"intent": "record_vs_team", "description": "Best/worst record or most/fewest wins against a target team."},
-    {"intent": "matchup_tie_leaders", "description": "Teams with most/fewest tied matchups."},
-    {"intent": "matchup_tie_history", "description": "Year-by-year tie history for a team."},
-    {"intent": "team_summary", "description": "Season summary/profile for one team."},
-    {"intent": "team_rating_by_season", "description": "Best/worst season(s) for a team across years."},
-    {"intent": "week_leader", "description": "Weekly leaders for a stat in one week/range."},
-    {"intent": "schedule_toughest_stretch", "description": "Toughest/easiest week stretch for a team."},
-    {"intent": "half_split_improvement", "description": "First-half vs second-half performance changes."},
-    {"intent": "weekly_top_performer_count", "description": "Who finished #1 in weekly ratings most often."},
-    {"intent": "record_vs_seed", "description": "Record versus top-k seeds or specific seed(s)."},
-    {"intent": "opponent_uplift", "description": "Who faced strongest opponents on average."},
-    {"intent": "correlation", "description": "Correlation between two metrics for one season."},
-    {"intent": "correlation_scan", "description": "Scan strongest correlations across candidate metrics."},
-    {"intent": "trend_split", "description": "Trend/split analysis by timing windows."},
-    {"intent": "consistency", "description": "Most/least consistent teams over time."},
-    {"intent": "what_if_schedule_swap", "description": "What-if schedule swap scenario analysis."},
-    {"intent": "recap_regular_season", "description": "Regular-season recap for a target year."},
-    {"intent": "vs_weekly_top_team", "description": "Who faced weekly #1 teams the most."},
-]
 
 
 @dataclass
@@ -124,6 +52,10 @@ class QuerySpec:
     candidate_metrics: Optional[str] = None
     metric_x: Optional[str] = None
     metric_y: Optional[str] = None
+    parse_confidence: float = 1.0
+    needs_clarification: bool = False
+    clarification_question: Optional[str] = None
+    suggestions: tuple[str, ...] = ()
     deterministic_only: bool = False
 
 
@@ -297,6 +229,67 @@ def _resolve_relative_year(question: str) -> int:
     return currentYear
 
 
+def _has_explicit_timeframe(question: str) -> bool:
+    q = question.lower()
+    if re.search(r"\b20\d{2}\b", q):
+        return True
+    if any(
+        k in q
+        for k in [
+            "this season",
+            "current season",
+            "last season",
+            "all time",
+            "all-time",
+            "career",
+            "regular season",
+            "playoff",
+            "postseason",
+            "week ",
+            "weeks ",
+        ]
+    ):
+        return True
+    if re.search(r"\b\d+\s+(season|seasons|year|years)\s+ago\b", q):
+        return True
+    return False
+
+
+def _build_suggestions(question: str, routed_intent: str | None = None) -> tuple[str, ...]:
+    q = question.strip().rstrip("?")
+    suggestions: list[str] = []
+
+    if q and not _has_explicit_timeframe(q):
+        suggestions.append(f"{q} this season")
+        suggestions.append(f"{q} all-time")
+
+    for cap in lexical_retrieve(question, top_k=4):
+        examples = cap.examples if isinstance(cap.examples, tuple) else (cap.examples,)
+        for ex in examples:
+            if ex and ex not in suggestions:
+                suggestions.append(ex)
+        if len(suggestions) >= 4:
+            break
+
+    if routed_intent == "week_leader" and not re.search(r"\b(pts|reb|ast|stl|blk|to|3ptm|fg%|ft%)\b", question.lower()):
+        suggestions.append("who had the most PTS in week 7")
+        suggestions.append("who had the best record in week 7")
+
+    deduped = []
+    for s in suggestions:
+        if s not in deduped:
+            deduped.append(s)
+    return tuple(deduped[:4])
+
+
+def _default_clarification_question(question: str) -> str:
+    if not _has_explicit_timeframe(question):
+        return "Do you want current season, all-time, or a specific year?"
+    if "week" in question.lower() and not re.search(r"\b(pts|reb|ast|stl|blk|to|3ptm|fg%|ft%)\b", question.lower()):
+        return "Do you mean best record that week, or best stat leader that week?"
+    return "Can you clarify the stat or comparison you want?"
+
+
 def _fallback_parse(question: str) -> QuerySpec:
     year = _resolve_relative_year(question)
 
@@ -393,79 +386,21 @@ def _fallback_parse(question: str) -> QuerySpec:
     )
 
 
-def _llm_plan(question: str) -> Optional[dict]:
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        return None
-    remaining, limit = budget_remaining()
-    if limit > 0 and remaining <= 0:
-        return None
-
-    try:
-        from openai import OpenAI
-    except Exception:
-        return None
-
-    model = os.getenv("DISCORD_QA_MODEL", "gpt-4.1-mini")
-    client = OpenAI(api_key=api_key)
-    teams_blob = ", ".join(map(str, allMembers))
-    catalog_blob = "\n".join(
-        f"- {entry['intent']}: {entry['description']}" for entry in CAPABILITY_CATALOG
-    )
-
-    prompt = f"""
-You are a semantic planner for a fantasy-basketball bot.
-Return ONE JSON object only (no prose, no markdown) with these keys:
-intent, year, relative_year_offset, year_range, scope, stat, direction, top_n,
-team, team2, week, start_week, end_week, standings_format, place,
-seed, seed_mode, k, timing, method, mode, n, metric, target_metric, candidate_metrics, metric_x, metric_y, confidence.
-
-Rules:
-- intent must match one capability from this catalog:
-{catalog_blob}
-- stat must be one of {VALID_STATS} or null
-- scope must be ALL|RS|PO (default ALL)
-- direction must be max|min
-- standings_format must be auto|wl|cats
-- place can be integer or "last" or null
-- year: explicit numeric year if present, else null
-- relative_year_offset: 0 for "this/current season", -1 for "last season", -2 for "2 years ago", else null
-- year_range: "ALL" for all-time/career, else null
-- confidence: float 0..1
-- if a capability can answer, choose it even with casual wording/slang
-- do NOT output stats/results, only planning fields
-- teams must be canonical names from: {teams_blob}
-- if user asks for "best team right now", prefer intent=best_team_snapshot
-- if user asks "best/worst season for team", prefer intent=team_rating_by_season and mode=best|worst
-- if user asks record/wins against a team, prefer intent=record_vs_team
-
-Interpretation:
-- "who would win this week/team vs team this week/current matchup/currently winning" => intent=head_to_head scope=RS
-- "best team right now/top team rn/current best team" => intent=best_team_snapshot
-- "best/worst season for a team" => intent=team_rating_by_season with mode=best|worst and year_range=ALL
-- "my/me/i" can map to team only if explicit team is present in text; otherwise leave null.
-
-If ambiguous and cannot map reliably, set intent="unknown" and confidence <= 0.45.
-"""
-
-    try:
-        response = client.responses.create(
-            model=model,
-            input=[
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": question},
-            ],
-            temperature=0,
-            max_output_tokens=128,
-        )
-        in_tok, out_tok, total_tok = extract_usage(response)
-        record_usage("parse", model, question, in_tok, out_tok, total_tok)
-        text = getattr(response, "output_text", "").strip()
-        if not text:
-            return None
-        return json.loads(text)
-    except Exception:
-        return None
+def _llm_plan(question: str, routed_spec: QuerySpec | None = None) -> Optional[dict]:
+    routed_hint = None
+    if routed_spec is not None:
+        routed_hint = {
+            "intent": routed_spec.intent,
+            "year": routed_spec.year,
+            "scope": routed_spec.scope,
+            "stat": routed_spec.stat,
+            "team": routed_spec.team,
+            "team2": routed_spec.team2,
+            "week": routed_spec.week,
+            "start_week": routed_spec.start_week,
+            "end_week": routed_spec.end_week,
+        }
+    return plan_query_with_llm(question, routed_hint=routed_hint, max_retries=1)
 
 
 def _get_llm_parse_confidence_threshold() -> float:
@@ -562,6 +497,7 @@ def _spec_from_routed(routed) -> QuerySpec:
         top_n=int(routed.params.get("top_n", 1)),
         team=_normalize_team(routed.params.get("team"), routed_year),
         team2=_normalize_team(routed.params.get("team2"), routed_year),
+        week=routed.params.get("week"),
         start_week=routed.params.get("start_week"),
         end_week=routed.params.get("end_week"),
         standings_format=_normalize_standings_format(routed.params.get("standings_format")),
@@ -606,7 +542,7 @@ def parse_query(question: str, use_llm: bool = True) -> QuerySpec:
             return routed_spec
 
         # Optional override mode: allow high-confidence LLM plan to replace routed parse.
-        plan = _llm_plan(question)
+        plan = _llm_plan(question, routed_spec=routed_spec)
         if isinstance(plan, dict):
             parsed = _spec_from_llm_plan(plan)
             conf = 0.0
@@ -614,6 +550,16 @@ def parse_query(question: str, use_llm: bool = True) -> QuerySpec:
                 conf = float(plan.get("confidence", 0.0))
             except Exception:
                 conf = 0.0
+            parsed.parse_confidence = conf
+            if plan.get("needs_clarification") is True and parsed.intent == "unknown":
+                parsed.needs_clarification = True
+                parsed.clarification_question = (
+                    str(plan.get("clarification_question")).strip()
+                    if isinstance(plan.get("clarification_question"), str)
+                    else _default_clarification_question(question)
+                )
+                parsed.suggestions = _build_suggestions(question, routed_intent=routed_spec.intent)
+                return parsed
             if parsed.intent != "unknown" and conf >= llm_threshold:
                 if _prefer_routed_over_llm(question, parsed, routed_spec):
                     return routed_spec
@@ -621,9 +567,30 @@ def parse_query(question: str, use_llm: bool = True) -> QuerySpec:
         return routed_spec
 
     if use_llm:
-        plan = _llm_plan(question)
+        plan = _llm_plan(question, routed_spec=None)
         if isinstance(plan, dict):
             parsed = _spec_from_llm_plan(plan)
-            if parsed and parsed.intent != "unknown":
+            conf = 0.0
+            try:
+                conf = float(plan.get("confidence", 0.0))
+            except Exception:
+                conf = 0.0
+            parsed.parse_confidence = conf
+            if plan.get("needs_clarification") is True or parsed.intent == "unknown" or conf < llm_threshold:
+                parsed.intent = "unknown"
+                parsed.needs_clarification = True
+                parsed.clarification_question = (
+                    str(plan.get("clarification_question")).strip()
+                    if isinstance(plan.get("clarification_question"), str)
+                    else _default_clarification_question(question)
+                )
+                parsed.suggestions = _build_suggestions(question)
                 return parsed
-    return _fallback_parse(question)
+            if parsed and parsed.intent != "unknown" and conf >= llm_threshold:
+                return parsed
+    parsed = _fallback_parse(question)
+    if parsed.intent == "unknown":
+        parsed.needs_clarification = True
+        parsed.clarification_question = _default_clarification_question(question)
+        parsed.suggestions = _build_suggestions(question)
+    return parsed
