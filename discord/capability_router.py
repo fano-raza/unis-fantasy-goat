@@ -90,6 +90,62 @@ def _extract_teams(question: str) -> tuple[str | None, str | None]:
     return t1, t2
 
 
+def _contains_any(q: str, terms: list[str]) -> bool:
+    return any(term in q for term in terms)
+
+
+def _is_all_time(q: str) -> bool:
+    return _contains_any(q, ["all-time", "all time", "entire career", "career"])
+
+
+def _infer_record_vs_team_metric(q: str) -> str:
+    wins_terms = ["most wins", "won the most", "won most games", "wins against", "wins over", "most wins over"]
+    return "wins" if _contains_any(q, wins_terms) else "win_pct"
+
+
+def _match_record_vs_team(q: str, team1: str | None, scope: str, year: int) -> CapabilityMatch | None:
+    if not team1:
+        return None
+
+    # Semantic buckets: target relation + comparison intent.
+    relation_terms = [
+        "against",
+        "vs ",
+        "versus ",
+        "beaten",
+        "beat ",
+        "wins over",
+        "won against",
+        "record against",
+        "record vs",
+    ]
+    comparison_terms = [
+        "best",
+        "most",
+        "who has",
+        "who's",
+        "top",
+        "leader",
+    ]
+
+    # Also catch plain "who beat <team> the most" style.
+    beat_superlative = "beat" in q and _contains_any(q, ["most", "best"])
+
+    if not (_contains_any(q, relation_terms) and _contains_any(q, comparison_terms)) and not beat_superlative:
+        return None
+
+    return CapabilityMatch(
+        intent="record_vs_team",
+        params={
+            "year": year,
+            "team": team1,
+            "scope": scope if scope in {"RS", "PO"} else "RS",
+            "year_range": "ALL" if _is_all_time(q) else None,
+            "metric": _infer_record_vs_team_metric(q),
+        },
+    )
+
+
 def route_question(question: str) -> CapabilityMatch | None:
     q = question.lower().strip()
     year = _extract_year(question)
@@ -176,28 +232,9 @@ def route_question(question: str) -> CapabilityMatch | None:
     if ("opponents" in q and ("overperform" in q or "underperform" in q or "suppress" in q)) or "avg opp delta" in q:
         return CapabilityMatch(intent="opponent_uplift", params={"year": year, "year_range": "ALL", "scope": "RS"})
 
-    if (
-        team1
-        and ("against" in q or "vs " in q or "versus " in q)
-        and (
-            "best record" in q
-            or "most wins" in q
-            or "won the most" in q
-            or "won most games" in q
-            or "wins against" in q
-        )
-    ):
-        metric = "wins" if ("most wins" in q or "won the most" in q or "won most games" in q or "wins against" in q) else "win_pct"
-        return CapabilityMatch(
-            intent="record_vs_team",
-            params={
-                "year": year,
-                "team": team1,
-                "scope": scope if scope in {"RS", "PO"} else "RS",
-                "year_range": "ALL" if ("all-time" in q or "all time" in q or "entire career" in q or "career" in q) else None,
-                "metric": metric,
-            },
-        )
+    record_vs_team_match = _match_record_vs_team(q, team1, scope, year)
+    if record_vs_team_match:
+        return record_vs_team_match
 
     if (
         ("best ranked team of the week" in q or "weekly #1" in q or "week #1" in q or "top team of the week" in q)
@@ -265,6 +302,20 @@ def route_question(question: str) -> CapabilityMatch | None:
                 place = val
                 break
         return CapabilityMatch(intent="standings", params={"year": year, "place": place, "standings_format": "auto"})
+
+    if (
+        team1
+        and team2
+        and (
+            "current matchup" in q
+            or "currently winning" in q
+            or ("winning" in q and "matchup" in q and "between" in q)
+        )
+    ):
+        return CapabilityMatch(
+            intent="head_to_head",
+            params={"year": year, "team": team1, "team2": team2, "scope": "RS"},
+        )
 
     if "summarize" in q or "summary" in q or "profile" in q:
         return CapabilityMatch(intent="team_summary", params={"year": year, "scope": scope, "team": team1})
