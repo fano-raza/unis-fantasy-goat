@@ -728,6 +728,18 @@ def route_question(question: str) -> CapabilityMatch | None:
     if _contains_any(q, ["average rating by season", "avg rating by season"]):
         return CapabilityMatch(intent="team_rating_by_season", params={"year": year, "team": team1, "year_range": "ALL", "scope": "RS"})
 
+    if team1 and _contains_any(q, ["best season", "worst season"]) and not _contains_any(q, ["draft", "playoff", "matchup tie"]):
+        return CapabilityMatch(
+            intent="team_rating_by_season",
+            params={
+                "year": year,
+                "team": team1,
+                "year_range": "ALL",
+                "scope": "RS",
+                "mode": "worst" if "worst season" in q else "best",
+            },
+        )
+
     if _contains_any(q, ["toughest 5-week stretch", "toughest five-week stretch", "toughest stretch"]) and team1:
         m = re.search(r"(\d+)\s*-\s*week|(\d+)\s*week", q)
         window = 5

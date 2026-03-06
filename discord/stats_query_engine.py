@@ -680,6 +680,11 @@ def _answer_team_rating_by_season(spec: QuerySpec) -> str:
         rows.append((year, float(df["week_rating"].mean())))
     if not rows:
         return f"No average-rating rows found for {spec.team}."
+    mode = (spec.mode or "").lower()
+    if mode in {"best", "worst"}:
+        best = mode == "best"
+        y, v = max(rows, key=lambda x: x[1]) if best else min(rows, key=lambda x: x[1])
+        return f"{spec.team}'s {'best' if best else 'worst'} season by average rating was {y} ({v:.2f})."
     lines = [f"{spec.team} average rating by season:"]
     for y, v in rows:
         lines.append(f"- {y}: {v:.2f}")
