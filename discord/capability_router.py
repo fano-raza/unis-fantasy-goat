@@ -525,6 +525,25 @@ def route_question(question: str) -> CapabilityMatch | None:
             params={"year": year, "year_range": "ALL" if _is_all_time(q) else None, "scope": "RS"},
         )
 
+    if _contains_any(q, ["tie", "tied", "draw", "drew"]) and (
+        _contains_any(q, ["matchup", "matchups", "games", "game", "record"])
+        or _contains_any(q, ["most", "least", "fewest", "best", "worst", "top", "bottom"])
+    ):
+        mode = "top"
+        if _contains_any(q, ["least", "fewest", "lowest", "min", "worst"]):
+            mode = "bottom"
+        n = max(1, min(30, top_n if top_n > 1 else (10 if _contains_any(q, ["most", "best", "least", "fewest", "worst", "top", "bottom"]) else 1)))
+        return CapabilityMatch(
+            intent="matchup_tie_leaders",
+            params={
+                "year": year,
+                "year_range": "ALL" if _is_all_time(q) else None,
+                "scope": scope if scope in {"RS", "PO"} else "RS",
+                "mode": mode,
+                "n": n,
+            },
+        )
+
     record_vs_team_match = _match_record_vs_team(q, stat, team1, scope, year, start_week, end_week)
     if record_vs_team_match:
         return record_vs_team_match

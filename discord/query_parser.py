@@ -38,6 +38,7 @@ VALID_INTENTS = {
     "team_compare",
     "head_to_head",
     "record_vs_team",
+    "matchup_tie_leaders",
     "team_summary",
     "team_rating_by_season",
     "week_leader",

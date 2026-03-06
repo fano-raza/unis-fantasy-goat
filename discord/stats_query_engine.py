@@ -1103,6 +1103,60 @@ def _answer_record_vs_team(spec: QuerySpec) -> str:
     return "\n".join(lines)
 
 
+def _answer_matchup_tie_leaders(spec: QuerySpec) -> str:
+    years = _resolve_years(spec)
+    ties_by_team = Counter()
+    games_by_team = Counter()
+
+    for year in years:
+        rs = _season(year)
+        df = _filter_df_by_scope(rs.statDF, spec.scope)
+        df = _filter_df_by_weeks(df, spec.week, spec.start_week, spec.end_week)
+        df = df[(df["Team"] != "BYE") & (df["Opp"] != "BYE")]
+        if "real_matchup" in df.columns:
+            df = df[df["real_matchup"] >= 1]
+        if df.empty:
+            continue
+
+        agg = (
+            df.groupby("Team")[["matchup_tie", "matchup_win", "matchup_loss"]]
+            .sum()
+            .reset_index()
+        )
+        for _, row in agg.iterrows():
+            team = str(row["Team"])
+            t = int(row["matchup_tie"])
+            w = int(row["matchup_win"])
+            l = int(row["matchup_loss"])
+            g = w + l + t
+            ties_by_team[team] += t
+            games_by_team[team] += g
+
+    rows = []
+    for team, ties in ties_by_team.items():
+        g = int(games_by_team.get(team, 0))
+        rate = (ties / g) if g > 0 else 0.0
+        rows.append((team, int(ties), g, rate))
+
+    if not rows:
+        return "No matchup tie data found."
+
+    mode = (spec.mode or "top").lower()
+    if mode == "bottom":
+        rows.sort(key=lambda x: (x[1], x[3], x[0]))
+        title = f"Fewest matchup ties ({'all-time' if (spec.year_range or '').upper() == 'ALL' else spec.year}, {_scope_name(spec.scope)}):"
+    else:
+        rows.sort(key=lambda x: (-x[1], -x[3], x[0]))
+        title = f"Most matchup ties ({'all-time' if (spec.year_range or '').upper() == 'ALL' else spec.year}, {_scope_name(spec.scope)}):"
+
+    n = max(1, int(spec.n or spec.top_n or 10))
+    out = rows[:n]
+    lines = [title]
+    for i, (team, ties, g, rate) in enumerate(out, 1):
+        lines.append(f"{i}. {team} — {ties} ties ({g} games, {rate:.3f} tie rate)")
+    return "\n".join(lines)
+
+
 def _answer_team_summary(spec: QuerySpec) -> str:
     if not spec.team:
         return "For team summary, include a team name (e.g., 'summary for Fano in 2026')."
@@ -1259,6 +1313,7 @@ def _answer_with_llm(question: str, spec: QuerySpec) -> Optional[str]:
         "team_compare",
         "head_to_head",
         "record_vs_team",
+        "matchup_tie_leaders",
         "team_summary",
         "team_rating_by_season",
         "week_leader",
@@ -1291,6 +1346,7 @@ def _answer_with_llm(question: str, spec: QuerySpec) -> Optional[str]:
             "team_compare": _answer_team_compare,
             "head_to_head": _answer_head_to_head,
             "record_vs_team": _answer_record_vs_team,
+            "matchup_tie_leaders": _answer_matchup_tie_leaders,
             "team_summary": _answer_team_summary,
             "team_rating_by_season": _answer_team_rating_by_season,
             "week_leader": _answer_week_leader,
@@ -1355,6 +1411,7 @@ def _should_prefer_deterministic(question: str, spec: QuerySpec) -> bool:
         return True
     if spec.intent in {
         "record_vs_team",
+        "matchup_tie_leaders",
         "record_vs_seed",
         "vs_weekly_top_team",
         "weekly_top_performer_count",
@@ -1431,6 +1488,7 @@ def _should_return_both_current_and_all_time(question: str, spec: QuerySpec) -> 
         return False
     dual_intents = {
         "record_vs_team",
+        "matchup_tie_leaders",
         "record_vs_seed",
         "opponent_uplift",
         "vs_weekly_top_team",
@@ -1496,6 +1554,7 @@ def answer_query(question: str, spec: QuerySpec) -> str:
         "team_compare": _answer_team_compare,
         "head_to_head": _answer_head_to_head,
         "record_vs_team": _answer_record_vs_team,
+        "matchup_tie_leaders": _answer_matchup_tie_leaders,
         "team_summary": _answer_team_summary,
         "team_rating_by_season": _answer_team_rating_by_season,
         "week_leader": _answer_week_leader,
