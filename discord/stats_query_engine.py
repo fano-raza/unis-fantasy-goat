@@ -277,6 +277,34 @@ def _answer_standings(spec: QuerySpec) -> str:
     return "\n".join(lines)
 
 
+def _answer_best_team_snapshot(spec: QuerySpec) -> str:
+    rs = _season(spec.year)
+    week = int(getattr(rs, "currentWeek", 0) or 0)
+
+    wl = rs.get_WL_standings()
+    season_ranks = rs.get_season_rankings()
+    week_ranks = rs.get_week_rankings(week) if week > 0 else {}
+
+    lines = [f"{spec.year} best-team snapshot (current week: {week}):"]
+
+    lines.append("Current standings (W/L):")
+    for place, (team, record) in wl.items():
+        lines.append(f"{place}. {team} ({record})")
+
+    lines.append("")
+    lines.append("Current overall rankings (season average rank):")
+    for place, (team, score) in season_ranks.items():
+        lines.append(f"{place}. {team} ({score:.2f})")
+
+    if week_ranks:
+        lines.append("")
+        lines.append(f"Current week rankings (Week {week}):")
+        for place, (team, score) in week_ranks.items():
+            lines.append(f"{place}. {team} ({score:.2f})")
+
+    return "\n".join(lines)
+
+
 def _answer_standings_alternate(spec: QuerySpec) -> str:
     rs = _season(spec.year)
     if rs.is_WL:
@@ -1407,6 +1435,7 @@ def _answer_with_llm(question: str, spec: QuerySpec) -> Optional[str]:
         "leader",
         "leader_vs_team",
         "standings",
+        "best_team_snapshot",
         "standings_alternate",
         "predict_champion",
         "champions_lounge",
@@ -1441,6 +1470,7 @@ def _answer_with_llm(question: str, spec: QuerySpec) -> Optional[str]:
             "leader": _answer_leader,
             "leader_vs_team": _answer_leader_vs_team,
             "standings": _answer_standings,
+            "best_team_snapshot": _answer_best_team_snapshot,
             "standings_alternate": _answer_standings_alternate,
             "predict_champion": _answer_predict_champion,
             "champions_lounge": _answer_champions_lounge,
@@ -1521,6 +1551,7 @@ def _should_prefer_deterministic(question: str, spec: QuerySpec) -> bool:
         "record_vs_team",
         "matchup_tie_leaders",
         "matchup_tie_history",
+        "best_team_snapshot",
         "record_vs_seed",
         "vs_weekly_top_team",
         "weekly_top_performer_count",
@@ -1651,6 +1682,7 @@ def answer_query(question: str, spec: QuerySpec) -> str:
         "leader": _answer_leader,
         "leader_vs_team": _answer_leader_vs_team,
         "standings": _answer_standings,
+        "best_team_snapshot": _answer_best_team_snapshot,
         "standings_alternate": _answer_standings_alternate,
         "predict_champion": _answer_predict_champion,
         "champions_lounge": _answer_champions_lounge,
