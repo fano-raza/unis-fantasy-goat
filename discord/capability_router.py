@@ -163,8 +163,30 @@ def _extract_place_hint(q: str) -> int | None:
 
 
 def _infer_record_vs_team_metric(q: str) -> str:
-    wins_terms = ["most wins", "won the most", "won most games", "wins against", "wins over", "most wins over"]
+    wins_terms = [
+        "most wins",
+        "won the most",
+        "won most games",
+        "wins against",
+        "wins over",
+        "most wins over",
+        "lost to the most",
+        "lost to most",
+        "beaten by",
+        "beat me the most",
+    ]
     return "wins" if _contains_any(q, wins_terms) else "win_pct"
+
+
+def _infer_record_vs_team_direction(q: str, metric: str) -> str:
+    if metric == "wins":
+        if _contains_any(q, ["least", "fewest", "lowest", "min"]):
+            return "min"
+        return "max"
+    # win_pct / record semantics
+    if _contains_any(q, ["worst", "least", "lowest", "struggle", "can't beat", "cannot beat"]):
+        return "min"
+    return "max"
 
 
 def _match_record_vs_team(
@@ -187,15 +209,29 @@ def _match_record_vs_team(
         "vs ",
         "versus ",
         "beaten",
+        "beaten by",
         "beat ",
+        "lost to",
+        "losses to",
         "wins over",
         "won against",
         "record against",
         "record vs",
+        "record over",
+        "owns",
+        "dominate",
+        "dominates",
+        "struggle against",
+        "struggles against",
+        "can't beat",
+        "cannot beat",
     ]
     comparison_terms = [
         "best",
         "most",
+        "worst",
+        "least",
+        "fewest",
         "who has",
         "who's",
         "top",
@@ -203,11 +239,15 @@ def _match_record_vs_team(
     ]
 
     # Also catch plain "who beat <team> the most" style.
-    beat_superlative = "beat" in q and _contains_any(q, ["most", "best"])
+    beat_superlative = (
+        ("beat" in q or "lost to" in q or "beaten by" in q)
+        and _contains_any(q, ["most", "best", "worst", "least", "fewest"])
+    )
 
     if not (_contains_any(q, relation_terms) and _contains_any(q, comparison_terms)) and not beat_superlative:
         return None
 
+    metric = _infer_record_vs_team_metric(q)
     return CapabilityMatch(
         intent="record_vs_team",
         params={
@@ -215,7 +255,8 @@ def _match_record_vs_team(
             "team": team1,
             "scope": scope if scope in {"RS", "PO"} else "RS",
             "year_range": "ALL" if _is_all_time(q) else None,
-            "metric": _infer_record_vs_team_metric(q),
+            "metric": metric,
+            "direction": _infer_record_vs_team_direction(q, metric),
             "start_week": start_week,
             "end_week": end_week,
         },
@@ -657,6 +698,14 @@ def route_question(question: str) -> CapabilityMatch | None:
     if "standings" in q:
         fmt = "cats" if "category" in q or "cats" in q else "wl" if "matchup" in q or "w/l" in q else "auto"
         return CapabilityMatch(intent="standings", params={"year": year, "standings_format": fmt})
+
+    if (
+        team1
+        and not team2
+        and stat is None
+        and _contains_any(q, ["where is", "what rank", "what place", "ranked", "position"])
+    ):
+        return CapabilityMatch(intent="standings", params={"year": year, "team": team1, "standings_format": "auto"})
 
     if ("first place" in q or "second place" in q or "third place" in q or "ranked" in q) and "who" in q:
         place_map = {"first": 1, "second": 2, "third": 3}

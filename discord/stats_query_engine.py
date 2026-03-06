@@ -265,6 +265,12 @@ def _answer_standings(spec: QuerySpec) -> str:
         team, record = standings[spec.place]
         return f"{spec.year} {title}: **{team}** is in {_ordinal(spec.place)} place ({record})."
 
+    if spec.team:
+        for place, (team, record) in standings.items():
+            if str(team).lower() == str(spec.team).lower():
+                return f"{spec.year} {title}: **{team}** is in {_ordinal(place)} place ({record})."
+        return f"{spec.team} is not a recognized team for {spec.year}."
+
     lines = [f"{spec.year} {title}:"]
     for place, (team, record) in standings.items():
         lines.append(f"{place}. {team} ({record})")
@@ -1090,12 +1096,20 @@ def _answer_record_vs_team(spec: QuerySpec) -> str:
         return f"No qualifying matchups found against {target}."
 
     metric = spec.metric or "win_pct"
+    direction = (spec.direction or "max").lower()
+    asc = direction == "min"
     if metric == "wins":
-        rows.sort(key=lambda x: (x[1], x[5], -x[2], x[0]), reverse=True)
-        title = f"Most wins vs {target} ({'all-time' if (spec.year_range or '').upper() == 'ALL' else spec.year}, {_scope_name(spec.scope)}):"
+        rows.sort(key=lambda x: (x[1], x[5], -x[2], x[0]), reverse=not asc)
+        title = (
+            f"{'Fewest' if asc else 'Most'} wins vs {target} "
+            f"({'all-time' if (spec.year_range or '').upper() == 'ALL' else spec.year}, {_scope_name(spec.scope)}):"
+        )
     else:
-        rows.sort(key=lambda x: (x[5], x[1], -x[2], x[0]), reverse=True)
-        title = f"Best record vs {target} ({'all-time' if (spec.year_range or '').upper() == 'ALL' else spec.year}, {_scope_name(spec.scope)}):"
+        rows.sort(key=lambda x: (x[5], x[1], -x[2], x[0]), reverse=not asc)
+        title = (
+            f"{'Worst' if asc else 'Best'} record vs {target} "
+            f"({'all-time' if (spec.year_range or '').upper() == 'ALL' else spec.year}, {_scope_name(spec.scope)}):"
+        )
 
     lines = [title]
     for i, (team, w, l, t, g, pct) in enumerate(rows, 1):
