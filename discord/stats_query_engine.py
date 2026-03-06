@@ -10,7 +10,7 @@ import pandas as pd
 
 from Models.seasons import regSeason
 from Models.seasons import poSeason
-from constants import currentYear, seasonInfo, gDocStatCats, allMembers
+from constants import currentYear, seasonInfo, gDocStatCats, allMembers, playoffTeamCount
 from recaps.recap_utils import write_regular_season_recap
 from shared.runtime_config import DATA_ROOT
 from .llm_usage import budget_remaining, extract_usage, record_usage
@@ -56,6 +56,37 @@ def _season(year: int) -> regSeason:
     return regSeason(year)
 
 
+@lru_cache(maxsize=16)
+def _po_team_set(year: int) -> set[str]:
+    """
+    Championship-playoff field only (excludes consolation bracket teams).
+    """
+    try:
+        p = poSeason(year)
+        teams = [str(t) for t in getattr(p, "PO_teams", []) if t]
+        if teams:
+            po_results = getattr(p, "PO_results", {}) or {}
+            below_top4 = {str(team) for team, res in po_results.items() if team and str(res).strip().lower() == "below top 4"}
+            return set(teams) - below_top4 if below_top4 else set(teams)
+    except Exception:
+        pass
+
+    # Conservative fallback to top-N from standings if PO_teams is unavailable.
+    try:
+        n = int(playoffTeamCount.get(year, 0) or 0)
+    except Exception:
+        n = 0
+    if n <= 0:
+        return set()
+    try:
+        rs = _season(year)
+        wl = rs.get_WL_standings()
+        top = [str(wl[i][0]) for i in sorted(wl.keys())[:n] if i in wl]
+        return set(top)
+    except Exception:
+        return set()
+
+
 def _filter_df_by_scope(df: pd.DataFrame, scope: str) -> pd.DataFrame:
     if scope in SCOPE_TO_PREFIX:
         prefix = SCOPE_TO_PREFIX[scope]
@@ -90,6 +121,10 @@ def _rank_for_scope(year: int, stat: str, scope: str, direction: str, week: Opti
                     start_week: Optional[int] = None, end_week: Optional[int] = None) -> pd.Series:
     rs = _season(year)
     df = _filter_df_by_scope(rs.statDF, scope)
+    if scope == "PO":
+        po_teams = _po_team_set(year)
+        if po_teams:
+            df = df[df["Team"].isin(po_teams) & df["Opp"].isin(po_teams)]
     df = _filter_df_by_weeks(df, week=week, start_week=start_week, end_week=end_week)
     if stat not in df.columns:
         return pd.Series(dtype="float64")
@@ -165,6 +200,9 @@ def _all_time_stats_df(scope: str, method: str) -> pd.DataFrame:
             df = df[df["Week Name"].str.startswith("M")]
         elif scope == "PO":
             df = df[df["Week Name"].str.startswith("P")]
+            po_teams = _po_team_set(y)
+            if po_teams:
+                df = df[df["Team"].isin(po_teams) & df["Opp"].isin(po_teams)]
         else:
             df = df[df["Week Name"].str.startswith(("M", "P"))]
         df = df[(df["Team"] != "BYE") & (df["Opp"] != "BYE")]

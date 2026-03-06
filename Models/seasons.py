@@ -215,7 +215,40 @@ class regSeason:
             (self.statDF["real_matchup"] >= real_include)
         ]
 
+        # Strict playoff counting:
+        # - exclude non-qualifiers
+        # - exclude teams eliminated before semifinals (Below Top 4)
+        # for any PO-week records.
+        if PO and real and not filtered_df.empty:
+            po_counting_teams = self._get_playoff_counting_teams()
+            if po_counting_teams:
+                po_mask = filtered_df["Week Name"].str.startswith("P")
+                keep_po = filtered_df["Team"].isin(po_counting_teams) & filtered_df["Opp"].isin(po_counting_teams)
+                filtered_df = filtered_df.loc[(~po_mask) | keep_po]
+
         return filtered_df
+
+    def _get_playoff_counting_teams(self):
+        cache_attr = "_po_counting_teams_cache"
+        if hasattr(self, cache_attr):
+            return getattr(self, cache_attr)
+
+        teams = set()
+        try:
+            # If already a poSeason instance, use in-memory playoff outputs.
+            po_obj = self if hasattr(self, "PO_teams") and hasattr(self, "PO_results") else \
+                poSeason(self.year, extStatDict=self.statDict, extStatDF=self.statDF)
+
+            po_teams = set(getattr(po_obj, "PO_teams", []) or [])
+            po_results = getattr(po_obj, "PO_results", {}) or {}
+            below_top4 = {team for team, res in po_results.items() if team and str(res).strip().lower() == "below top 4"}
+
+            teams = po_teams - below_top4 if po_teams else set()
+        except Exception:
+            teams = set()
+
+        setattr(self, cache_attr, teams)
+        return teams
 
     def make_stats(self):
         # Try to find CompStat csv for that year
@@ -863,6 +896,27 @@ class regSeason:
             return recDict
 
     # DATAFRAME PREP FUNCTIONS
+    def _apply_global_count_flags(self):
+        """
+        Global counting rules applied across regular season and playoffs.
+        Any BYE row is non-counting.
+        """
+        if self.statDF is None or self.statDF.empty:
+            return None
+
+        bye_mask = (self.statDF["Team"] == "BYE") | (self.statDF["Opp"] == "BYE")
+        if bye_mask.any():
+            if "Count" in self.statDF.columns:
+                self.statDF.loc[bye_mask, "Count"] = False
+            if "real_matchup" in self.statDF.columns:
+                self.statDF.loc[bye_mask, "real_matchup"] = 0
+
+            # Keep matchup outcome flags consistent for non-counting rows.
+            for col in ("matchup_win", "matchup_loss", "matchup_tie"):
+                if col in self.statDF.columns:
+                    self.statDF.loc[bye_mask, col] = 0
+        return None
+
     def df_build_out(self):
         posCats = [cat for cat in mainCats if cat != 'TO']
         posCats_opp = [cat + "_opp" for cat in posCats]
@@ -939,6 +993,7 @@ class regSeason:
 
         self.statDF['matchup_length'] = self.statDF.apply(lambda row: float(playoffRoundLength[row['Year']])
                                 if row['Week Name'].startswith('P') else 1.0, axis=1)
+        self._apply_global_count_flags()
         return None
 class poSeason(regSeason):
     def __init__(self, year, extStatDict = None, extStatDF = None):
@@ -1087,6 +1142,36 @@ class poSeason(regSeason):
 
             for standing in self.PO_standings:
                 self.PO_results[self.PO_standings[standing]] = standing
+
+        # Enforce strict playoff counting semantics in the season dataframe:
+        # remove/count-out any playoff-week rows involving teams that are not
+        # in the championship playoff field after excluding pre-semifinal exits.
+        self._apply_playoff_count_flags()
+
+    def _apply_playoff_count_flags(self):
+        if self.statDF is None or self.statDF.empty:
+            return None
+
+        po_mask = self.statDF["Week Name"].astype(str).str.startswith("P")
+        if not po_mask.any():
+            return None
+
+        po_teams = set(self.PO_teams or [])
+        below_top4 = {team for team, res in (self.PO_results or {}).items() if team and str(res).strip().lower() == "below top 4"}
+        counting_teams = po_teams - below_top4 if po_teams else set()
+        if not counting_teams:
+            return None
+
+        non_count_mask = po_mask & (
+            ~self.statDF["Team"].isin(counting_teams) |
+            ~self.statDF["Opp"].isin(counting_teams)
+        )
+        if non_count_mask.any():
+            if "Count" in self.statDF.columns:
+                self.statDF.loc[non_count_mask, "Count"] = False
+            if "real_matchup" in self.statDF.columns:
+                self.statDF.loc[non_count_mask, "real_matchup"] = 0
+        return None
 
     def get_PO_winner(self):
         if playoffTeamCount[self.year] == 0 or self.PO_matchups_by_week['Final']==None:
