@@ -477,6 +477,11 @@ def _get_llm_parse_confidence_threshold() -> float:
     return max(0.0, min(1.0, v))
 
 
+def _allow_llm_override_routed() -> bool:
+    raw = os.getenv("DISCORD_LLM_OVERRIDE_ROUTED", "0").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _spec_from_llm_plan(data: dict) -> QuerySpec:
     year_raw = data.get("year")
     rel_raw = data.get("relative_year_offset")
@@ -593,7 +598,14 @@ def parse_query(question: str, use_llm: bool = True) -> QuerySpec:
     prefer_llm = os.getenv("DISCORD_PREFER_LLM_PARSE", "1").strip().lower() in {"1", "true", "yes", "on"}
     routed = route_question(question)
     llm_threshold = _get_llm_parse_confidence_threshold()
-    if use_llm and prefer_llm:
+
+    # Safer default: deterministic routed intent first.
+    if routed:
+        routed_spec = _spec_from_routed(routed)
+        if not (use_llm and prefer_llm and _allow_llm_override_routed()):
+            return routed_spec
+
+        # Optional override mode: allow high-confidence LLM plan to replace routed parse.
         plan = _llm_plan(question)
         if isinstance(plan, dict):
             parsed = _spec_from_llm_plan(plan)
@@ -603,14 +615,10 @@ def parse_query(question: str, use_llm: bool = True) -> QuerySpec:
             except Exception:
                 conf = 0.0
             if parsed.intent != "unknown" and conf >= llm_threshold:
-                if routed:
-                    routed_spec = _spec_from_routed(routed)
-                    if _prefer_routed_over_llm(question, parsed, routed_spec):
-                        return routed_spec
+                if _prefer_routed_over_llm(question, parsed, routed_spec):
+                    return routed_spec
                 return parsed
-
-    if routed:
-        return _spec_from_routed(routed)
+        return routed_spec
 
     if use_llm:
         plan = _llm_plan(question)
