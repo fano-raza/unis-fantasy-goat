@@ -2942,6 +2942,23 @@ def _is_position_finish_question(question: str, spec: QuerySpec) -> bool:
     ) or bool(spec.place)
 
 
+def _looks_like_place_finish_question(question: str) -> bool:
+    q = (question or "").lower()
+    return any(
+        tok in q
+        for tok in [
+            "what place",
+            "which place",
+            "where did",
+            "finish",
+            "finished",
+            "final standing",
+            "final standings",
+            "ended up",
+        ]
+    ) and any(t in q for t in ["place", "finish", "standing", "standings"])
+
+
 def answer_query(question: str, spec: QuerySpec) -> str:
     invalid = _validate_year(spec)
     if invalid:
@@ -2977,6 +2994,10 @@ def answer_query(question: str, spec: QuerySpec) -> str:
         spec.scope = "RS"
         if spec.week is None and spec.start_week is not None and spec.end_week is not None and spec.start_week == spec.end_week:
             spec.week = spec.start_week
+
+    # Hard-prioritize placement/finish wording to standings before universal metric fallback.
+    if _looks_like_place_finish_question(question):
+        spec.intent = "standings"
 
     # Universal metric engine handles flexible metric+operator+filter combinations.
     # Try this early for broad stat queries to reduce intent-fragility.
