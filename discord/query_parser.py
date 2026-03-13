@@ -5,7 +5,7 @@ from typing import Optional
 
 from constants import allMembers, currentYear, seasonInfo
 from .capability_router import route_question
-from .capability_registry import VALID_INTENTS, lexical_retrieve
+from .capability_registry import VALID_INTENTS, lexical_retrieve, out_of_domain_response_for
 from .llm_planner import plan_query_with_llm
 
 STAT_SYNONYMS = {
@@ -256,6 +256,8 @@ def _has_explicit_timeframe(question: str) -> bool:
 
 
 def _build_suggestions(question: str, routed_intent: str | None = None) -> tuple[str, ...]:
+    if out_of_domain_response_for(question):
+        return ()
     q = question.strip().rstrip("?")
     suggestions: list[str] = []
     q_low = q.lower()
@@ -293,6 +295,9 @@ def _build_suggestions(question: str, routed_intent: str | None = None) -> tuple
 
 
 def _default_clarification_question(question: str) -> str:
+    ood = out_of_domain_response_for(question)
+    if ood:
+        return ood
     q_low = question.lower()
     if any(k in q_low for k in ["best week", "having the best week", "best in week", "best for week"]) and not re.search(
         r"\bweek\s*\d{1,2}\b", q_low
