@@ -9,12 +9,12 @@ from .capability_registry import VALID_INTENTS, lexical_retrieve
 from .llm_planner import plan_query_with_llm
 
 STAT_SYNONYMS = {
-    "PTS": ["pts", "point", "points", "scoring"],
-    "REB": ["reb", "rebound", "rebounds"],
-    "AST": ["ast", "assist", "assists"],
-    "STL": ["stl", "steal", "steals"],
-    "BLK": ["blk", "block", "blocks"],
-    "TO": ["turnover", "turnovers"],
+    "PTS": ["pts", "pt", "point", "points", "score", "scores", "scored", "scoring"],
+    "REB": ["reb", "rebs", "rebound", "rebounds", "board", "boards"],
+    "AST": ["ast", "asts", "assist", "assists"],
+    "STL": ["stl", "stls", "steal", "steals"],
+    "BLK": ["blk", "blks", "block", "blocks"],
+    "TO": ["tos", "turnover", "turnovers"],
     "3PTM": ["3pt", "3ptm", "three pointers", "threes", "3 pointers", "3s"],
     "FG%": ["fg", "fg%", "field goal", "field goal percentage"],
     "FT%": ["ft", "ft%", "free throw", "free throw percentage"],
@@ -258,6 +258,16 @@ def _has_explicit_timeframe(question: str) -> bool:
 def _build_suggestions(question: str, routed_intent: str | None = None) -> tuple[str, ...]:
     q = question.strip().rstrip("?")
     suggestions: list[str] = []
+    q_low = q.lower()
+
+    if any(k in q_low for k in ["best week", "having the best week", "best in week", "best for week"]):
+        suggestions.extend(
+            [
+                "who has the best record in week 20",
+                "who had the most PTS in week 20",
+                "who has the best week in weeks 18 to 20",
+            ]
+        )
 
     if q and not _has_explicit_timeframe(q):
         suggestions.append(f"{q} this season")
@@ -283,6 +293,11 @@ def _build_suggestions(question: str, routed_intent: str | None = None) -> tuple
 
 
 def _default_clarification_question(question: str) -> str:
+    q_low = question.lower()
+    if any(k in q_low for k in ["best week", "having the best week", "best in week", "best for week"]) and not re.search(
+        r"\bweek\s*\d{1,2}\b", q_low
+    ):
+        return "Specify a week (e.g., 'week 5') or range (e.g., 'weeks 3 to 8')."
     if not _has_explicit_timeframe(question):
         return "Do you want current season, all-time, or a specific year?"
     if "week" in question.lower() and not re.search(r"\b(pts|reb|ast|stl|blk|to|3ptm|fg%|ft%)\b", question.lower()):
@@ -339,6 +354,12 @@ def _fallback_parse(question: str) -> QuerySpec:
         standings_format = "wl"
         if any(k in q_low for k in ["best", "most", "top", "first"]):
             place = 1
+    elif (week or start_week) and stat is None and any(
+        k in q_low for k in ["best week", "having the best week", "best in week", "best for week"]
+    ):
+        intent = "standings"
+        standings_format = "wl"
+        place = 1
     elif any(k in q_low for k in ["head to head", "head-to-head", "h2h"]):
         intent = "head_to_head"
     elif team and team2 and any(k in q_low for k in ["who would win", "who wins", "currently winning", "current matchup", "this week"]):

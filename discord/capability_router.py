@@ -38,12 +38,12 @@ def _extract_year(question: str) -> int:
 def _extract_stat(question: str) -> str | None:
     q = question.lower()
     mapping = {
-        "PTS": ["pts", "point", "points", "scoring"],
-        "REB": ["reb", "rebound", "rebounds", "boards"],
-        "AST": ["ast", "assist", "assists"],
-        "STL": ["stl", "steal", "steals"],
-        "BLK": ["blk", "block", "blocks"],
-        "TO": ["turnover", "turnovers"],
+        "PTS": ["pts", "pt", "point", "points", "score", "scores", "scored", "scoring"],
+        "REB": ["reb", "rebs", "rebound", "rebounds", "board", "boards"],
+        "AST": ["ast", "asts", "assist", "assists"],
+        "STL": ["stl", "stls", "steal", "steals"],
+        "BLK": ["blk", "blks", "block", "blocks"],
+        "TO": ["tos", "turnover", "turnovers"],
         "3PTM": ["3pt", "3ptm", "threes", "three pointers", "3 pointers", "3s"],
         "FG%": ["fg%", "field goal percentage", "field goal"],
         "FT%": ["ft%", "free throw percentage", "free throw"],
@@ -397,7 +397,7 @@ def _match_draft_questions(q: str, year: int, top_n: int) -> CapabilityMatch | N
         )
 
     # Player-focused draft value queries.
-    if _contains_any(q, ["player", "nba player", "pick", "picks"]) and _contains_any(q, ["best", "worst", "top", "bottom", "value", "score"]):
+    if _contains_any(q, ["player", "nba player"]) and _contains_any(q, ["best", "worst", "top", "bottom", "value", "score"]):
         return CapabilityMatch(
             intent="draft_player_score",
             params={
@@ -561,6 +561,24 @@ def route_question(question: str) -> CapabilityMatch | None:
                 "start_week": start_week,
                 "end_week": end_week,
                 "place": place,
+            },
+        )
+
+    # Casual phrasing like "who is having the best week" should default to
+    # "best record that week" when no stat is specified.
+    if (
+        (start_week is not None or end_week is not None)
+        and stat is None
+        and _contains_any(q, ["best week", "having the best week", "best in week", "best for week"])
+    ):
+        return CapabilityMatch(
+            intent="standings",
+            params={
+                "year": year,
+                "standings_format": "wl",
+                "start_week": start_week,
+                "end_week": end_week,
+                "place": 1,
             },
         )
 

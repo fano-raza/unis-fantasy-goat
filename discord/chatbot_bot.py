@@ -95,9 +95,17 @@ def _expand_first_person_question(question: str, requester_team: str | None) -> 
         return question
     q = question.strip()
     q_low = q.lower()
-    if _question_mentions_team(q_low):
-        return q
-    if re.search(r"\b(my|me|i)\b", q_low):
+    # Replace explicit first-person references even when another team is named
+    # (e.g., "me or Sama" -> "Zahir or Sama").
+    if re.search(r"\b(me|myself)\b", q_low):
+        q = re.sub(r"\b(me|myself)\b", requester_team, q, flags=re.IGNORECASE)
+        q_low = q.lower()
+    if re.search(r"\bmy\b", q_low):
+        q = re.sub(r"\bmy\b", f"{requester_team}'s", q, flags=re.IGNORECASE)
+        q_low = q.lower()
+
+    # If still first-person and no explicit team mention, append team context.
+    if not _question_mentions_team(q_low) and re.search(r"\b(i|my)\b", q_low):
         return f"{q} for {requester_team}"
     return q
 
@@ -106,6 +114,43 @@ def _run_answer_pipeline(question: str, requester_team: str | None = None) -> tu
     effective_question = _expand_first_person_question(question, requester_team)
     spec = parse_query(effective_question)
     return answer_query(effective_question, spec), spec
+
+
+def _is_clarification_response(response: str) -> bool:
+    if not response:
+        return False
+    low = response.lower()
+    return (
+        low.startswith("can you clarify")
+        or low.startswith("do you mean")
+        or low.startswith("specify ")
+        or "closest things i can answer" in low
+    )
+
+
+def _looks_like_followup_fragment(text: str) -> bool:
+    t = (text or "").strip().lower()
+    if not t:
+        return False
+    if len(t) <= 32:
+        return True
+    # Typical clarification answers: "all-time", "week 20", "record", "stat leader", etc.
+    if re.fullmatch(r"(all[- ]time|this season|last season|current season|week\s*\d{1,2}|record|stat(?:\s+leader)?)", t):
+        return True
+    return False
+
+
+def _contains_disallowed_content(text: str) -> bool:
+    t = (text or "").strip().lower()
+    disallowed = [
+        "kill yourself",
+        "kys",
+        "go die",
+        "suicide",
+        "self-harm",
+        "self harm",
+    ]
+    return any(term in t for term in disallowed)
 
 
 def _record_message_usage(
@@ -183,6 +228,111 @@ def _record_slash_usage(
     )
 
 
+def _classify_feedback(text: str) -> str:
+    q = (text or "").strip().lower()
+    if not q:
+        return "empty"
+    if any(k in q for k in ["wrong", "incorrect", "not true", "not right", "wtf", "bro"]):
+        return "incorrect_answer"
+    if any(k in q for k in ["can't answer", "couldnt answer", "didn't answer", "didnt answer"]):
+        return "no_answer"
+    if any(k in q for k in ["feature", "support", "should", "add"]):
+        return "feature_request"
+    if any(k in q for k in ["thanks", "thank you", "good bot", "nice"]):
+        return "positive"
+    return "general"
+
+
+async def _resolve_referenced_message(message: disnake.Message) -> disnake.Message | None:
+    ref = getattr(message, "reference", None)
+    if not ref:
+        return None
+    resolved = getattr(ref, "resolved", None)
+    if isinstance(resolved, disnake.Message):
+        return resolved
+    ref_msg_id = getattr(ref, "message_id", None)
+    if not ref_msg_id:
+        return None
+    try:
+        return await message.channel.fetch_message(ref_msg_id)
+    except Exception:
+        return None
+
+
+def _record_reply_feedback(
+    message: disnake.Message,
+    referenced: disnake.Message,
+) -> None:
+    team_match = resolve_user_team(
+        user_id=getattr(message.author, "id", None),
+        display_name=getattr(message.author, "display_name", None),
+        username=getattr(message.author, "name", None),
+    )
+    record_usage_event(
+        {
+            "source": "reply_feedback",
+            "guild_id": getattr(message.guild, "id", None),
+            "channel_id": getattr(message.channel, "id", None),
+            "message_id": getattr(message, "id", None),
+            "referenced_message_id": getattr(referenced, "id", None),
+            "user_id": getattr(message.author, "id", None),
+            "username": getattr(message.author, "name", None),
+            "display_name": getattr(message.author, "display_name", None),
+            "mapped_team": team_match.team,
+            "team_map_source": team_match.source,
+            "feedback_type": _classify_feedback(getattr(message, "content", "")),
+            "question": getattr(message, "content", ""),
+            "response_preview": getattr(referenced, "content", ""),
+            "ok": True,
+            "latency_ms": 0,
+        }
+    )
+
+
+def _reaction_feedback_type(emoji: str) -> str | None:
+    if emoji in {"👍", "✅", "👌", "🔥"}:
+        return "positive_reaction"
+    if emoji in {"👎", "❌", "🛑", "🚫"}:
+        return "negative_reaction"
+    return None
+
+
+def _record_reaction_feedback(
+    *,
+    guild_id: int | None,
+    channel_id: int | None,
+    message_id: int | None,
+    user_id: int | None,
+    username: str | None,
+    display_name: str | None,
+    emoji: str,
+    feedback_type: str,
+) -> None:
+    team_match = resolve_user_team(
+        user_id=user_id,
+        display_name=display_name,
+        username=username,
+    )
+    record_usage_event(
+        {
+            "source": "reaction_feedback",
+            "guild_id": guild_id,
+            "channel_id": channel_id,
+            "message_id": message_id,
+            "user_id": user_id,
+            "username": username,
+            "display_name": display_name,
+            "mapped_team": team_match.team,
+            "team_map_source": team_match.source,
+            "feedback_type": feedback_type,
+            "question": "",
+            "response_preview": f"emoji={emoji}",
+            "ok": True,
+            "latency_ms": 0,
+        }
+    )
+
+
 def _parse_test_guild_ids() -> list[int] | None:
     raw = os.getenv("DISCORD_TEST_GUILD_IDS", "").strip()
     if not raw:
@@ -232,6 +382,7 @@ def run_bot() -> None:
     test_guild_ids = _parse_test_guild_ids()
     slash_kwargs = {"guild_ids": test_guild_ids} if test_guild_ids else {}
     allowed_channel_ids = _parse_allowed_channel_ids()
+    pending_clarifications: dict[tuple[int | None, int | None], dict] = {}
 
     async def _ensure_allowed_interaction(inter: disnake.ApplicationCommandInteraction) -> bool:
         if not allowed_channel_ids:
@@ -443,16 +594,51 @@ def run_bot() -> None:
         if allowed_channel_ids and message.channel.id not in allowed_channel_ids:
             return
 
-        if bot.user not in message.mentions:
+        key = (getattr(message.channel, "id", None), getattr(message.author, "id", None))
+
+        # If user replies to a bot response, log it as feedback context.
+        referenced = await _resolve_referenced_message(message)
+        is_reply_to_bot = bool(referenced and getattr(getattr(referenced, "author", None), "id", None) == bot.user.id)
+        if is_reply_to_bot:
+            # If this is a short follow-up and we have pending clarification context,
+            # treat it as a continuation instead of generic feedback.
+            if bot.user not in message.mentions and key in pending_clarifications and _looks_like_followup_fragment(message.content):
+                pass
+            else:
+                _record_reply_feedback(message, referenced)
+                # If this is only feedback (not a fresh bot mention), just acknowledge.
+                if bot.user not in message.mentions:
+                    if os.getenv("DISCORD_FEEDBACK_ACK", "1").strip().lower() in {"1", "true", "yes", "on"}:
+                        try:
+                            await message.add_reaction("📝")
+                        except Exception:
+                            pass
+                    await bot.process_commands(message)
+                    return
+
+        if bot.user not in message.mentions and not (key in pending_clarifications and _looks_like_followup_fragment(message.content)):
             await bot.process_commands(message)
             return
 
         question = _strip_bot_mention(message.content, bot.user.id)
+        if key in pending_clarifications and _looks_like_followup_fragment(question):
+            base_question = str(pending_clarifications[key].get("question", "")).strip()
+            if base_question:
+                question = f"{base_question} {question}".strip()
+
         if not question:
             await message.reply(
                 "Ask me something like: `@bot in 2020, who had the most points?`",
                 mention_author=False,
             )
+            return
+
+        if _contains_disallowed_content(question):
+            await message.reply(
+                "I can’t help with self-harm or abusive requests.",
+                mention_author=False,
+            )
+            await bot.process_commands(message)
             return
 
         start = time.perf_counter()
@@ -481,8 +667,66 @@ def run_bot() -> None:
             int((time.perf_counter() - start) * 1000),
             err,
         )
+
+        if parsed_spec and (parsed_spec.needs_clarification or _is_clarification_response(response)):
+            pending_clarifications[key] = {"question": question, "ts": time.time()}
+        else:
+            pending_clarifications.pop(key, None)
+
         await message.reply(response, mention_author=False)
         await bot.process_commands(message)
+
+    @bot.event
+    async def on_raw_reaction_add(payload: disnake.RawReactionActionEvent):
+        if not bot.user:
+            return
+        if payload.user_id == bot.user.id:
+            return
+        if allowed_channel_ids and payload.channel_id not in allowed_channel_ids:
+            return
+
+        emoji = str(payload.emoji)
+        feedback_type = _reaction_feedback_type(emoji)
+        if not feedback_type:
+            return
+
+        channel = bot.get_channel(payload.channel_id)
+        if channel is None:
+            try:
+                channel = await bot.fetch_channel(payload.channel_id)
+            except Exception:
+                return
+
+        try:
+            msg = await channel.fetch_message(payload.message_id)
+        except Exception:
+            return
+
+        # Only treat reactions on this bot's own messages as feedback.
+        if getattr(getattr(msg, "author", None), "id", None) != bot.user.id:
+            return
+
+        member = payload.member
+        username = getattr(member, "name", None)
+        display_name = getattr(member, "display_name", None)
+        if not username or not display_name:
+            try:
+                user = await bot.fetch_user(payload.user_id)
+                username = username or getattr(user, "name", None)
+                display_name = display_name or getattr(user, "display_name", None) or getattr(user, "global_name", None)
+            except Exception:
+                pass
+
+        _record_reaction_feedback(
+            guild_id=payload.guild_id,
+            channel_id=payload.channel_id,
+            message_id=payload.message_id,
+            user_id=payload.user_id,
+            username=username,
+            display_name=display_name,
+            emoji=emoji,
+            feedback_type=feedback_type,
+        )
 
     bot.run(token)
 
