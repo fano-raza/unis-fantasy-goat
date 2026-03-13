@@ -19,6 +19,11 @@ STATS_URL = (
 
 STATE_FILE = "milestone_state.json"
 
+
+def _env_flag(name: str, default: bool = True) -> bool:
+    raw = str(os.getenv(name, "1" if default else "0")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
 # Milestone factors
 # Per-category factors by stat name ("PTS", "REB", etc.)
 # Example: FACTOR_BY_CATEGORY["PTS"] = 5000
@@ -111,6 +116,11 @@ def notify_milestones(dataframes: Dict[str, pd.DataFrame]) -> bool:
            [Team A] has [overtaken/tied] [Team B] in [context] [stat].
            They now sit at [Rank] place all time in [context] [stat].
     """
+    if not _env_flag("DISCORD_ENABLE_MILESTONES", default=True):
+        return False
+    if not DISCORD_WEBHOOK_URL:
+        return False
+
     state = _load_state()
     lines: list[str] = []
 

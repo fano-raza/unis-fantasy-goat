@@ -14,7 +14,7 @@ from constants import currentYear, seasonInfo, gDocStatCats, allMembers, playoff
 from recaps.recap_utils import write_regular_season_recap
 from shared.runtime_config import DATA_ROOT
 from .llm_usage import budget_remaining, extract_usage, record_usage
-from .local_lookup import resolve_metric, resolve_operator_method, resolve_operator_explicit
+from .local_lookup import resolve_metric, resolve_operator_method, resolve_operator_explicit, resolve_basic_stat
 from .query_parser import QuerySpec
 from .unanswered_log import record_unanswered
 
@@ -282,7 +282,184 @@ def _window_label(week: Optional[int], start_week: Optional[int], end_week: Opti
     return ""
 
 
+def _extract_year_span_from_question(q_low: str) -> Optional[tuple[int, int]]:
+    patterns = [
+        r"\bbetween\s+(20\d{2})\s+and\s+(20\d{2})\b",
+        r"\bfrom\s+(20\d{2})\s+to\s+(20\d{2})\b",
+        r"\b(20\d{2})\s*(?:-|–|—|to|through|thru)\s*(20\d{2})\b",
+    ]
+    for p in patterns:
+        m = re.search(p, q_low)
+        if m:
+            a, b = int(m.group(1)), int(m.group(2))
+            lo, hi = (a, b) if a <= b else (b, a)
+            return lo, hi
+    return None
+
+
+def _extract_explicit_years_from_question(q_low: str) -> list[int]:
+    years = [int(y) for y in re.findall(r"\b(20\d{2})\b", q_low)]
+    if not years:
+        return []
+    # Require multi-year query cues to avoid hijacking unrelated single-year mentions.
+    has_multi_year_cue = any(tok in q_low for tok in [",", " and ", "&", " plus ", "along with"])
+    uniq = []
+    for y in years:
+        if y not in uniq:
+            uniq.append(y)
+    if len(uniq) >= 2 and has_multi_year_cue:
+        return sorted(uniq)
+    return []
+
+
+def _year_label_for_years(years: list[int], is_all_time: bool) -> str:
+    if is_all_time:
+        return "all-time"
+    if not years:
+        return str(currentYear)
+    if len(years) == 1:
+        return str(years[0])
+    contiguous = all((years[i + 1] - years[i]) == 1 for i in range(len(years) - 1))
+    if contiguous:
+        return f"{years[0]}-{years[-1]}"
+    return ", ".join(str(y) for y in years)
+
+
+def _bold_header_block(text: str) -> str:
+    if not text:
+        return text
+    lines = text.splitlines()
+    if not lines:
+        return text
+    first = lines[0].strip()
+    if first and not (first.startswith("**") and first.endswith("**")):
+        lines[0] = f"**{first}**"
+    return "\n".join(lines)
+
+
+def _infer_single_team_from_question(question: str) -> Optional[str]:
+    q = (question or "").lower()
+    found = []
+    for team in allMembers:
+        t = str(team).lower()
+        idx = q.find(t)
+        if idx != -1:
+            found.append((idx, str(team)))
+    if not found:
+        return None
+    found.sort(key=lambda x: x[0])
+    uniq = []
+    for _, t in found:
+        if t not in uniq:
+            uniq.append(t)
+    return uniq[0] if len(uniq) == 1 else None
+
+
+def _rank_info(series: pd.Series, team: str, direction: str) -> Optional[tuple[float, int, int]]:
+    if team not in series.index:
+        return None
+    ascending = direction == "min"
+    ranks = series.rank(ascending=ascending, method="min")
+    try:
+        rank_i = int(ranks.loc[team])
+    except Exception:
+        rank_i = int(series.sort_values(ascending=ascending).index.tolist().index(team) + 1)
+    return float(series.loc[team]), rank_i, int(len(series))
+
+
+def _series_for_metric_year(
+    *,
+    year: int,
+    metric: str,
+    scope: str,
+    method: str,
+    week: Optional[int],
+    start_week: Optional[int],
+    end_week: Optional[int],
+) -> pd.Series:
+    if metric == "DRAFT_SCORE":
+        return _draft_team_metric_series([year], method)
+    if metric == "DRAFT_SCORE_PER_PICK":
+        return _draft_team_per_pick_series([year])
+    if metric in {"PLAYOFF_APPEARANCES", "PLAYOFF_APP_RATE", "FINALS", "CHIPS", "FINALS_CONVERSION"}:
+        return _playoff_outcome_metric_series([year], metric)
+
+    rs = _season(year)
+    d = _filter_df_by_scope(rs.statDF, scope)
+    if scope == "PO":
+        po_teams = _po_team_set(year)
+        if po_teams:
+            d = d[d["Team"].isin(po_teams) & d["Opp"].isin(po_teams)]
+    d = _filter_df_by_weeks(d, week, start_week, end_week)
+    d = d[(d["Team"] != "BYE") & (d["Opp"] != "BYE")]
+    if "real_matchup" in d.columns:
+        d = d[d["real_matchup"] >= 1]
+    if d.empty:
+        return pd.Series(dtype="float64")
+    if metric == "SOS_RANK":
+        opp = _universal_metric_series(d, "AVG_OPP_RATING", "avg")
+        if opp.empty:
+            return pd.Series(dtype="float64")
+        return opp.rank(ascending=False, method="min")
+    return _universal_metric_series(d, metric, method)
+
+
+def _team_season_metric_block(
+    *,
+    years: list[int],
+    team_name: str,
+    metric: str,
+    label: str,
+    direction: str,
+    scope: str,
+    method: str,
+    week: Optional[int],
+    start_week: Optional[int],
+    end_week: Optional[int],
+) -> Optional[str]:
+    rows: list[tuple[int, float, int, int]] = []
+    for y in years:
+        s = _series_for_metric_year(
+            year=int(y),
+            metric=metric,
+            scope=scope,
+            method=method,
+            week=week,
+            start_week=start_week,
+            end_week=end_week,
+        )
+        info = _rank_info(s, team_name, direction) if not s.empty else None
+        if info:
+            v, r, n = info
+            rows.append((int(y), float(v), int(r), int(n)))
+    if not rows:
+        return None
+    lines = [f"{team_name} by season ({label}):"]
+    for y, v, r, n in rows:
+        lines.append(f"{y}: {_format_universal_value(metric, v)} (rank {r}/{n})")
+    return "\n".join(lines)
+
+
 def _extract_universal_metric(question: str) -> Optional[str]:
+    # First, honor explicit core stat mentions so broad aliases (e.g., from lexical expansion)
+    # cannot hijack queries like "best 3pt shooter".
+    explicit_core = resolve_basic_stat(
+        question,
+        {
+            "PTS": UNIVERSAL_METRIC_ALIASES.get("PTS", []),
+            "REB": UNIVERSAL_METRIC_ALIASES.get("REB", []),
+            "AST": UNIVERSAL_METRIC_ALIASES.get("AST", []),
+            "STL": UNIVERSAL_METRIC_ALIASES.get("STL", []),
+            "BLK": UNIVERSAL_METRIC_ALIASES.get("BLK", []),
+            "TO": UNIVERSAL_METRIC_ALIASES.get("TO", []),
+            "3PTM": UNIVERSAL_METRIC_ALIASES.get("3PTM", []),
+            "FG%": UNIVERSAL_METRIC_ALIASES.get("FG%", []),
+            "FT%": UNIVERSAL_METRIC_ALIASES.get("FT%", []),
+        },
+    )
+    if explicit_core:
+        return explicit_core
+
     # prioritize more-specific composite metrics first
     metric_order = [
         "DRAFT_SCORE_PER_PICK",
@@ -573,6 +750,7 @@ def _try_answer_universal_metric_query(
     direction = _direction_from_question(question, metric)
     top_n = _top_n_from_question(question, spec.top_n or 1)
     q_low = (question or "").lower()
+    team_query = spec.team or _infer_single_team_from_question(question)
     is_all_time = (spec.year_range or "").upper() == "ALL" or any(k in q_low for k in ["all time", "all-time", "career", "entire career"])
     # Determine if user gave a concrete time anchor.
     has_concrete_time_anchor = (
@@ -592,6 +770,17 @@ def _try_answer_universal_metric_query(
     if forced_is_all_time is not None:
         is_all_time = bool(forced_is_all_time)
     years = sorted(seasonInfo.keys()) if is_all_time else [spec.year if spec.year in seasonInfo else currentYear]
+    span = _extract_year_span_from_question(q_low)
+    explicit_years = _extract_explicit_years_from_question(q_low)
+    if span and not is_all_time:
+        lo, hi = span
+        ranged_years = [y for y in sorted(seasonInfo.keys()) if lo <= int(y) <= hi]
+        if ranged_years:
+            years = ranged_years
+    elif explicit_years and not is_all_time:
+        years = [y for y in explicit_years if y in seasonInfo]
+        if not years:
+            years = [spec.year if spec.year in seasonInfo else currentYear]
     week = None if clear_week_filters else spec.week
     start_week = None if clear_week_filters else spec.start_week
     end_week = None if clear_week_filters else spec.end_week
@@ -612,16 +801,37 @@ def _try_answer_universal_metric_query(
             series = _draft_team_per_pick_series(years)
         if series.empty:
             return None
-        if spec.team and not spec.team2:
-            team_name = str(spec.team)
+        if team_query and not spec.team2:
+            team_name = str(team_query)
             if team_name in series.index:
-                year_label = "all-time" if is_all_time else str(years[0])
+                year_label = _year_label_for_years(years, is_all_time)
                 label = _label_for_universal_metric(metric, method)
-                return f"{year_label}: {team_name} had {_format_universal_value(metric, float(series.loc[team_name]))} {label}."
+                info = _rank_info(series, team_name, direction)
+                if info:
+                    val, r, n = info
+                    scalar = f"{year_label}: {team_name} had {_format_universal_value(metric, val)} {label} (rank {r}/{n})."
+                else:
+                    scalar = f"{year_label}: {team_name} had {_format_universal_value(metric, float(series.loc[team_name]))} {label}."
+                if is_all_time and len(years) > 1 and not (week is not None or start_week is not None or end_week is not None):
+                    season_block = _team_season_metric_block(
+                        years=years,
+                        team_name=team_name,
+                        metric=metric,
+                        label=label,
+                        direction=direction,
+                        scope=scope,
+                        method=method,
+                        week=week,
+                        start_week=start_week,
+                        end_week=end_week,
+                    )
+                    if season_block:
+                        scalar = f"{scalar}\n\n{season_block}"
+                return scalar
         ascending = (direction == "min")
         ranked = series.sort_values(ascending=ascending)
         label = _label_for_universal_metric(metric, method)
-        year_label = "all-time" if is_all_time else str(years[0])
+        year_label = _year_label_for_years(years, is_all_time)
         rows = [f"{i}. {team} ({_format_universal_value(metric, float(val))})" for i, (team, val) in enumerate(ranked.head(top_n).items(), 1)]
         primary = "\n".join([f"{year_label} top {top_n} by {label}:", *rows])
         if not include_backups:
@@ -642,16 +852,37 @@ def _try_answer_universal_metric_query(
         series = _playoff_outcome_metric_series(years, metric)
         if series.empty:
             return None
-        if spec.team and not spec.team2:
-            team_name = str(spec.team)
+        if team_query and not spec.team2:
+            team_name = str(team_query)
             if team_name in series.index:
-                year_label = "all-time" if is_all_time else str(years[0])
+                year_label = _year_label_for_years(years, is_all_time)
                 label = _label_for_universal_metric(metric, method)
-                return f"{year_label}: {team_name} had {_format_universal_value(metric, float(series.loc[team_name]))} {label}."
+                info = _rank_info(series, team_name, direction)
+                if info:
+                    val, r, n = info
+                    scalar = f"{year_label}: {team_name} had {_format_universal_value(metric, val)} {label} (rank {r}/{n})."
+                else:
+                    scalar = f"{year_label}: {team_name} had {_format_universal_value(metric, float(series.loc[team_name]))} {label}."
+                if is_all_time and len(years) > 1 and not (week is not None or start_week is not None or end_week is not None):
+                    season_block = _team_season_metric_block(
+                        years=years,
+                        team_name=team_name,
+                        metric=metric,
+                        label=label,
+                        direction=direction,
+                        scope=scope,
+                        method=method,
+                        week=week,
+                        start_week=start_week,
+                        end_week=end_week,
+                    )
+                    if season_block:
+                        scalar = f"{scalar}\n\n{season_block}"
+                return scalar
         ascending = (direction == "min")
         ranked = series.sort_values(ascending=ascending)
         label = _label_for_universal_metric(metric, method)
-        year_label = "all-time" if is_all_time else str(years[0])
+        year_label = _year_label_for_years(years, is_all_time)
         rows = [f"{i}. {team} ({_format_universal_value(metric, float(val))})" for i, (team, val) in enumerate(ranked.head(top_n).items(), 1)]
         primary = "\n".join([f"{year_label} top {top_n} by {label}:", *rows])
         if not include_backups:
@@ -688,12 +919,9 @@ def _try_answer_universal_metric_query(
     df = pd.concat(frames, ignore_index=True)
 
     opp_filter = any(k in q_low for k in [" against ", " vs ", " versus ", "vs."])
-    target_team = spec.team
+    target_team = team_query
     if opp_filter and target_team:
         df = df[df["Opp"].astype(str).str.lower() == str(target_team).lower()]
-    elif target_team and not spec.team2:
-        # Single-team focus query
-        df = df[df["Team"].astype(str).str.lower() == str(target_team).lower()]
 
     if df.empty:
         return None
@@ -717,11 +945,31 @@ def _try_answer_universal_metric_query(
     if target_team and not opp_filter and not spec.team2:
         team_name = str(target_team)
         if team_name in ranked.index:
+            info = _rank_info(ranked, team_name, direction)
             val = float(ranked.loc[team_name])
-            year_label = "all-time" if is_all_time else str(years[0])
+            year_label = _year_label_for_years(years, is_all_time)
             window_lbl = _window_label(week, start_week, end_week)
             window_part = f" ({window_lbl})" if window_lbl else ""
-            primary = f"{year_label} {_scope_name(scope)}{window_part}: {team_name} had {_format_universal_value(metric, val)} {label}."
+            if info:
+                _, r, n = info
+                primary = f"{year_label} {_scope_name(scope)}{window_part}: {team_name} had {_format_universal_value(metric, val)} {label} (rank {r}/{n})."
+            else:
+                primary = f"{year_label} {_scope_name(scope)}{window_part}: {team_name} had {_format_universal_value(metric, val)} {label}."
+            if is_all_time and len(years) > 1 and not (week is not None or start_week is not None or end_week is not None):
+                season_block = _team_season_metric_block(
+                    years=years,
+                    team_name=team_name,
+                    metric=metric,
+                    label=label,
+                    direction=direction,
+                    scope=scope,
+                    method=method,
+                    week=week,
+                    start_week=start_week,
+                    end_week=end_week,
+                )
+                if season_block:
+                    primary = f"{primary}\n\n{season_block}"
             if not include_backups:
                 return primary
             return _with_universal_backups(
@@ -740,7 +988,7 @@ def _try_answer_universal_metric_query(
         rows.append(f"{i}. {team} ({_format_universal_value(metric, float(val))})")
 
     against_suffix = f" against {target_team}" if opp_filter and target_team else ""
-    year_label = "all-time" if is_all_time else str(years[0])
+    year_label = _year_label_for_years(years, is_all_time)
     window_lbl = _window_label(week, start_week, end_week)
     window_part = f" ({window_lbl})" if window_lbl else ""
     header = f"{year_label} {_scope_name(scope)}{window_part} top {top_n} by {label}{against_suffix}:"
@@ -770,7 +1018,7 @@ def _with_universal_backups(
     spec: QuerySpec,
     clear_week_filters: bool,
 ) -> str:
-    sections = [primary]
+    sections = [_bold_header_block(primary)]
     backup_candidates: list[str] = []
 
     # Companion method view (total <-> average) when meaningful.
@@ -832,7 +1080,7 @@ def _with_universal_backups(
                     break
         if not chosen:
             chosen = backup_candidates[0]
-        sections.append("Backup:\n" + chosen)
+        sections.append(_bold_header_block(chosen))
 
     return "\n\n".join(sections)
 
@@ -1058,6 +1306,21 @@ def _answer_best_team_snapshot(spec: QuerySpec) -> str:
     wl = rs.get_WL_standings()
     season_ranks = rs.get_season_rankings()
     week_ranks = rs.get_week_rankings(week) if week > 0 else {}
+    df = rs.statDF.copy()
+    df = df[(df["Team"] != "BYE") & (df["Opp"] != "BYE")]
+    if "real_matchup" in df.columns:
+        df = df[df["real_matchup"] >= 1]
+
+    season_ratings: list[tuple[str, float]] = []
+    week_ratings: list[tuple[str, float]] = []
+    if not df.empty and "week_rating" in df.columns:
+        s = df.groupby("Team")["week_rating"].mean().sort_values(ascending=False)
+        season_ratings = [(str(team), float(val)) for team, val in s.items()]
+        if week > 0:
+            wdf = df[df["Week"] == week]
+            if not wdf.empty:
+                w = wdf.groupby("Team")["week_rating"].mean().sort_values(ascending=False)
+                week_ratings = [(str(team), float(val)) for team, val in w.items()]
 
     lines = [f"{spec.year} best-team snapshot (current week: {week}):"]
 
@@ -1065,6 +1328,19 @@ def _answer_best_team_snapshot(spec: QuerySpec) -> str:
     for place, (team, record) in wl.items():
         lines.append(f"{place}. {team} ({record})")
 
+    if season_ratings:
+        lines.append("")
+        lines.append("Current overall ratings (season average week rating):")
+        for i, (team, score) in enumerate(season_ratings, 1):
+            lines.append(f"{i}. {team} ({score:.2f})")
+
+    if week_ratings:
+        lines.append("")
+        lines.append(f"Current week ratings (Week {week}):")
+        for i, (team, score) in enumerate(week_ratings, 1):
+            lines.append(f"{i}. {team} ({score:.2f})")
+
+    # Secondary context: rankings view.
     lines.append("")
     lines.append("Current overall rankings (season average rank):")
     for place, (team, score) in season_ranks.items():
@@ -2656,6 +2932,16 @@ def _is_matchup_winner_question(question: str) -> bool:
     )
 
 
+def _is_position_finish_question(question: str, spec: QuerySpec) -> bool:
+    if spec.intent != "standings":
+        return False
+    q = (question or "").lower()
+    return (
+        bool(spec.team)
+        and any(tok in q for tok in ["what place", "which place", "where did", "finish", "finished", "end up"])
+    ) or bool(spec.place)
+
+
 def answer_query(question: str, spec: QuerySpec) -> str:
     invalid = _validate_year(spec)
     if invalid:
@@ -2695,6 +2981,9 @@ def answer_query(question: str, spec: QuerySpec) -> str:
     # Universal metric engine handles flexible metric+operator+filter combinations.
     # Try this early for broad stat queries to reduce intent-fragility.
     universal = _try_answer_universal_metric_query(question, spec)
+    if universal and spec.intent in {"unknown", "leader", "week_leader", "standings", "team_compare", "draft_team_score", "draft_player_score", "champions_lounge"}:
+        if _is_position_finish_question(question, spec):
+            universal = None
     if universal and spec.intent in {"unknown", "leader", "week_leader", "standings", "team_compare", "draft_team_score", "draft_player_score", "champions_lounge"}:
         return universal
 
