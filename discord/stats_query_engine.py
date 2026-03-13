@@ -14,6 +14,7 @@ from constants import currentYear, seasonInfo, gDocStatCats, allMembers, playoff
 from recaps.recap_utils import write_regular_season_recap
 from shared.runtime_config import DATA_ROOT
 from .llm_usage import budget_remaining, extract_usage, record_usage
+from .local_lookup import resolve_metric, resolve_operator_method
 from .query_parser import QuerySpec
 from .unanswered_log import record_unanswered
 
@@ -32,6 +33,42 @@ STAT_LABELS = {
     "3PTM": "3PTM",
     "FG%": "FG%",
     "FT%": "FT%",
+}
+
+UNIVERSAL_METRIC_ALIASES = {
+    "PTS": ["pts", "points", "point", "score", "scores", "scoring"],
+    "REB": ["reb", "rebs", "rebound", "rebounds", "boards", "board"],
+    "AST": ["ast", "asts", "assist", "assists"],
+    "STL": ["stl", "stls", "steal", "steals"],
+    "BLK": ["blk", "blks", "block", "blocks"],
+    "TO": ["to", "tos", "turnover", "turnovers"],
+    "3PTM": ["3ptm", "3pt", "threes", "three pointers", "3 pointers", "3s"],
+    "FG%": ["fg%", "fg percentage", "field goal percentage", "field goal %"],
+    "FT%": ["ft%", "ft percentage", "free throw percentage", "free throw %"],
+    "AVG_RATING": ["average rating", "avg rating", "week rating", "rating"],
+    "AVG_OPP_RATING": ["average opponent rating", "avg opp rating", "avg opponent rating", "sos", "strength of schedule"],
+    "SOS_RANK": ["schedule rank", "strength of schedule rank", "toughness rank", "sos rank"],
+    "CONSISTENCY": ["consistency", "most consistent", "least consistent"],
+    "VOLATILITY": ["volatility", "most volatile", "least stable"],
+    "TOP1_WEEKS": ["#1 weeks", "number 1 weeks", "top 1 weeks", "first-place weeks", "weekly #1 finishes"],
+    "TOP3_RATE": ["top 3 rate", "top3 rate", "top 3 weeks", "top 3 finish rate"],
+    "PLAYOFF_APPEARANCES": ["playoff appearances", "playoffs made", "made playoffs"],
+    "PLAYOFF_APP_RATE": ["playoff appearance rate", "playoff rate", "playoffs rate"],
+    "FINALS": ["finals appearances", "made finals", "finals made"],
+    "CHIPS": ["chips", "titles", "championships", "rings"],
+    "FINALS_CONVERSION": ["finals conversion", "chip conversion", "championship conversion"],
+    "WEIGHTED_RANK": ["weighted rank", "wt rank", "week weighted rank", "week wt rank"],
+    "RANK": ["rank", "ranking", "week rank"],
+    "DRAFT_SCORE": ["draft score", "draft value", "draft points", "draft rating"],
+    "DRAFT_SCORE_PER_PICK": ["draft score per pick", "draft efficiency", "average draft score per pick"],
+    "W": ["wins", "won", "w"],
+    "L": ["losses", "lost", "l"],
+    "D": ["draws", "ties", "tie", "d"],
+    "CAT_W": ["category wins", "cat wins", "cats won"],
+    "CAT_L": ["category losses", "cat losses", "cats lost"],
+    "CAT_D": ["category ties", "cat ties", "cats tied"],
+    "WIN_PCT": ["win%", "win pct", "win percentage", "record", "best record", "worst record"],
+    "CAT_WIN_PCT": ["category win%", "category win pct", "category win percentage", "cat win%", "cat win pct"],
 }
 
 NO_ANSWER_MSG = "I can't answer that with the data/functions I have right now."
@@ -167,6 +204,387 @@ def _format_value(stat: str, value: float) -> str:
 
 def _scope_name(scope: str) -> str:
     return {"ALL": "entire season", "RS": "regular season", "PO": "playoffs"}.get(scope, "scope")
+
+
+def _extract_universal_metric(question: str) -> Optional[str]:
+    # prioritize more-specific composite metrics first
+    metric_order = [
+        "DRAFT_SCORE_PER_PICK",
+        "DRAFT_SCORE",
+        "FINALS_CONVERSION",
+        "CHIPS",
+        "FINALS",
+        "PLAYOFF_APP_RATE",
+        "PLAYOFF_APPEARANCES",
+        "TOP3_RATE",
+        "TOP1_WEEKS",
+        "VOLATILITY",
+        "CONSISTENCY",
+        "SOS_RANK",
+        "AVG_OPP_RATING",
+        "WEIGHTED_RANK",
+        "RANK",
+        "CAT_WIN_PCT",
+        "WIN_PCT",
+        "CAT_W",
+        "CAT_L",
+        "CAT_D",
+        "AVG_RATING",
+        "FG%",
+        "FT%",
+        "3PTM",
+        "PTS",
+        "REB",
+        "AST",
+        "STL",
+        "BLK",
+        "TO",
+        "W",
+        "L",
+        "D",
+    ]
+    return resolve_metric(question, metric_order=metric_order, aliases=UNIVERSAL_METRIC_ALIASES)
+
+
+def _method_from_question(question: str) -> str:
+    return resolve_operator_method(question, default="total")
+
+
+def _direction_from_question(question: str, metric: str) -> str:
+    q = (question or "").lower()
+    if metric in {"CONSISTENCY"}:
+        if any(k in q for k in ["worst", "least", "highest", "max"]):
+            return "max"
+        return "min"
+    if metric in {"VOLATILITY", "AVG_OPP_RATING"}:
+        if any(k in q for k in ["least", "lowest", "min", "easiest"]):
+            return "min"
+        return "max"
+    if metric in {"SOS_RANK"}:
+        if any(k in q for k in ["worst", "highest", "largest", "max"]):
+            return "max"
+        return "min"
+    if metric in {"RANK", "WEIGHTED_RANK"}:
+        if any(k in q for k in ["worst", "highest", "largest", "max", "bottom"]):
+            return "max"
+        return "min"
+    if any(k in q for k in ["worst", "least", "fewest", "lowest", "bottom", "min"]):
+        return "min"
+    if metric == "TO" and any(k in q for k in ["best", "lowest turnovers", "fewest turnovers"]):
+        return "min"
+    return "max"
+
+
+def _top_n_from_question(question: str, default_top_n: int = 1) -> int:
+    q = (question or "").lower()
+    m = re.search(r"\btop\s*(\d+)\b", q)
+    if m:
+        return max(1, min(30, int(m.group(1))))
+    if any(k in q for k in ["best", "most", "worst", "least", "leaders", "rankings"]):
+        return max(1, min(30, default_top_n if default_top_n > 1 else 10))
+    return max(1, min(30, default_top_n or 1))
+
+
+def _universal_metric_series(df: pd.DataFrame, metric: str, method: str) -> pd.Series:
+    grp = df.groupby("Team", as_index=True)
+
+    # raw stat families
+    if metric in {"PTS", "REB", "AST", "STL", "BLK", "TO", "3PTM"}:
+        if method == "avg":
+            return grp[metric].mean()
+        return grp[metric].sum()
+    if metric in {"FG%", "FT%", "AVG_RATING"}:
+        col = "week_rating" if metric == "AVG_RATING" else metric
+        return grp[col].mean() if method == "avg" else grp[col].sum()
+    if metric == "AVG_OPP_RATING":
+        if "week_rating_opp" not in df.columns:
+            return pd.Series(dtype="float64")
+        return grp["week_rating_opp"].mean() if method == "avg" else grp["week_rating_opp"].sum()
+    if metric in {"CONSISTENCY", "VOLATILITY"}:
+        if "week_rating" not in df.columns:
+            return pd.Series(dtype="float64")
+        # std as volatility; consistency uses same value but direction differs.
+        return grp["week_rating"].std().fillna(0.0)
+    if metric == "TOP1_WEEKS":
+        if "week_rank" not in df.columns:
+            return pd.Series(dtype="float64")
+        return grp.apply(lambda g: float((g["week_rank"] == 1).sum()))
+    if metric == "TOP3_RATE":
+        if "week_rank" not in df.columns:
+            return pd.Series(dtype="float64")
+        return grp.apply(lambda g: float((g["week_rank"] <= 3).mean()))
+    if metric in {"RANK", "WEIGHTED_RANK"}:
+        col = "week_rank" if metric == "RANK" else "week_wt_rank"
+        if col not in df.columns:
+            return pd.Series(dtype="float64")
+        return grp[col].mean() if method == "avg" else grp[col].sum()
+
+    # matchup outcome families
+    if metric in {"W", "L", "D", "CAT_W", "CAT_L", "CAT_D"}:
+        col_map = {
+            "W": "matchup_win",
+            "L": "matchup_loss",
+            "D": "matchup_tie",
+            "CAT_W": "cat_wins",
+            "CAT_L": "cat_losses",
+            "CAT_D": "cat_ties",
+        }
+        col = col_map[metric]
+        return grp[col].mean() if method == "avg" else grp[col].sum()
+
+    if metric == "WIN_PCT":
+        agg = grp[["matchup_win", "matchup_loss", "matchup_tie"]].sum()
+        denom = agg["matchup_win"] + agg["matchup_loss"] + agg["matchup_tie"]
+        numer = agg["matchup_win"] + 0.5 * agg["matchup_tie"]
+        return (numer / denom.replace(0, pd.NA)).fillna(0.0)
+
+    if metric == "CAT_WIN_PCT":
+        agg = grp[["cat_wins", "cat_losses", "cat_ties"]].sum()
+        denom = agg["cat_wins"] + agg["cat_losses"] + agg["cat_ties"]
+        numer = agg["cat_wins"] + 0.5 * agg["cat_ties"]
+        return (numer / denom.replace(0, pd.NA)).fillna(0.0)
+
+    return pd.Series(dtype="float64")
+
+
+def _format_universal_value(metric: str, value: float) -> str:
+    if metric in {"FG%", "FT%", "WIN_PCT", "CAT_WIN_PCT", "TOP3_RATE", "PLAYOFF_APP_RATE", "FINALS_CONVERSION"}:
+        return f"{float(value):.4f}"
+    return f"{float(value):.2f}"
+
+
+def _label_for_universal_metric(metric: str, method: str) -> str:
+    labels = {
+        "PTS": "points",
+        "REB": "rebounds",
+        "AST": "assists",
+        "STL": "steals",
+        "BLK": "blocks",
+        "TO": "turnovers",
+        "3PTM": "3PTM",
+        "FG%": "FG%",
+        "FT%": "FT%",
+        "AVG_RATING": "average rating",
+        "AVG_OPP_RATING": "average opponent rating",
+        "SOS_RANK": "schedule rank",
+        "CONSISTENCY": "consistency (std dev)",
+        "VOLATILITY": "volatility (std dev)",
+        "TOP1_WEEKS": "#1 weeks",
+        "TOP3_RATE": "top-3 week rate",
+        "PLAYOFF_APPEARANCES": "playoff appearances",
+        "PLAYOFF_APP_RATE": "playoff appearance rate",
+        "FINALS": "finals appearances",
+        "CHIPS": "championships",
+        "FINALS_CONVERSION": "finals conversion",
+        "WEIGHTED_RANK": "weighted rank",
+        "RANK": "rank",
+        "DRAFT_SCORE": "draft score",
+        "DRAFT_SCORE_PER_PICK": "draft score per pick",
+        "W": "wins",
+        "L": "losses",
+        "D": "draws",
+        "CAT_W": "category wins",
+        "CAT_L": "category losses",
+        "CAT_D": "category draws",
+        "WIN_PCT": "win%",
+        "CAT_WIN_PCT": "category win%",
+    }
+    base = labels.get(metric, metric)
+    if metric in {"SOS_RANK", "CONSISTENCY", "VOLATILITY", "TOP1_WEEKS", "DRAFT_SCORE_PER_PICK"}:
+        return base
+    if metric not in {"FG%", "FT%", "WIN_PCT", "CAT_WIN_PCT", "TOP3_RATE", "PLAYOFF_APP_RATE", "FINALS_CONVERSION"}:
+        return f"{'average' if method == 'avg' else 'total'} {base}"
+    return base
+
+
+def _draft_team_metric_series(years: list[int], method: str) -> pd.Series:
+    tables = []
+    for y in years:
+        path = DATA_ROOT / str(y) / f"{y} Draft Results.csv"
+        if not path.exists():
+            continue
+        df = _load_draft_table(y)[["Team", "final_score"]].copy()
+        df["Year"] = y
+        tables.append(df)
+    if not tables:
+        return pd.Series(dtype="float64")
+    all_df = pd.concat(tables, ignore_index=True)
+    grp = all_df.groupby("Team")["final_score"]
+    if method == "avg":
+        return grp.mean()
+    return grp.sum()
+
+
+def _draft_team_per_pick_series(years: list[int]) -> pd.Series:
+    tables = []
+    for y in years:
+        path = DATA_ROOT / str(y) / f"{y} Draft Results.csv"
+        if not path.exists():
+            continue
+        df = _load_draft_table(y)[["Team", "final_score"]].copy()
+        tables.append(df)
+    if not tables:
+        return pd.Series(dtype="float64")
+    all_df = pd.concat(tables, ignore_index=True)
+    return all_df.groupby("Team")["final_score"].mean()
+
+
+def _playoff_outcome_metric_series(years: list[int], metric: str) -> pd.Series:
+    teams = sorted(allMembers)
+    counts = {t: {"seasons": 0, "playoffs": 0, "finals": 0, "chips": 0} for t in teams}
+
+    for y in years:
+        for t in teams:
+            if t in seasonInfo.get(y, ([],))[0]:
+                counts[t]["seasons"] += 1
+        try:
+            po = poSeason(y)
+            po_teams = set(getattr(po, "PO_teams", []) or [])
+            po_results = getattr(po, "PO_results", {}) or {}
+            for t in po_teams:
+                if t in counts:
+                    counts[t]["playoffs"] += 1
+            for t, res in po_results.items():
+                if t not in counts:
+                    continue
+                if isinstance(res, int):
+                    if res in (1, 2):
+                        counts[t]["finals"] += 1
+                    if res == 1:
+                        counts[t]["chips"] += 1
+        except Exception:
+            continue
+
+    vals = {}
+    for t, d in counts.items():
+        if metric == "PLAYOFF_APPEARANCES":
+            vals[t] = float(d["playoffs"])
+        elif metric == "PLAYOFF_APP_RATE":
+            vals[t] = float(d["playoffs"]) / float(d["seasons"]) if d["seasons"] > 0 else 0.0
+        elif metric == "FINALS":
+            vals[t] = float(d["finals"])
+        elif metric == "CHIPS":
+            vals[t] = float(d["chips"])
+        elif metric == "FINALS_CONVERSION":
+            vals[t] = float(d["chips"]) / float(d["finals"]) if d["finals"] > 0 else 0.0
+    return pd.Series(vals, dtype="float64")
+
+
+def _try_answer_universal_metric_query(question: str, spec: QuerySpec) -> Optional[str]:
+    metric = _extract_universal_metric(question)
+    if not metric:
+        return None
+
+    scope = spec.scope if spec.scope in {"ALL", "RS", "PO"} else "ALL"
+    method = (spec.method or _method_from_question(question)).lower()
+    method = "avg" if method in {"avg", "average", "mean"} else "total"
+    direction = _direction_from_question(question, metric)
+    top_n = _top_n_from_question(question, spec.top_n or 1)
+    q_low = (question or "").lower()
+    is_all_time = (spec.year_range or "").upper() == "ALL" or any(k in q_low for k in ["all time", "all-time", "career", "entire career"])
+    years = sorted(seasonInfo.keys()) if is_all_time else [spec.year if spec.year in seasonInfo else currentYear]
+
+    # Draft-score metrics are sourced from draft tables.
+    if metric in {"DRAFT_SCORE", "DRAFT_SCORE_PER_PICK"}:
+        if metric == "DRAFT_SCORE":
+            series = _draft_team_metric_series(years, method)
+        else:
+            series = _draft_team_per_pick_series(years)
+        if series.empty:
+            return None
+        if spec.team and not spec.team2:
+            team_name = str(spec.team)
+            if team_name in series.index:
+                year_label = "all-time" if is_all_time else str(years[0])
+                label = _label_for_universal_metric(metric, method)
+                return f"{year_label}: {team_name} had {_format_universal_value(metric, float(series.loc[team_name]))} {label}."
+        ascending = (direction == "min")
+        ranked = series.sort_values(ascending=ascending)
+        label = _label_for_universal_metric(metric, method)
+        year_label = "all-time" if is_all_time else str(years[0])
+        rows = [f"{i}. {team} ({_format_universal_value(metric, float(val))})" for i, (team, val) in enumerate(ranked.head(top_n).items(), 1)]
+        return "\n".join([f"{year_label} top {top_n} by {label}:", *rows])
+
+    # Playoff/championship outcomes are also sourced outside statDF.
+    if metric in {"PLAYOFF_APPEARANCES", "PLAYOFF_APP_RATE", "FINALS", "CHIPS", "FINALS_CONVERSION"}:
+        series = _playoff_outcome_metric_series(years, metric)
+        if series.empty:
+            return None
+        if spec.team and not spec.team2:
+            team_name = str(spec.team)
+            if team_name in series.index:
+                year_label = "all-time" if is_all_time else str(years[0])
+                label = _label_for_universal_metric(metric, method)
+                return f"{year_label}: {team_name} had {_format_universal_value(metric, float(series.loc[team_name]))} {label}."
+        ascending = (direction == "min")
+        ranked = series.sort_values(ascending=ascending)
+        label = _label_for_universal_metric(metric, method)
+        year_label = "all-time" if is_all_time else str(years[0])
+        rows = [f"{i}. {team} ({_format_universal_value(metric, float(val))})" for i, (team, val) in enumerate(ranked.head(top_n).items(), 1)]
+        return "\n".join([f"{year_label} top {top_n} by {label}:", *rows])
+
+    frames = []
+    for y in years:
+        rs = _season(y)
+        d = _filter_df_by_scope(rs.statDF, scope)
+        if scope == "PO":
+            po_teams = _po_team_set(y)
+            if po_teams:
+                d = d[d["Team"].isin(po_teams) & d["Opp"].isin(po_teams)]
+        d = _filter_df_by_weeks(d, spec.week, spec.start_week, spec.end_week)
+        d = d[(d["Team"] != "BYE") & (d["Opp"] != "BYE")]
+        if "real_matchup" in d.columns:
+            d = d[d["real_matchup"] >= 1]
+        if not d.empty:
+            d = d.copy()
+            d["Year"] = y
+            frames.append(d)
+    if not frames:
+        return None
+    df = pd.concat(frames, ignore_index=True)
+
+    opp_filter = any(k in q_low for k in [" against ", " vs ", " versus ", "vs."])
+    target_team = spec.team
+    if opp_filter and target_team:
+        df = df[df["Opp"].astype(str).str.lower() == str(target_team).lower()]
+    elif target_team and not spec.team2:
+        # Single-team focus query
+        df = df[df["Team"].astype(str).str.lower() == str(target_team).lower()]
+
+    if df.empty:
+        return None
+
+    if metric == "SOS_RANK":
+        # 1 = toughest schedule (highest average opponent rating).
+        opp = _universal_metric_series(df, "AVG_OPP_RATING", "avg")
+        if opp.empty:
+            return None
+        series = opp.rank(ascending=False, method="min")
+    else:
+        series = _universal_metric_series(df, metric, method)
+        if series.empty:
+            return None
+
+    ascending = (direction == "min")
+    ranked = series.sort_values(ascending=ascending)
+    label = _label_for_universal_metric(metric, method)
+
+    # If filtered to one team, return scalar summary.
+    if target_team and not opp_filter and not spec.team2:
+        team_name = str(target_team)
+        if team_name in ranked.index:
+            val = float(ranked.loc[team_name])
+            year_label = "all-time" if is_all_time else str(years[0])
+            return f"{year_label} {_scope_name(scope)}: {team_name} had {_format_universal_value(metric, val)} {label}."
+
+    rows = []
+    for i, (team, val) in enumerate(ranked.head(top_n).items(), 1):
+        rows.append(f"{i}. {team} ({_format_universal_value(metric, float(val))})")
+
+    against_suffix = f" against {target_team}" if opp_filter and target_team else ""
+    year_label = "all-time" if is_all_time else str(years[0])
+    header = f"{year_label} {_scope_name(scope)} top {top_n} by {label}{against_suffix}:"
+    return "\n".join([header, *rows])
 
 
 def _ordinal(n: int) -> str:
@@ -946,6 +1364,7 @@ def _answer_draft_pick_value(spec: QuerySpec) -> str:
 def _answer_draft_player_score(spec: QuerySpec) -> str:
     scope = (spec.year_range or "ALL").upper()
     mode = spec.mode or "top"
+    method = (spec.method or "total").lower()
     n = spec.n or spec.top_n or 10
     n = max(1, min(50, int(n)))
 
@@ -972,10 +1391,12 @@ def _answer_draft_player_score(spec: QuerySpec) -> str:
         .agg(total_score=("final_score", "sum"), selections=("final_score", "count"), avg_score=("final_score", "mean"))
         .reset_index()
     )
-    ranked = agg.sort_values("total_score", ascending=(mode == "bottom")).head(n)
+    rank_col = "avg_score" if method in {"avg", "average", "mean"} else "total_score"
+    ranked = agg.sort_values(rank_col, ascending=(mode == "bottom")).head(n)
 
     title_scope = "all-time" if scope == "ALL" else str(spec.year)
-    lines = [f"Draft player scores ({mode} {n}, {title_scope}):"]
+    title_metric = "average score" if rank_col == "avg_score" else "total score"
+    lines = [f"Draft player scores ({mode} {n} by {title_metric}, {title_scope}):"]
     for i, row in enumerate(ranked.itertuples(index=False), 1):
         lines.append(
             f"{i}. {row.Player} — total {float(row.total_score):.2f}, selections {int(row.selections)}, avg {float(row.avg_score):.2f}"
@@ -985,23 +1406,48 @@ def _answer_draft_player_score(spec: QuerySpec) -> str:
 
 def _answer_draft_team_score(spec: QuerySpec) -> str:
     scope = spec.year_range or "single_year"
+    method = (spec.method or "total").lower()
+    use_avg = method in {"avg", "average", "mean"}
     if scope == "ALL":
         tables = []
         for y in sorted(seasonInfo.keys()):
             path = DATA_ROOT / str(y) / f"{y} Draft Results.csv"
             if path.exists():
-                tables.append(_load_draft_table(y)[["Team", "final_score"]])
+                df = _load_draft_table(y)[["Team", "final_score"]].copy()
+                df["Year"] = y
+                tables.append(df)
         if not tables:
             return "No draft tables found for all-time aggregation."
         all_df = pd.concat(tables, ignore_index=True)
     else:
-        all_df = _load_draft_table(spec.year)[["Team", "final_score"]]
+        all_df = _load_draft_table(spec.year)[["Team", "final_score"]].copy()
+        all_df["Year"] = spec.year
 
-    rank = all_df.groupby("Team")["final_score"].sum().sort_values(ascending=False)
-    title = f"Draft team scores ({'all-time' if scope == 'ALL' else spec.year}):"
+    grp = all_df.groupby("Team")
+    if use_avg:
+        per_team = grp.agg(
+            score=("final_score", "mean"),
+            selections=("final_score", "count"),
+            seasons=("Year", pd.Series.nunique),
+        ).sort_values("score", ascending=False)
+        title_metric = "average draft score"
+    else:
+        per_team = grp.agg(
+            score=("final_score", "sum"),
+            selections=("final_score", "count"),
+            seasons=("Year", pd.Series.nunique),
+        ).sort_values("score", ascending=False)
+        title_metric = "draft team scores"
+
+    title = f"{title_metric.capitalize()} ({'all-time' if scope == 'ALL' else spec.year}):"
     lines = [title]
-    for i, (team, val) in enumerate(rank.items(), 1):
-        lines.append(f"{i}. {team} ({float(val):.2f})")
+    for i, (team, row) in enumerate(per_team.iterrows(), 1):
+        if use_avg:
+            lines.append(
+                f"{i}. {team} ({float(row['score']):.2f}; selections={int(row['selections'])}, seasons={int(row['seasons'])})"
+            )
+        else:
+            lines.append(f"{i}. {team} ({float(row['score']):.2f})")
     return "\n".join(lines)
 
 
@@ -1995,6 +2441,12 @@ def answer_query(question: str, spec: QuerySpec) -> str:
         spec.scope = "RS"
         if spec.week is None and spec.start_week is not None and spec.end_week is not None and spec.start_week == spec.end_week:
             spec.week = spec.start_week
+
+    # Universal metric engine handles flexible metric+operator+filter combinations.
+    # Try this early for broad stat queries to reduce intent-fragility.
+    universal = _try_answer_universal_metric_query(question, spec)
+    if universal and spec.intent in {"unknown", "leader", "week_leader", "standings", "team_compare", "draft_team_score", "draft_player_score"}:
+        return universal
 
     if spec.intent == "unknown":
         if spec.needs_clarification:

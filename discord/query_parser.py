@@ -6,6 +6,7 @@ from typing import Optional
 from constants import allMembers, currentYear, seasonInfo
 from .capability_router import route_question
 from .capability_registry import VALID_INTENTS, lexical_retrieve, out_of_domain_response_for
+from .local_lookup import resolve_basic_stat
 from .llm_planner import plan_query_with_llm
 
 STAT_SYNONYMS = {
@@ -103,6 +104,9 @@ def _normalize_stat(raw: Optional[str]) -> Optional[str]:
     for canonical, aliases in STAT_SYNONYMS.items():
         if s_low == canonical.lower() or any(alias in s_low for alias in aliases):
             return canonical
+    resolved = resolve_basic_stat(raw, STAT_SYNONYMS)
+    if resolved:
+        return resolved
     return None
 
 

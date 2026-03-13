@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from constants import allMembers, currentYear
+from .local_lookup import resolve_basic_stat
 
 
 @dataclass
@@ -48,6 +49,9 @@ def _extract_stat(question: str) -> str | None:
         "FG%": ["fg%", "field goal percentage", "field goal"],
         "FT%": ["ft%", "free throw percentage", "free throw"],
     }
+    resolved = resolve_basic_stat(question, mapping)
+    if resolved:
+        return resolved
     for stat, aliases in mapping.items():
         if any(
             (
@@ -374,6 +378,7 @@ def _match_draft_questions(q: str, year: int, top_n: int) -> CapabilityMatch | N
 
     mode = "bottom" if _contains_any(q, ["worst", "bottom", "bust"]) else "top"
     year_range = "ALL" if _is_all_time(q) or _contains_any(q, ["across seasons", "overall", "total"]) else None
+    method = "avg" if _contains_any(q, ["avg", "average", "mean", "on average", "per season"]) else "total"
     n = max(1, min(50, int(top_n or 10)))
     if n == 1 and _contains_any(q, ["best", "worst", "top", "bottom", "most", "least"]):
         n = 10
@@ -393,7 +398,7 @@ def _match_draft_questions(q: str, year: int, top_n: int) -> CapabilityMatch | N
     if _contains_any(q, ["draft bust", "biggest bust"]):
         return CapabilityMatch(
             intent="draft_player_score",
-            params={"year": year, "year_range": year_range, "mode": "bottom", "n": 1},
+            params={"year": year, "year_range": year_range, "mode": "bottom", "n": 1, "method": method},
         )
 
     # Player-focused draft value queries.
@@ -405,6 +410,7 @@ def _match_draft_questions(q: str, year: int, top_n: int) -> CapabilityMatch | N
                 "year_range": year_range,
                 "mode": mode,
                 "n": n,
+                "method": method,
             },
         )
 
@@ -412,7 +418,7 @@ def _match_draft_questions(q: str, year: int, top_n: int) -> CapabilityMatch | N
     if _contains_any(q, ["team", "teams", "manager", "managers", "rank teams", "team score", "draft score", "drafted the most value"]):
         return CapabilityMatch(
             intent="draft_team_score",
-            params={"year": year, "year_range": year_range or "single_year"},
+            params={"year": year, "year_range": year_range or "single_year", "method": method},
         )
 
     # Generic "draft pick(s)" phrasing.
@@ -806,7 +812,14 @@ def route_question(question: str) -> CapabilityMatch | None:
     if "most consistent" in q or "consisten" in q:
         return CapabilityMatch(intent="consistency", params={"year": year, "year_range": "ALL"})
 
-    if "what if" in q and "swapped schedules" in q:
+    if (
+        team1
+        and team2
+        and (
+            ("what if" in q and _contains_any(q, ["swapped schedules", "swap schedules", "schedule swap", "switched schedules", "switch schedules"]))
+            or _contains_any(q, ["schedule swap", "swap schedules between", "swap schedule between", "switch schedules between"])
+        )
+    ):
         return CapabilityMatch(
             intent="what_if_schedule_swap",
             params={"year": year, "team": team1, "team2": team2, "standings_format": "wl"},
