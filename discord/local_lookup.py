@@ -55,6 +55,15 @@ def _contains_alias(q: str, alias: str) -> bool:
     a = alias.lower().strip()
     if not a:
         return False
+    if " " in a:
+        # Allow casual filler/typos between words, e.g. "made the msot playoffs".
+        parts = [re.escape(p) for p in a.split() if p]
+        if len(parts) >= 2:
+            pattern = r"\b" + parts[0] + r"\b"
+            for p in parts[1:]:
+                pattern += r"(?:\W+\w+){0,3}\W+\b" + p + r"\b"
+            if re.search(pattern, q):
+                return True
     if len(a) <= 3 and a.isalpha():
         return re.search(rf"\b{re.escape(a)}\b", q) is not None
     return a in q
@@ -107,12 +116,19 @@ def resolve_metric(question: str, metric_order: list[str], aliases: dict[str, li
 
 
 def resolve_operator_method(question: str, default: str = "total") -> str:
+    explicit = resolve_operator_explicit(question)
+    if explicit:
+        return explicit
+    return default
+
+
+def resolve_operator_explicit(question: str) -> str | None:
     q = (question or "").lower()
     if any(_contains_alias(q, a) for a in OPERATOR_ALIASES["avg"]):
         return "avg"
     if any(_contains_alias(q, a) for a in OPERATOR_ALIASES["total"]):
         return "total"
-    return default
+    return None
 
 
 def resolve_basic_stat(question: str, stat_aliases: dict[str, list[str]]) -> str | None:

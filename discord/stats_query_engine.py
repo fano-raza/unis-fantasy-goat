@@ -14,7 +14,7 @@ from constants import currentYear, seasonInfo, gDocStatCats, allMembers, playoff
 from recaps.recap_utils import write_regular_season_recap
 from shared.runtime_config import DATA_ROOT
 from .llm_usage import budget_remaining, extract_usage, record_usage
-from .local_lookup import resolve_metric, resolve_operator_method
+from .local_lookup import resolve_metric, resolve_operator_method, resolve_operator_explicit
 from .query_parser import QuerySpec
 from .unanswered_log import record_unanswered
 
@@ -52,7 +52,18 @@ UNIVERSAL_METRIC_ALIASES = {
     "VOLATILITY": ["volatility", "most volatile", "least stable"],
     "TOP1_WEEKS": ["#1 weeks", "number 1 weeks", "top 1 weeks", "first-place weeks", "weekly #1 finishes"],
     "TOP3_RATE": ["top 3 rate", "top3 rate", "top 3 weeks", "top 3 finish rate"],
-    "PLAYOFF_APPEARANCES": ["playoff appearances", "playoffs made", "made playoffs"],
+    "PLAYOFF_APPEARANCES": [
+        "playoff appearances",
+        "playoffs made",
+        "made playoffs",
+        "made the playoffs",
+        "playoff years",
+        "playoff seasons",
+        "years in playoffs",
+        "seasons in playoffs",
+        "postseason appearances",
+        "postseason years",
+    ],
     "PLAYOFF_APP_RATE": ["playoff appearance rate", "playoff rate", "playoffs rate"],
     "FINALS": ["finals appearances", "made finals", "finals made"],
     "CHIPS": ["chips", "titles", "championships", "rings"],
@@ -69,6 +80,58 @@ UNIVERSAL_METRIC_ALIASES = {
     "CAT_D": ["category ties", "cat ties", "cats tied"],
     "WIN_PCT": ["win%", "win pct", "win percentage", "record", "best record", "worst record"],
     "CAT_WIN_PCT": ["category win%", "category win pct", "category win percentage", "cat win%", "cat win pct"],
+}
+
+# Default timeframe when user does not provide a concrete time anchor.
+# None => keep single-season default (current/requested year).
+DEFAULT_YEAR_RANGE_BY_METRIC = {
+    # Career-style outcomes are typically interpreted as all-time.
+    "PLAYOFF_APPEARANCES": "ALL",
+    "PLAYOFF_APP_RATE": "ALL",
+    "FINALS": "ALL",
+    "CHIPS": "ALL",
+    "FINALS_CONVERSION": "ALL",
+    # Draft value is usually asked across all seasons unless scoped.
+    "DRAFT_SCORE": "ALL",
+    "DRAFT_SCORE_PER_PICK": "ALL",
+}
+
+DEFAULT_METHOD_BY_METRIC = {
+    "FG%": "avg",
+    "FT%": "avg",
+    "AVG_RATING": "avg",
+    "AVG_OPP_RATING": "avg",
+    "RANK": "avg",
+    "WEIGHTED_RANK": "avg",
+    "TOP3_RATE": "avg",
+    "WIN_PCT": "avg",
+    "CAT_WIN_PCT": "avg",
+    "PLAYOFF_APP_RATE": "avg",
+    "FINALS_CONVERSION": "avg",
+    "DRAFT_SCORE_PER_PICK": "avg",
+}
+
+METHOD_BACKUP_METRICS = {
+    "PTS",
+    "REB",
+    "AST",
+    "STL",
+    "BLK",
+    "TO",
+    "3PTM",
+    "FG%",
+    "FT%",
+    "AVG_RATING",
+    "AVG_OPP_RATING",
+    "W",
+    "L",
+    "D",
+    "CAT_W",
+    "CAT_L",
+    "CAT_D",
+    "RANK",
+    "WEIGHTED_RANK",
+    "DRAFT_SCORE",
 }
 
 NO_ANSWER_MSG = "I can't answer that with the data/functions I have right now."
@@ -204,6 +267,19 @@ def _format_value(stat: str, value: float) -> str:
 
 def _scope_name(scope: str) -> str:
     return {"ALL": "entire season", "RS": "regular season", "PO": "playoffs"}.get(scope, "scope")
+
+
+def _window_label(week: Optional[int], start_week: Optional[int], end_week: Optional[int]) -> str:
+    if week is not None:
+        return f"week {week}"
+    if start_week is not None and end_week is not None:
+        a, b = sorted((int(start_week), int(end_week)))
+        if a == b:
+            return f"week {a}"
+        return f"weeks {a}-{b}"
+    if start_week is not None:
+        return f"week {int(start_week)}+"
+    return ""
 
 
 def _extract_universal_metric(question: str) -> Optional[str]:
@@ -470,19 +546,63 @@ def _playoff_outcome_metric_series(years: list[int], metric: str) -> pd.Series:
     return pd.Series(vals, dtype="float64")
 
 
-def _try_answer_universal_metric_query(question: str, spec: QuerySpec) -> Optional[str]:
+def _try_answer_universal_metric_query(
+    question: str,
+    spec: QuerySpec,
+    *,
+    include_backups: bool = True,
+    forced_method: Optional[str] = None,
+    forced_is_all_time: Optional[bool] = None,
+    clear_week_filters: bool = False,
+) -> Optional[str]:
     metric = _extract_universal_metric(question)
     if not metric:
         return None
 
     scope = spec.scope if spec.scope in {"ALL", "RS", "PO"} else "ALL"
-    method = (spec.method or _method_from_question(question)).lower()
+    explicit_method = resolve_operator_explicit(question)
+    if forced_method:
+        method = forced_method.lower()
+    elif spec.method:
+        method = str(spec.method).lower()
+    elif explicit_method:
+        method = explicit_method
+    else:
+        method = DEFAULT_METHOD_BY_METRIC.get(metric, _method_from_question(question))
     method = "avg" if method in {"avg", "average", "mean"} else "total"
     direction = _direction_from_question(question, metric)
     top_n = _top_n_from_question(question, spec.top_n or 1)
     q_low = (question or "").lower()
     is_all_time = (spec.year_range or "").upper() == "ALL" or any(k in q_low for k in ["all time", "all-time", "career", "entire career"])
+    # Determine if user gave a concrete time anchor.
+    has_concrete_time_anchor = (
+        bool(re.search(r"\b20\d{2}\b", q_low))
+        or any(k in q_low for k in ["this season", "current season", "last season", "all time", "all-time", "career", "entire career"])
+        or bool(re.search(r"\bweek\s*\d+\b", q_low))
+        or bool(re.search(r"\b\d+\s+(season|seasons|year|years)\s+ago\b", q_low))
+        or bool(re.search(r"\bprevious\s+\d+\s+(season|seasons|year|years)\b", q_low))
+    )
+    # Apply per-metric default timeframe only when user did not specify time.
+    if not has_concrete_time_anchor and not (spec.year_range or "").upper() == "ALL":
+        if DEFAULT_YEAR_RANGE_BY_METRIC.get(metric) == "ALL":
+            is_all_time = True
+
+    if metric in {"PLAYOFF_APPEARANCES", "PLAYOFF_APP_RATE", "FINALS", "CHIPS", "FINALS_CONVERSION"} and not has_concrete_time_anchor:
+        is_all_time = True
+    if forced_is_all_time is not None:
+        is_all_time = bool(forced_is_all_time)
     years = sorted(seasonInfo.keys()) if is_all_time else [spec.year if spec.year in seasonInfo else currentYear]
+    week = None if clear_week_filters else spec.week
+    start_week = None if clear_week_filters else spec.start_week
+    end_week = None if clear_week_filters else spec.end_week
+    if not clear_week_filters and week is None and start_week is None and end_week is None:
+        rng = re.search(r"weeks?\s*(\d{1,2})\s*(?:to|-|through)\s*(\d{1,2})", q_low)
+        if rng:
+            start_week, end_week = int(rng.group(1)), int(rng.group(2))
+        else:
+            w = re.search(r"\bweek\s*(\d{1,2})\b", q_low)
+            if w:
+                week = int(w.group(1))
 
     # Draft-score metrics are sourced from draft tables.
     if metric in {"DRAFT_SCORE", "DRAFT_SCORE_PER_PICK"}:
@@ -503,7 +623,19 @@ def _try_answer_universal_metric_query(question: str, spec: QuerySpec) -> Option
         label = _label_for_universal_metric(metric, method)
         year_label = "all-time" if is_all_time else str(years[0])
         rows = [f"{i}. {team} ({_format_universal_value(metric, float(val))})" for i, (team, val) in enumerate(ranked.head(top_n).items(), 1)]
-        return "\n".join([f"{year_label} top {top_n} by {label}:", *rows])
+        primary = "\n".join([f"{year_label} top {top_n} by {label}:", *rows])
+        if not include_backups:
+            return primary
+        return _with_universal_backups(
+            primary=primary,
+            metric=metric,
+            method=method,
+            is_all_time=is_all_time,
+            has_week_filter=bool(week is not None or start_week is not None or end_week is not None),
+            question=question,
+            spec=spec,
+            clear_week_filters=clear_week_filters,
+        )
 
     # Playoff/championship outcomes are also sourced outside statDF.
     if metric in {"PLAYOFF_APPEARANCES", "PLAYOFF_APP_RATE", "FINALS", "CHIPS", "FINALS_CONVERSION"}:
@@ -521,7 +653,19 @@ def _try_answer_universal_metric_query(question: str, spec: QuerySpec) -> Option
         label = _label_for_universal_metric(metric, method)
         year_label = "all-time" if is_all_time else str(years[0])
         rows = [f"{i}. {team} ({_format_universal_value(metric, float(val))})" for i, (team, val) in enumerate(ranked.head(top_n).items(), 1)]
-        return "\n".join([f"{year_label} top {top_n} by {label}:", *rows])
+        primary = "\n".join([f"{year_label} top {top_n} by {label}:", *rows])
+        if not include_backups:
+            return primary
+        return _with_universal_backups(
+            primary=primary,
+            metric=metric,
+            method=method,
+            is_all_time=is_all_time,
+            has_week_filter=bool(week is not None or start_week is not None or end_week is not None),
+            question=question,
+            spec=spec,
+            clear_week_filters=clear_week_filters,
+        )
 
     frames = []
     for y in years:
@@ -531,7 +675,7 @@ def _try_answer_universal_metric_query(question: str, spec: QuerySpec) -> Option
             po_teams = _po_team_set(y)
             if po_teams:
                 d = d[d["Team"].isin(po_teams) & d["Opp"].isin(po_teams)]
-        d = _filter_df_by_weeks(d, spec.week, spec.start_week, spec.end_week)
+        d = _filter_df_by_weeks(d, week, start_week, end_week)
         d = d[(d["Team"] != "BYE") & (d["Opp"] != "BYE")]
         if "real_matchup" in d.columns:
             d = d[d["real_matchup"] >= 1]
@@ -575,7 +719,21 @@ def _try_answer_universal_metric_query(question: str, spec: QuerySpec) -> Option
         if team_name in ranked.index:
             val = float(ranked.loc[team_name])
             year_label = "all-time" if is_all_time else str(years[0])
-            return f"{year_label} {_scope_name(scope)}: {team_name} had {_format_universal_value(metric, val)} {label}."
+            window_lbl = _window_label(week, start_week, end_week)
+            window_part = f" ({window_lbl})" if window_lbl else ""
+            primary = f"{year_label} {_scope_name(scope)}{window_part}: {team_name} had {_format_universal_value(metric, val)} {label}."
+            if not include_backups:
+                return primary
+            return _with_universal_backups(
+                primary=primary,
+                metric=metric,
+                method=method,
+                is_all_time=is_all_time,
+                has_week_filter=bool(week is not None or start_week is not None or end_week is not None),
+                question=question,
+                spec=spec,
+                clear_week_filters=clear_week_filters,
+            )
 
     rows = []
     for i, (team, val) in enumerate(ranked.head(top_n).items(), 1):
@@ -583,8 +741,100 @@ def _try_answer_universal_metric_query(question: str, spec: QuerySpec) -> Option
 
     against_suffix = f" against {target_team}" if opp_filter and target_team else ""
     year_label = "all-time" if is_all_time else str(years[0])
-    header = f"{year_label} {_scope_name(scope)} top {top_n} by {label}{against_suffix}:"
-    return "\n".join([header, *rows])
+    window_lbl = _window_label(week, start_week, end_week)
+    window_part = f" ({window_lbl})" if window_lbl else ""
+    header = f"{year_label} {_scope_name(scope)}{window_part} top {top_n} by {label}{against_suffix}:"
+    primary = "\n".join([header, *rows])
+    if not include_backups:
+        return primary
+    return _with_universal_backups(
+        primary=primary,
+        metric=metric,
+        method=method,
+        is_all_time=is_all_time,
+        has_week_filter=bool(week is not None or start_week is not None or end_week is not None),
+        question=question,
+        spec=spec,
+        clear_week_filters=clear_week_filters,
+    )
+
+
+def _with_universal_backups(
+    *,
+    primary: str,
+    metric: str,
+    method: str,
+    is_all_time: bool,
+    has_week_filter: bool,
+    question: str,
+    spec: QuerySpec,
+    clear_week_filters: bool,
+) -> str:
+    sections = [primary]
+    backup_candidates: list[str] = []
+
+    # Companion method view (total <-> average) when meaningful.
+    if metric in METHOD_BACKUP_METRICS:
+        alt_method = "avg" if method == "total" else "total"
+        alt = _try_answer_universal_metric_query(
+            question,
+            spec,
+            include_backups=False,
+            forced_method=alt_method,
+            forced_is_all_time=is_all_time,
+            clear_week_filters=clear_week_filters,
+        )
+        if alt and alt != primary:
+            backup_candidates.append(f"{'Average' if alt_method == 'avg' else 'Total'} view:\n{alt}")
+
+    # Companion all-time view when primary is single-season.
+    if not is_all_time:
+        alt_all = _try_answer_universal_metric_query(
+            question,
+            spec,
+            include_backups=False,
+            forced_method=method,
+            forced_is_all_time=True,
+            clear_week_filters=clear_week_filters,
+        )
+        if alt_all and alt_all != primary:
+            backup_candidates.append(f"All-time view:\n{alt_all}")
+
+    # Companion full-season view when week filters are applied.
+    if has_week_filter and not clear_week_filters:
+        alt_full_season = _try_answer_universal_metric_query(
+            question,
+            spec,
+            include_backups=False,
+            forced_method=method,
+            forced_is_all_time=is_all_time,
+            clear_week_filters=True,
+        )
+        if alt_full_season and alt_full_season != primary:
+            # Put this first by priority (most specific correction of week-window slicing).
+            backup_candidates.insert(0, f"Full-season range:\n{alt_full_season}")
+
+    # At most one backup item.
+    if backup_candidates:
+        # Priority order:
+        # 1) Full-season range (if week-filtered)
+        # 2) All-time view (if single-season primary)
+        # 3) Method companion (total<->average)
+        chosen = None
+        for candidate in backup_candidates:
+            if candidate.startswith("Full-season range:"):
+                chosen = candidate
+                break
+        if not chosen:
+            for candidate in backup_candidates:
+                if candidate.startswith("All-time view:"):
+                    chosen = candidate
+                    break
+        if not chosen:
+            chosen = backup_candidates[0]
+        sections.append("Backup:\n" + chosen)
+
+    return "\n\n".join(sections)
 
 
 def _ordinal(n: int) -> str:
@@ -2445,7 +2695,7 @@ def answer_query(question: str, spec: QuerySpec) -> str:
     # Universal metric engine handles flexible metric+operator+filter combinations.
     # Try this early for broad stat queries to reduce intent-fragility.
     universal = _try_answer_universal_metric_query(question, spec)
-    if universal and spec.intent in {"unknown", "leader", "week_leader", "standings", "team_compare", "draft_team_score", "draft_player_score"}:
+    if universal and spec.intent in {"unknown", "leader", "week_leader", "standings", "team_compare", "draft_team_score", "draft_player_score", "champions_lounge"}:
         return universal
 
     if spec.intent == "unknown":
