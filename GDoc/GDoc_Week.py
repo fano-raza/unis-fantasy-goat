@@ -191,8 +191,9 @@ def updateCurrentSheet():
                     datetime.date(int(week[4]), int(week[5]), int(week[6]))]
                    for week in reader]
 
-    today = datetime.date.today()
-    current_time = datetime.datetime.now().time()
+    now = datetime.datetime.now(EASTERN_TZ)
+    today = now.date()
+    current_time = now.time()
 
     # if the time is still before or equal to 2AM count it as yesterday
     # makes sure Sunday games that go past midnight EST are accounted for
