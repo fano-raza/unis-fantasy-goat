@@ -211,6 +211,8 @@ def updateStandings(year, extSeason = None):
     season = regSeason(year) if not extSeason else extSeason
     WL_standings = season.get_WL_standings()
     cat_standings = season.get_Cats_standings()
+    league_wl_standings = season.get_league_wins_standings_WL()
+    league_cat_standings = season.get_league_wins_standings_Cats()
 
     replacements = str.maketrans({"W":"",
                                   "L":"",
@@ -218,9 +220,21 @@ def updateStandings(year, extSeason = None):
 
     WL_standings_list = [[place, WL_standings[place][0], WL_standings[place][1].translate(replacements)] for place in WL_standings]
     cat_standings_list = [[place, cat_standings[place][0], cat_standings[place][1].translate(replacements)] for place in cat_standings]
+    league_wl_standings_list = [[place, league_wl_standings[place][0], league_wl_standings[place][1].translate(replacements)]
+                                for place in league_wl_standings]
+    league_cat_standings_list = [[place, league_cat_standings[place][0], league_cat_standings[place][1].translate(replacements)]
+                                 for place in league_cat_standings]
+
+    # Keep a fixed 10-row window in the sheet clean for modern seasons.
+    while len(league_wl_standings_list) < 10:
+        league_wl_standings_list.append(["", "", ""])
+    while len(league_cat_standings_list) < 10:
+        league_cat_standings_list.append(["", "", ""])
 
     worksheet.update(WL_standings_list, f"A32:C41")
     worksheet.update(cat_standings_list, f"F32:H41")
+    worksheet.update(league_wl_standings_list[:10], f"A45:C54")
+    worksheet.update(league_cat_standings_list[:10], f"F45:H54")
 
 if __name__ == '__main__':
     year = 2026
