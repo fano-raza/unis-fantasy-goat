@@ -53,6 +53,7 @@ def _load_state() -> Dict[str, float]:
     Keys used:
       - MILESTONE|context|team|stat_name -> last [factor] milestone
       - RANK|context|team|stat_name      -> previous rank (1 = best)
+      - VAL|context|team|stat_name       -> previous stat value
     """
     if not os.path.exists(STATE_FILE):
         return {}
@@ -152,7 +153,7 @@ def notify_milestones(dataframes: Dict[str, pd.DataFrame]) -> bool:
                     continue
 
                 factor = _get_factor(stat_name)
-                big_factor = _get_big_factor(factor)
+                big_factor = _get_big_factor(stat_name)
 
                 # highest factor-multiple reached by this value
                 new_milestone = int(num_val // factor) * factor
@@ -223,10 +224,15 @@ def notify_milestones(dataframes: Dict[str, pd.DataFrame]) -> bool:
             # Previous ranks from state (default to "worst+1" if missing)
             prev_ranks: Dict[str, int] = {}
             default_bad_rank = len(teams) + 1
+            prev_vals: Dict[str, float] = {}
 
             for team_name in teams:
                 r_key = f"RANK|{context}|{team_name}|{stat_name}"
                 prev_ranks[team_name] = int(state.get(r_key, default_bad_rank))
+                v_key = f"VAL|{context}|{team_name}|{stat_name}"
+                # If we have no prior value in state, fall back to current value to avoid
+                # false "overtake" events on first run after deploy/restart.
+                prev_vals[team_name] = float(state.get(v_key, curr_vals.get(team_name, 0.0)))
 
             # Detect improvements
             for team_name in teams:
@@ -240,17 +246,25 @@ def notify_milestones(dataframes: Dict[str, pd.DataFrame]) -> bool:
                 if curr_rank >= prev_rank:
                     continue
 
-                # Find teams that were ahead before and are no longer strictly ahead
+                # Find teams A truly crossed by value (not just rank bookkeeping):
+                # - team was below other before
+                # - team is now equal or above other
                 candidates = []
                 for other in teams:
                     if other == team_name:
                         continue
 
-                    pr_other = prev_ranks.get(other, default_bad_rank)
-                    cr_other = curr_ranks.get(other, default_bad_rank)
+                    if other not in curr_vals:
+                        continue
 
-                    # "Was ahead of A before"  AND  "is no longer strictly ahead now"
-                    if pr_other < prev_rank and cr_other >= curr_rank:
+                    prev_self = prev_vals.get(team_name, curr_vals[team_name])
+                    prev_other = prev_vals.get(other, curr_vals[other])
+                    curr_self = curr_vals[team_name]
+                    curr_other = curr_vals[other]
+
+                    was_behind = prev_self < prev_other
+                    now_tied_or_ahead = curr_self >= curr_other
+                    if was_behind and now_tied_or_ahead:
                         candidates.append(other)
 
                 if not candidates:
@@ -288,6 +302,9 @@ def notify_milestones(dataframes: Dict[str, pd.DataFrame]) -> bool:
             for team_name, r in curr_ranks.items():
                 r_key = f"RANK|{context}|{team_name}|{stat_name}"
                 state[r_key] = r
+            for team_name, v in curr_vals.items():
+                v_key = f"VAL|{context}|{team_name}|{stat_name}"
+                state[v_key] = float(v)
 
     # ---------- send + save ----------
     _save_state(state)
