@@ -89,11 +89,21 @@ class matchup():
                 self.is_won, self.is_lost, self.is_tied = False, True, False
                 self.winner, self.loser = self.team2, self.team1
 
+            # Raw result is preserved in winner/loser/is_tied.
+            # official_* can be used to store tiebreak-resolved playoff outcomes.
+            self.official_winner = self.winner
+            self.official_loser = self.loser
+            self.tiebreak_applied = False
+            self.tiebreak_reason = None
+
             self.score = (self.wins, self.losses, self.ties)
 
         else:
             self.is_won, self.is_lost, self.is_tied = False, False, False
             self.winner, self.loser = None, None
+            self.official_winner, self.official_loser = None, None
+            self.tiebreak_applied = False
+            self.tiebreak_reason = None
 
     def __repr__(self):
         try:

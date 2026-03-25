@@ -1097,6 +1097,11 @@ class poSeason(regSeason):
                     remover.append(matchup_obj)
 
             for matchup_obj in self.PO_matchups_by_week[week]:
+                # Resolve playoff ties using league tiebreak order so elimination
+                # and bracket advancement are deterministic.
+                if matchup_obj.is_tied and not matchup_obj.is_BYE:
+                    self._resolve_playoff_tie(matchup_obj)
+
                 ## if past the first week, remove any matchups that include eliminated teams
                 if week > self.RSweekCount + 1:
                     if matchup_obj.team1 in elimTeams or matchup_obj.team2 in elimTeams:
@@ -1105,13 +1110,17 @@ class poSeason(regSeason):
 
                 ## teams that lost in quarterfinals or earlier are added to eliminated teams
                 if week < self.RSweekCount + self.rounds-1:
-                    elimTeams.append(matchup_obj.loser)
-                    self.PO_results[matchup_obj.loser] = 'Below Top 4'
+                    loser = self._effective_loser(matchup_obj)
+                    if loser:
+                        elimTeams.append(loser)
+                        self.PO_results[loser] = 'Below Top 4'
                     # print(f"loser: {matchup_obj.loser}")
 
                 ## teams that lost in the semi-final are added to third place game
                 elif week == self.RSweekCount + self.rounds-1:
-                    thirdPlace.append(matchup_obj.loser)
+                    loser = self._effective_loser(matchup_obj)
+                    if loser:
+                        thirdPlace.append(loser)
 
                 ## in final week, teams in 3rd place list are part of 3rd place game
                 ## teams not in 3rd place list are part of final
@@ -1133,20 +1142,83 @@ class poSeason(regSeason):
         if self.PO_currentWeek==self.PO_weeks:
             # if self.POmatchupsByWeek['Final']:
             self.PO_champ = self.get_PO_winner()
+            final_matchup = self.PO_matchups_by_week['Final']
+            third_place_matchup = self.PO_matchups_by_week['3rd Place']
             self.PO_standings = {
                 1: self.PO_champ,
-                2: self.PO_matchups_by_week['Final'].loser,
-                3: self.PO_matchups_by_week['3rd Place'].winner,
-                4: self.PO_matchups_by_week['3rd Place'].loser
+                2: self._effective_loser(final_matchup) if final_matchup else None,
+                3: self._effective_winner(third_place_matchup) if third_place_matchup else None,
+                4: self._effective_loser(third_place_matchup) if third_place_matchup else None
             }
 
             for standing in self.PO_standings:
-                self.PO_results[self.PO_standings[standing]] = standing
+                team = self.PO_standings[standing]
+                if team:
+                    self.PO_results[team] = standing
 
         # Enforce strict playoff counting semantics in the season dataframe:
         # remove/count-out any playoff-week rows involving teams that are not
         # in the championship playoff field after excluding pre-semifinal exits.
         self._apply_playoff_count_flags()
+
+    def _h2h_record_score(self, team_a: str, team_b: str):
+        # Use only direct regular-season matchups between the two teams.
+        # This avoids overcounting from expanded dataframe views.
+        matchup_score = 0.0
+        cat_score = 0.0
+        for m in self.matchups:
+            if not m.is_reg or not m.count or m.is_BYE:
+                continue
+            if {m.team1, m.team2} != {team_a, team_b}:
+                continue
+
+            if m.team1 == team_a:
+                matchup_score += 1.0 if m.winner == team_a else 0.49 if m.is_tied else 0.0
+                cat_score += float(m.wins + 0.49 * m.ties)
+            else:
+                matchup_score += 1.0 if m.winner == team_a else 0.49 if m.is_tied else 0.0
+                cat_score += float(m.losses + 0.49 * m.ties)
+        return matchup_score, cat_score
+
+    def _resolve_playoff_tie(self, matchup_obj):
+        team1 = matchup_obj.team1
+        team2 = matchup_obj.team2
+
+        t1_h2h, t1_h2h_cat = self._h2h_record_score(team1, team2)
+        t2_h2h, t2_h2h_cat = self._h2h_record_score(team2, team1)
+
+        # 1) H2H record
+        if round(t1_h2h, 6) != round(t2_h2h, 6):
+            winner = team1 if t1_h2h > t2_h2h else team2
+            reason = "H2H record"
+        # 2) H2H category record
+        elif round(t1_h2h_cat, 6) != round(t2_h2h_cat, 6):
+            winner = team1 if t1_h2h_cat > t2_h2h_cat else team2
+            reason = "H2H category record"
+        # 3) Final seeding (better seed = lower number)
+        else:
+            seed_by_team = {team: seed for seed, team in (self.PO_seeding or {}).items()}
+            s1 = seed_by_team.get(team1, 999)
+            s2 = seed_by_team.get(team2, 999)
+            winner = team1 if s1 <= s2 else team2
+            reason = "Final seeding"
+
+        loser = team2 if winner == team1 else team1
+        matchup_obj.official_winner = winner
+        matchup_obj.official_loser = loser
+        matchup_obj.tiebreak_applied = True
+        matchup_obj.tiebreak_reason = reason
+        return winner, loser
+
+    def _effective_winner(self, matchup_obj):
+        if matchup_obj is None:
+            return None
+        return getattr(matchup_obj, "official_winner", None) or matchup_obj.winner
+
+    def _effective_loser(self, matchup_obj):
+        if matchup_obj is None:
+            return None
+        return getattr(matchup_obj, "official_loser", None) or matchup_obj.loser
 
     def _apply_playoff_count_flags(self):
         if self.statDF is None or self.statDF.empty:
@@ -1178,7 +1250,7 @@ class poSeason(regSeason):
             # print(f"the {year - 1}/{year} season did not have any Playoffs\nThe Regular Season Champ was {self.get_rsWinnerWL()}")
             return None
         else:
-            return self.PO_matchups_by_week['Final'].winner
+            return self._effective_winner(self.PO_matchups_by_week['Final'])
 
     def get_final_PO_standings(self):
         if playoffTeamCount[self.year] == 'N/A':
