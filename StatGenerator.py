@@ -223,7 +223,14 @@ def updateStatCSV(year, startWeek = 0, endWeek = 0, extStatList = []):
         with (open(pathname, 'r') as csvfile):
             csvList = list(csv.reader(csvfile))
             startWeek = int(csvList[-1][1]) if startWeek <= 0 else startWeek
-            maxWeek = getLastWeek(year) if (endWeek <= 0 or endWeek >= getLastWeek(year)) else endWeek
+            # Default behavior: refresh through current detected week.
+            # If caller provides endWeek explicitly, honor it (used by manual forced refresh).
+            maxWeek = getLastWeek(year) if endWeek <= 0 else endWeek
+
+        # Avoid destructive truncation when caller asks for a past week and file already
+        # has newer rows (e.g., startWeek > maxWeek). In that case there is nothing to fetch.
+        if startWeek > maxWeek:
+            return None
 
         if si[year]['is_espn']:
             espnLeague = League(espn_leagueID, year, espn_s2, espn_swid)
@@ -344,4 +351,3 @@ if __name__ == '__main__':
     genStatCSV(year)
 
     updateStatCSV(year)
-

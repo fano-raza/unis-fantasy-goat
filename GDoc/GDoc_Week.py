@@ -173,7 +173,8 @@ def updateSheet(year, week):
     now = datetime.datetime.now(EASTERN_TZ)
     displayTime = f"{now.month}/{now.day}/{now.year - 2000} {now.hour}:{now.minute:02} EST"
 
-    updateStatCSV(year)
+    # Keep stats aligned with the requested sheet week, including manual backfills/forced runs.
+    updateStatCSV(year, endWeek=week)
     updateStandings(year)
 
     write_gDoc(year, week, "UPDATING", "L2", italic=True)
