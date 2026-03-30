@@ -1067,7 +1067,7 @@ class team_PO_season(poSeason):
 
         for week in range(self.RSweekCount+1,self.RSweekCount+1+self.rounds):
             for matchup_obj in self.PO_matchups_by_week[week]:
-                if matchup_obj.team1 == self.name or matchup_obj.team2 == self.name and matchup_obj.count:
+                if (matchup_obj.team1 == self.name or matchup_obj.team2 == self.name) and matchup_obj.count:
                     teamStats[week] = list(self.statDict[week][self.name].values())
 
         if teamStats == {}:
@@ -1205,7 +1205,6 @@ if __name__ == '__main__':
         # endTime = time.time()
         # print(f"time: {endTime-startTime}s")
         # print("\n")
-
 
 
 
