@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { Suspense, useEffect, useMemo, useState, type ComponentType } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Card,
   CardAction,
@@ -142,6 +143,17 @@ function splitYears(value: string | number | null | undefined): string {
 }
 
 export default function ProfilePage() {
+  return (
+    <Suspense fallback={<LoadingBasketballs label="Loading" />}>
+      <ProfilePageInner />
+    </Suspense>
+  );
+}
+
+// useSearchParams() (for the ?team= deep link) requires a Suspense boundary
+// around whatever calls it, per Next.js -- the actual page content lives
+// here, wrapped by the plain default export above.
+function ProfilePageInner() {
   const [meta, setMeta] = useState<LeagueMeta | null>(null);
   const [allTeams, setAllTeams] = useState<TeamSummary[]>([]);
   const [totals, setTotals] = useState<AggregateRow[]>([]);
@@ -149,15 +161,24 @@ export default function ProfilePage() {
   const [queryTotals, setQueryTotals] = useState<Record<string, QueryRow[]>>({});
   const [categoryHistory, setCategoryHistory] = useState<CategoryHistoryResponse | null>(null);
   const [team, setTeam] = useState<string | null>(null);
+  const searchParams = useSearchParams();
 
   useEffect(() => {
+    // A ?team= link (from a table row elsewhere in the app) wins over the
+    // remembered last-selected team; falls back to that, then the first
+    // member, exactly like before this existed.
+    const teamFromUrl = searchParams.get("team");
     getLeagueMeta().then((m) => {
       setMeta(m);
       let restored = m.members[0] ?? null;
-      try {
-        const saved = localStorage.getItem(SELECTED_TEAM_KEY);
-        if (saved && m.members.includes(saved)) restored = saved;
-      } catch {}
+      if (teamFromUrl && m.members.includes(teamFromUrl)) {
+        restored = teamFromUrl;
+      } else {
+        try {
+          const saved = localStorage.getItem(SELECTED_TEAM_KEY);
+          if (saved && m.members.includes(saved)) restored = saved;
+        } catch {}
+      }
       setTeam(restored);
     });
     getTeamSummary({}).then(setAllTeams);
@@ -175,6 +196,10 @@ export default function ProfilePage() {
         }).then((res) => [f.label, res.rows] as const),
       ),
     ).then((entries) => setQueryTotals(Object.fromEntries(entries)));
+    // Deliberately only reads searchParams once, at mount -- not a dep, so
+    // a later manual team switch on this same page load isn't fought by
+    // this effect re-running.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -210,7 +211,9 @@ export default function ComparisonPage() {
                       style={{ width: colWidthPct }}
                       className="whitespace-normal text-right text-primary sm:whitespace-nowrap"
                     >
-                      {row.Team}
+                      <Link href={`/profile?team=${encodeURIComponent(row.Team)}`} className="hover:underline">
+                        {row.Team}
+                      </Link>
                     </TableHead>
                   ))}
                 </TableRow>

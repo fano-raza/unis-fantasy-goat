@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import Link from "next/link";
 import {
   Table,
   TableBody,
@@ -236,7 +237,9 @@ export function StatTable({ rows, mode, focusTeam, showFocusScore }: StatTablePr
                   isFocus && "bg-focus-row text-primary",
                 )}
               >
-                {row.team}
+                <Link href={`/profile?team=${encodeURIComponent(row.team)}`} className="hover:underline">
+                  {row.team}
+                </Link>
               </TableCell>
               {showFocusScore && (
                 <TableCell

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   CartesianGrid,
   Line,
@@ -96,7 +97,9 @@ function StandingsTable({
                 </span>
               </TableCell>
               <TableCell className="font-sans font-extrabold tracking-wide uppercase">
-                {row.team}
+                <Link href={`/profile?team=${encodeURIComponent(row.team)}`} className="hover:underline">
+                  {row.team}
+                </Link>
               </TableCell>
               <TableCell className="text-right">
                 {row.wins}-{row.losses}-{row.ties}
