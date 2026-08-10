@@ -102,7 +102,7 @@ export default function SeasonPage() {
         <CardHeader>
           <CardTitle>Season</CardTitle>
           <CardDescription>
-            Standings, leaders, and lowest performers for a single season
+            Ratings, leaders, and losers for a single season
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-6">
@@ -144,7 +144,7 @@ export default function SeasonPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Standings</CardTitle>
+          <CardTitle>Ratings</CardTitle>
           <CardDescription>Ranked by overall Weighted Rank rating</CardDescription>
         </CardHeader>
         <CardContent>
@@ -163,7 +163,7 @@ export default function SeasonPage() {
       {leaders && (
         <Card>
           <CardHeader>
-            <CardTitle>Category Leaders &amp; Lowest</CardTitle>
+            <CardTitle>Category Leaders &amp; Losers</CardTitle>
             <CardDescription>Best and worst team per category this season</CardDescription>
           </CardHeader>
           <CardContent>

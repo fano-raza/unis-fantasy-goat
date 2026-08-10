@@ -350,6 +350,7 @@ export default function StandingsPage() {
                             fontSize: 12,
                           }}
                           labelFormatter={(w) => `Week ${w}`}
+                          itemSorter={(item) => (typeof item.value === "number" ? item.value : Infinity)}
                         />
                         {historyTeams.map((team, i) => (
                           <Line

@@ -205,7 +205,7 @@ export function StatTable({ rows, mode, focusTeam, showFocusScore }: StatTablePr
               Score
             </SortableHead>
           )}
-          <SortableHead sortKey="rank" sort={sort} onToggle={toggleSort} className="text-right">
+          <SortableHead sortKey="rank" sort={sort} onToggle={toggleSort}>
             Rank
           </SortableHead>
           {MAIN_CATS.map((cat) => (
@@ -262,8 +262,8 @@ export function StatTable({ rows, mode, focusTeam, showFocusScore }: StatTablePr
                   )}
                 </TableCell>
               )}
-              <TableCell className="text-right">
-                <span className="inline-flex items-center justify-end gap-1">
+              <TableCell>
+                <span className="inline-flex items-center justify-start gap-1">
                   {row.rank ?? "—"}
                   {row.rank != null &&
                     row.previousRank != null &&
