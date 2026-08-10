@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   CartesianGrid,
-  Legend,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -18,6 +17,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { ChartLegend } from "@/components/chart-legend";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import {
@@ -351,7 +351,6 @@ export default function StandingsPage() {
                           }}
                           labelFormatter={(w) => `Week ${w}`}
                         />
-                        <Legend wrapperStyle={{ color: "var(--muted-foreground)", fontSize: 12 }} />
                         {historyTeams.map((team, i) => (
                           <Line
                             key={team}
@@ -366,6 +365,7 @@ export default function StandingsPage() {
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
+                  <ChartLegend items={historyTeams.map((team, i) => ({ key: team, color: historyColors[i] }))} />
                 </CardContent>
               </Card>
             )}

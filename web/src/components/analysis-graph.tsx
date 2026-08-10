@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   CartesianGrid,
-  Legend,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -15,6 +14,7 @@ import {
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { ChartLegend } from "@/components/chart-legend";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
@@ -213,9 +213,10 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
         {!hasData ? (
           <p className="text-sm text-muted-foreground">No data for the current filters.</p>
         ) : isTimeAxis ? (
+          <>
           <div className="relative h-[440px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ left: 8, right: 16, top: 8, bottom: 40 }}>
+              <LineChart data={chartData} margin={{ left: 8, right: 16, top: 8, bottom: 24 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                 <XAxis
                   dataKey="x"
@@ -246,9 +247,6 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
                     fontSize: 12,
                   }}
                 />
-                {seriesKeys.length > 1 && seriesKeys.length <= DENSE_THRESHOLD && (
-                  <Legend wrapperStyle={{ color: "var(--muted-foreground)", fontSize: 12 }} />
-                )}
                 {!isDense && (
                   <Tooltip
                     isAnimationActive={false}
@@ -304,6 +302,8 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
               </>
             )}
           </div>
+          <ChartLegend items={seriesKeys.map((key, i) => ({ key, color: colors[i] }))} />
+          </>
         ) : (
           // Continuous X (a stat/rating/rank): unconnected scatter, every
           // row plotted individually (see pivotScatter). Tooltip
@@ -312,9 +312,10 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
           // and re-deriving the dense-hover system built for the line case
           // above is real additional perf-risk surface out of scope for
           // this fix (see the plan doc).
+          <>
           <div className="h-[440px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <ScatterChart margin={{ left: 8, right: 16, top: 8, bottom: 40 }}>
+              <ScatterChart margin={{ left: 8, right: 16, top: 8, bottom: 24 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                 <XAxis
                   dataKey="x"
@@ -345,9 +346,6 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
                     fontSize: 12,
                   }}
                 />
-                {activeSeriesKeys.length > 1 && activeSeriesKeys.length <= DENSE_THRESHOLD && (
-                  <Legend wrapperStyle={{ color: "var(--muted-foreground)", fontSize: 12 }} />
-                )}
                 {scatterSeries.map((s, i) => (
                   <Scatter
                     key={s.key}
@@ -360,6 +358,8 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
               </ScatterChart>
             </ResponsiveContainer>
           </div>
+          <ChartLegend items={activeSeriesKeys.map((key, i) => ({ key, color: colors[i] }))} />
+          </>
         )}
       </CardContent>
     </Card>
