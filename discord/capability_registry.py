@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 
@@ -89,13 +91,13 @@ CAPABILITIES: tuple[CapabilityDef, ...] = (
     CapabilityDef(
         intent="draft_player_score",
         description="Best/worst NBA players by aggregate draft value across seasons.",
-        optional_args=("year", "year_range", "mode", "n"),
+        optional_args=("year", "year_range", "mode", "n", "method"),
         aliases=("best drafted players", "all-time draft players", "draft score player"),
     ),
     CapabilityDef(
         intent="draft_team_score",
         description="Best/worst managers by aggregate draft value.",
-        optional_args=("year", "year_range"),
+        optional_args=("year", "year_range", "method"),
         aliases=("best drafting team", "draft team score"),
     ),
     CapabilityDef(
@@ -243,6 +245,52 @@ CAPABILITIES: tuple[CapabilityDef, ...] = (
 VALID_INTENTS: set[str] = {cap.intent for cap in CAPABILITIES} | {"unknown"}
 
 
+_GUIDE_CACHE: dict[str, Any] | None = None
+
+
+def _load_capability_guide() -> dict[str, Any]:
+    global _GUIDE_CACHE
+    if _GUIDE_CACHE is not None:
+        return _GUIDE_CACHE
+
+    guide_path = Path(__file__).resolve().parent / "capability_guide.json"
+    if not guide_path.exists():
+        _GUIDE_CACHE = {}
+        return _GUIDE_CACHE
+
+    try:
+        raw = json.loads(guide_path.read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            _GUIDE_CACHE = raw
+        else:
+            _GUIDE_CACHE = {}
+    except Exception:
+        _GUIDE_CACHE = {}
+    return _GUIDE_CACHE
+
+
+def _guide_for_intent(intent: str) -> dict[str, Any]:
+    guide = _load_capability_guide()
+    entries = guide.get("intents", {}) if isinstance(guide, dict) else {}
+    row = entries.get(intent, {}) if isinstance(entries, dict) else {}
+    return row if isinstance(row, dict) else {}
+
+
+def out_of_domain_response_for(question: str) -> str | None:
+    guide = _load_capability_guide()
+    ood = guide.get("out_of_domain", {}) if isinstance(guide, dict) else {}
+    if not isinstance(ood, dict):
+        return None
+    phrases = ood.get("phrases", [])
+    if not isinstance(phrases, list):
+        return None
+    q = (question or "").lower()
+    if any(isinstance(p, str) and p.lower() in q for p in phrases):
+        resp = ood.get("response")
+        return str(resp) if isinstance(resp, str) and resp.strip() else None
+    return None
+
+
 def capability_catalog_lines() -> list[str]:
     return [f"- {cap.intent}: {cap.description}" for cap in CAPABILITIES]
 
@@ -266,7 +314,13 @@ def lexical_retrieve(question: str, top_k: int = 8) -> list[CapabilityDef]:
     scored: list[tuple[int, CapabilityDef]] = []
     for cap in CAPABILITIES:
         score = 0
-        haystack: list[str] = [cap.intent, cap.description, *cap.aliases, *cap.examples]
+        guide_row = _guide_for_intent(cap.intent)
+        guide_phrases = []
+        for key in ("phrases", "aliases", "patterns", "examples", "negative_patterns"):
+            vals = guide_row.get(key, [])
+            if isinstance(vals, list):
+                guide_phrases.extend(str(v) for v in vals if isinstance(v, str))
+        haystack: list[str] = [cap.intent, cap.description, *cap.aliases, *cap.examples, *guide_phrases]
         for phrase in haystack:
             p = phrase.lower()
             if p and p in q:
@@ -296,6 +350,9 @@ def capability_json_schema_fragment(caps: list[CapabilityDef]) -> dict[str, Any]
                 "description": cap.description,
                 "required_args": list(cap.required_args),
                 "optional_args": list(cap.optional_args),
+                "guide_phrases": list(_guide_for_intent(cap.intent).get("phrases", []))[:10],
+                "guide_examples": list(_guide_for_intent(cap.intent).get("examples", []))[:10],
+                "guide_negative_patterns": list(_guide_for_intent(cap.intent).get("negative_patterns", []))[:5],
             }
             for cap in caps
         ],
