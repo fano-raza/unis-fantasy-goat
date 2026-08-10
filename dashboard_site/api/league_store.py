@@ -56,6 +56,7 @@ class LeagueStore:
         self._weekly_df: pd.DataFrame | None = None
         self._team_summary_df: pd.DataFrame | None = None
         self._category_history: dict | None = None
+        self._rs_finish_history: dict | None = None
         self._po_lookup = self._load_po_real_matchup_lookup()
 
     def _load_po_real_matchup_lookup(self) -> dict[tuple[int, int, str, str], bool]:
@@ -249,6 +250,34 @@ class LeagueStore:
             except Exception:
                 continue
         self._category_history = out
+        return out
+
+    def rs_finish_history(self) -> dict:
+        """For every year, every team's full-RS-range standings rank (using
+        that season's real scoring format, WL or Cats -- SEASON_IS_WL) --
+        powers Profile's rating/place-finish-by-season chart. Turns what
+        used to be one /league/standings call per season a team played
+        (up to 8 client-side round trips per Profile page load) into a
+        single bulk response, same reasoning/caching pattern as
+        category_history() above -- reuses the already-correct standings()
+        rather than re-deriving the ranking logic."""
+        if self._rs_finish_history is not None:
+            return self._rs_finish_history
+        df = self.store.df
+        years = sorted(df["Year"].dropna().astype(int).unique().tolist())
+        out: dict[int, dict[str, int]] = {}
+        for year in years:
+            rs_weeks = df.loc[(df["Year"] == year) & (df["Season"] == "RS"), "Week"]
+            if rs_weeks.empty:
+                continue
+            max_week = int(rs_weeks.max())
+            try:
+                snapshot = self.standings(year, 1, max_week)
+            except ValueError:
+                continue
+            rows = snapshot["wl"] if SEASON_IS_WL.get(year, True) else snapshot["cats"]
+            out[year] = {row["team"]: row["rank"] for row in rows}
+        self._rs_finish_history = out
         return out
 
     def team_summary(self, teams: list[str] | None = None) -> list[dict]:

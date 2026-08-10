@@ -140,6 +140,7 @@ export default function StandingsPage() {
   const [weekRange, setWeekRange] = useState<[number, number] | null>(null);
   const [oneVOneMode, setOneVOneMode] = useState<"wl" | "cats">("wl");
   const [leagueMode, setLeagueMode] = useState<"wl" | "cats">("wl");
+  const [showGraph, setShowGraph] = useState(true);
   const [standings, setStandings] = useState<StandingsResponse | null>(null);
   const [previousStandings, setPreviousStandings] = useState<StandingsResponse | null>(null);
   const [history, setHistory] = useState<StandingsHistoryResponse | null>(null);
@@ -224,6 +225,15 @@ export default function StandingsPage() {
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="sticky top-0 z-30 flex items-center gap-2 rounded-sm border border-border bg-card px-3 py-2 shadow-sm">
+        <LabeledSelect
+          label="Season"
+          value={String(year)}
+          onValueChange={(v) => setYear(Number(v))}
+          options={meta.years.map((y) => ({ value: String(y), label: String(y) }))}
+        />
+      </div>
+
       <Card>
         <CardHeader>
           <CardTitle>Standings</CardTitle>
@@ -232,12 +242,6 @@ export default function StandingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-6">
-          <LabeledSelect
-            label="Season"
-            value={String(year)}
-            onValueChange={(v) => setYear(Number(v))}
-            options={meta.years.map((y) => ({ value: String(y), label: String(y) }))}
-          />
           <div className="flex flex-col gap-3">
             <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
               Week {weekRange[0]} &ndash; Week {weekRange[1]}
@@ -250,6 +254,11 @@ export default function StandingsPage() {
               onValueChange={(v) => setWeekRange(v as [number, number])}
             />
           </div>
+          <label className="flex items-center gap-2 self-start text-[11px] font-bold tracking-wider uppercase">
+            <span className="text-muted-foreground">Hide Graph</span>
+            <Switch checked={showGraph} onCheckedChange={setShowGraph} />
+            <span className="text-muted-foreground">Show Graph</span>
+          </label>
         </CardContent>
       </Card>
 
@@ -287,7 +296,7 @@ export default function StandingsPage() {
               </CardContent>
             </Card>
 
-            {historyChartData.length > 0 && (
+            {showGraph && historyChartData.length > 0 && (
               <Card>
                 <CardHeader>
                   <CardTitle>Position Over Time</CardTitle>

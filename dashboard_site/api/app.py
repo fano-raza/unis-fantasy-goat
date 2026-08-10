@@ -191,6 +191,11 @@ def league_category_history() -> dict:
     return league_store.category_history()
 
 
+@app.get("/league/rs_finish_history")
+def league_rs_finish_history() -> dict:
+    return league_store.rs_finish_history()
+
+
 @app.post("/league/weekly_team")
 def league_weekly_team(req: WeeklyTeamRequest) -> dict:
     try:

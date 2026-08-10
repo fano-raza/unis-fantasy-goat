@@ -6,23 +6,37 @@ export interface BadgeInstance {
   label: string; // e.g. "PTS Leader" or "Championship" -- shown with the year on hover/tap
   year: number;
   positive: boolean;
+  type: string; // groups badges of the same kind together regardless of year -- see BADGE_TYPE_ORDER
 }
 
-// Best-effort emoji picks for the user's spec -- a couple (FT% loser, 3PTM
-// loser) have no exact Unicode match ("Shaquille O'Neal", "3 with an X on
-// it"), so these are reasonable stand-ins, easy to swap in this one table
-// if the wrong call.
+// Best-effort emoji picks for the user's spec -- FT% loser has no exact
+// Unicode match ("Shaquille O'Neal"), a reasonable stand-in, easy to swap
+// in this one table if the wrong call.
 const CATEGORY_BADGE_ICONS: Record<Category, { leader: string; loser: string }> = {
   "FG%": { leader: "🎯", loser: "🧱" },
   "FT%": { leader: "🧘", loser: "😬" },
-  "3PTM": { leader: "🤟", loser: "3️⃣❌" },
+  "3PTM": { leader: "3️⃣", loser: "👴" },
   REB: { leader: "🧲", loser: "🧈" },
   AST: { leader: "👓", loser: "🙈" },
   STL: { leader: "🥷", loser: "👮" },
-  BLK: { leader: "❌", loser: "🕳️" },
+  BLK: { leader: "✋", loser: "🕳️" },
   TO: { leader: "🧤", loser: "🤲" },
   PTS: { leader: "🔥", loser: "🧊" },
 };
+
+// Display order: non-stat-leader ("other") badges first, then the 9
+// categories in this app's usual MAIN_CATS order. Badges of the same type
+// are grouped together regardless of year (sortBadges below sorts by this
+// index first, year only as the tiebreak within a type).
+const BADGE_TYPE_ORDER = [
+  "Championship",
+  "Runner-Up",
+  "MVP",
+  "RS 1st Place",
+  "Worst Rating",
+  "RS Last Place",
+  ...MAIN_CATS.flatMap((cat) => [`${cat} Leader`, `${cat} Loser`]),
+];
 
 function parseYears(value: string | number | null | undefined): number[] {
   if (typeof value !== "string" || !value.trim()) return [];
@@ -44,10 +58,12 @@ function categoryBadges(team: string, history: CategoryHistoryResponse): BadgeIn
       if (!entry) continue;
       const icons = CATEGORY_BADGE_ICONS[cat];
       if (entry.best.team === team) {
-        badges.push({ id: `${cat}-leader-${year}`, icon: icons.leader, label: `${cat} Leader`, year, positive: true });
+        const type = `${cat} Leader`;
+        badges.push({ id: `${cat}-leader-${year}`, icon: icons.leader, label: type, year, positive: true, type });
       }
       if (entry.worst.team === team) {
-        badges.push({ id: `${cat}-loser-${year}`, icon: icons.loser, label: `${cat} Loser`, year, positive: false });
+        const type = `${cat} Loser`;
+        badges.push({ id: `${cat}-loser-${year}`, icon: icons.loser, label: type, year, positive: false, type });
       }
     }
   }
@@ -63,18 +79,23 @@ function otherBadges(profile: TeamSummary): BadgeInstance[] {
   const champYears = new Set(parseYears(profile["Championship Years"]));
   const runnerUpYears = parseYears(profile["Finals Years"]).filter((y) => !champYears.has(y));
 
-  for (const y of champYears) badges.push({ id: `champ-${y}`, icon: "🏆", label: "Championship", year: y, positive: true });
-  for (const y of runnerUpYears) badges.push({ id: `runnerup-${y}`, icon: "🥈", label: "Runner-Up", year: y, positive: true });
-  for (const y of parseYears(profile["MVP Years"])) badges.push({ id: `mvp-${y}`, icon: "⭐", label: "MVP", year: y, positive: true });
-  for (const y of parseYears(profile["RS 1st Years"])) badges.push({ id: `rs1st-${y}`, icon: "🥇", label: "RS 1st Place", year: y, positive: true });
-  for (const y of parseYears(profile["Worst Rating Years"])) badges.push({ id: `worstrating-${y}`, icon: "🗑️", label: "Worst Rating", year: y, positive: false });
-  for (const y of parseYears(profile["RS Last Years"])) badges.push({ id: `rslast-${y}`, icon: "L", label: "RS Last Place", year: y, positive: false });
+  for (const y of champYears) badges.push({ id: `champ-${y}`, icon: "🏆", label: "Championship", year: y, positive: true, type: "Championship" });
+  for (const y of runnerUpYears) badges.push({ id: `runnerup-${y}`, icon: "🥈", label: "Runner-Up", year: y, positive: true, type: "Runner-Up" });
+  for (const y of parseYears(profile["MVP Years"])) badges.push({ id: `mvp-${y}`, icon: "⭐", label: "MVP", year: y, positive: true, type: "MVP" });
+  for (const y of parseYears(profile["RS 1st Years"])) badges.push({ id: `rs1st-${y}`, icon: "🥇", label: "RS 1st Place", year: y, positive: true, type: "RS 1st Place" });
+  for (const y of parseYears(profile["Worst Rating Years"])) badges.push({ id: `worstrating-${y}`, icon: "🗑️", label: "Worst Rating", year: y, positive: false, type: "Worst Rating" });
+  for (const y of parseYears(profile["RS Last Years"])) badges.push({ id: `rslast-${y}`, icon: "L", label: "RS Last Place", year: y, positive: false, type: "RS Last Place" });
 
   return badges;
 }
 
+// Grouped by type first (non-stat-leader "other" badges before the 9
+// category badges, per BADGE_TYPE_ORDER), year descending within a type.
 function sortBadges(badges: BadgeInstance[]): BadgeInstance[] {
-  return [...badges].sort((a, b) => b.year - a.year || a.label.localeCompare(b.label));
+  return [...badges].sort((a, b) => {
+    const typeDiff = BADGE_TYPE_ORDER.indexOf(a.type) - BADGE_TYPE_ORDER.indexOf(b.type);
+    return typeDiff !== 0 ? typeDiff : b.year - a.year;
+  });
 }
 
 export function buildBadges(

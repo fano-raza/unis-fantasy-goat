@@ -12,7 +12,7 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { getAnalysisRows, getStandings, type LeagueMeta } from "@/lib/api";
+import { getAnalysisRows, getRsFinishHistory, type LeagueMeta } from "@/lib/api";
 
 type YMode = "rating" | "place";
 
@@ -49,26 +49,14 @@ export function ProfileHistoryChart({ team, meta }: { team: string; meta: League
         }),
       );
 
-      // RS place finish per season -- no batch endpoint, so one /league/standings
-      // call per season the team played (small N, at most the league's history).
-      // Uses whichever standings type (WL/Cats) that season's real scoring
-      // format was, same convention the Standings page's own toggle defaults to.
-      const placeEntries = await Promise.all(
-        years.map(async (year) => {
-          const maxWeek = meta.rs_week_count[String(year)];
-          if (!maxWeek) return [year, undefined] as const;
-          try {
-            const standings = await getStandings({ year, min_week: 1, max_week: maxWeek });
-            const format = meta.season_format[String(year)] ?? "wl";
-            const rows = format === "wl" ? standings.wl : standings.cats;
-            const row = rows.find((r) => r.team === team);
-            return [year, row?.rank] as const;
-          } catch {
-            return [year, undefined] as const;
-          }
-        }),
+      // RS place finish per season -- one bulk call covering every team/
+      // year (server-cached, see LeagueStore.rs_finish_history) instead of
+      // one /league/standings request per season this team played (used to
+      // be up to 8 client-side round trips on a single Profile page load).
+      const finishHistory = await getRsFinishHistory();
+      const placeByYear = new Map(
+        years.map((year) => [year, finishHistory[String(year)]?.[team]] as const),
       );
-      const placeByYear = new Map(placeEntries);
 
       if (!cancelled) {
         setPoints(

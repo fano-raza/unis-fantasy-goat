@@ -188,6 +188,10 @@ export interface SeasonLeadersResponse {
 // category per season, powering Profile's per-category badges.
 export type CategoryHistoryResponse = Record<string, SeasonLeadersResponse>;
 
+// year -> team -> RS standings rank (full RS range, that season's real
+// scoring format) -- powers Profile's rating/place-finish-by-season chart.
+export type RsFinishHistoryResponse = Record<string, Record<string, number>>;
+
 export interface StandingsRow {
   team: string;
   wins: number;
@@ -272,6 +276,9 @@ export const getSeasonLeaders = (req: SeasonLeadersRequest) =>
 
 export const getCategoryHistory = () =>
   apiFetch<CategoryHistoryResponse>("/league/category_history");
+
+export const getRsFinishHistory = () =>
+  apiFetch<RsFinishHistoryResponse>("/league/rs_finish_history");
 
 export const getHeadToHead = (req: HeadToHeadRequest) =>
   post<HeadToHeadResponse>("/league/head_to_head", req);

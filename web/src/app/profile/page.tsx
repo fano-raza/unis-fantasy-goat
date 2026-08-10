@@ -261,8 +261,16 @@ export default function ProfilePage() {
 
       <Card>
         <CardHeader>
-          <CardDescription>Career Profile</CardDescription>
-          <CardTitle className="text-4xl sm:text-5xl">{team}</CardTitle>
+          {/* Grouped in one div so grid auto-placement can't split them into
+              separate cells -- CardAction is `hidden` (removed from the box
+              tree, not just visually hidden) below `sm`, and when it's gone
+              the header's grid-cols-[1fr_auto] auto-placement algorithm was
+              putting CardTitle in column 2 instead of stacking it under
+              CardDescription in column 1. */}
+          <div>
+            <CardDescription>Career Profile</CardDescription>
+            <CardTitle className="text-4xl sm:text-5xl">{team}</CardTitle>
+          </div>
           <CardAction className="hidden max-w-md sm:block">
             <TeamBadges positive={badges.positive} negative={badges.negative} />
           </CardAction>
