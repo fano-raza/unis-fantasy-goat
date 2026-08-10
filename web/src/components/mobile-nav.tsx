@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
-import { Menu, X } from "lucide-react";
+import { Lock, Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogPortal, DialogTrigger } from "@/components/ui/dialog";
@@ -48,12 +48,13 @@ export function MobileNav() {
                 href={link.href}
                 onClick={() => setOpen(false)}
                 className={cn(
-                  "rounded-sm px-3 py-2.5 text-sm font-bold tracking-wide uppercase transition-colors",
+                  "flex items-center gap-1.5 rounded-sm px-3 py-2.5 text-sm font-bold tracking-wide uppercase transition-colors",
                   active
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:bg-muted hover:text-foreground",
                 )}
               >
+                {link.locked && <Lock className="size-3.5" />}
                 {link.label}
               </Link>
             );

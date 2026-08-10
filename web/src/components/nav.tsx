@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const NAV_LINKS = [
@@ -12,6 +13,7 @@ export const NAV_LINKS = [
   { href: "/profile", label: "Profile" },
   { href: "/comparison", label: "Comparison" },
   { href: "/analysis", label: "Analysis" },
+  { href: "/champions-lounge", label: "Champions Lounge", locked: true },
 ];
 
 export function Nav() {
@@ -25,12 +27,13 @@ export function Nav() {
             key={link.href}
             href={link.href}
             className={cn(
-              "shrink-0 rounded-sm px-3 py-1.5 text-xs font-bold tracking-wide uppercase transition-colors",
+              "flex shrink-0 items-center gap-1.5 rounded-sm px-3 py-1.5 text-xs font-bold tracking-wide uppercase transition-colors",
               active
                 ? "bg-primary text-primary-foreground"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
+            {link.locked && <Lock className="size-3" />}
             {link.label}
           </Link>
         );
