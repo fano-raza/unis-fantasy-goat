@@ -55,6 +55,7 @@ class LeagueStore:
         self._rated_df: pd.DataFrame | None = None
         self._weekly_df: pd.DataFrame | None = None
         self._team_summary_df: pd.DataFrame | None = None
+        self._category_history: dict | None = None
         self._po_lookup = self._load_po_real_matchup_lookup()
 
     def _load_po_real_matchup_lookup(self) -> dict[tuple[int, int, str, str], bool]:
@@ -223,9 +224,22 @@ class LeagueStore:
         totals) -- powers Profile's per-category badge system ("led the
         league" / "bottom of the league" for a given stat, per season).
         Regular-season only, matching this app's "RS 1st Place"/"RS Last
-        Place" framing for league-wide season-level distinctions. Reuses
-        season_leaders() per year rather than a new aggregation -- cheap,
-        since _filtered_raw's underlying data is already loaded/cached."""
+        Place" framing for league-wide season-level distinctions.
+
+        Cached on the instance, same pattern as _ensure_weekly_df/
+        _ensure_rated_df above: this result doesn't change until the
+        underlying CSVs change, so it should compute once per LeagueStore
+        lifetime (i.e. once per app.py reload cycle, currently every 5
+        minutes), not once per HTTP request. Every Profile page load was
+        re-running all 8 years' worth of season_leaders() from scratch --
+        each call is individually cheap, but on the droplet's constrained
+        hardware (1 CPU, ~458MB RAM) the per-request cost was still enough
+        to make the endpoint noticeably slow. A fresh LeagueStore instance
+        is built on every reload (see get_league_store/reset_league_store
+        in this file), so this cache invalidates for free on that same
+        cadence -- no separate expiry logic needed."""
+        if self._category_history is not None:
+            return self._category_history
         df = self.store.df
         years = sorted(df["Year"].dropna().astype(int).unique().tolist())
         out: dict[int, dict] = {}
@@ -234,6 +248,7 @@ class LeagueStore:
                 out[year] = self.season_leaders(years=[year], weeks=None, RS=True, PO=False, mode="totals")
             except Exception:
                 continue
+        self._category_history = out
         return out
 
     def team_summary(self, teams: list[str] | None = None) -> list[dict]:
