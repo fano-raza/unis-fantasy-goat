@@ -1,0 +1,1 @@
+"""StatBot service entrypoint package."""

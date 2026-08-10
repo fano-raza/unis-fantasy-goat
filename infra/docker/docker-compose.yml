@@ -45,6 +45,21 @@ services:
       - /srv/unisfantasy/data:/srv/unisfantasy/data
     restart: unless-stopped
 
+  # Slash commands for quick stat lookups (standings-check, champ-check,
+  # score-check, etc.) -- calls dashboard-api over HTTP rather than
+  # importing Models directly, so it stays small. See discord/stat_bot.py.
+  stat-bot:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+    container_name: unisfantasy-stat-bot
+    command: ["python", "-m", "services.stat_bot.entrypoint"]
+    env_file:
+      - ./env/stat-bot.env
+    depends_on:
+      - dashboard-api
+    restart: unless-stopped
+
   # Web app backend (dashboard_site) -- separate, lighter Dockerfile than
   # gdoc-updater/discord-bot (see Dockerfile.dashboard). Deliberately no
   # `ports:` here: only reachable inside the compose network, at

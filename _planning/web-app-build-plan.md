@@ -434,12 +434,27 @@ Verified end-to-end: `tsc --noEmit` clean, `npm run build` clean, both persisted
 - [x] User provided the real bot token directly in chat; set it on the droplet via a Python `re.sub` over the env file (never echoed the value back in any tool output afterward, verified success via a `grep -c` on just the key prefix) rather than printing/logging the full secret again.
 - [x] **Verified live, not just deployed**: container logs show `FeatureBot logged in as FeatBot#2213` -- a real, successful Discord gateway connection with the production token, not just "the container started."
 
-Not yet done: a live end-to-end test (actually tagging `@FeatureBot` in the server and confirming the ☑️ reaction + file write) -- next step is for the user to send a real test message.
+**Live end-to-end test confirmed by the user**: tagged `@FeatureBot` with a real message ("can you add a dark mode toggle?") in #bot-test -- logged correctly to `feature_requests.md` on the droplet, checkbox reaction confirmed by the user in Discord.
+
+### Phase 3.28 — StatBot: slash commands for stat lookups + trash talk — IN PROGRESS 2026-08-10 (session 13 continued)
+
+- [x] New independent bot, `discord/stat_bot.py`, deliberately calling the **existing lightweight dashboard-api over plain HTTP** (`/league/meta`, `/league/standings`, `/league/team_summary`, `/league/weekly_team`, `/league/head_to_head`) rather than importing `Models/` directly like the old bot -- means this bot needs zero new backend work and stays small/low-memory, same reasoning already established for dashboard_site itself. Extracted the small SSL/env-loading helpers shared with FeatureBot into a new `discord/bot_env.py` (a third near-duplicate copy would have crossed from "fine to leave alone" into real duplication worth fixing); `feature_bot.py` now imports from it too. `chatbot_bot.py` (the old bot) deliberately left untouched, per the established "it's being retired, not worth coupling to" reasoning from Phase 3.27.
+- [x] 7 slash commands, all resolving the calling/tagged Discord user to a team via the existing `discord/discord_names.csv` mapping (read directly, not through `team_identity.py`, to avoid that module's transitive `constants.py` import pulling in gspread/espn_fr/yfpy_fr as a side effect just for lightweight bots):
+  - `standings-check` -- current-season standings through the current week, in whichever format (W/L or Cats) that season actually uses.
+  - `champ-check [user]` -- has this team **ever** won a championship (not "current champion" -- clarified with the user; the reigning-champion interpretation would flip every year and wasn't what they wanted).
+  - `score-check` -- sender's current-week matchup score, tagging the opponent's linked Discord account. Returns N/A on a bye week or no data.
+  - `mvp-check [user]` / `l-check [user]` -- same shape as `champ-check`, MVPs and dead-last finishes respectively (`l-check` was the user's own suggested trash-talk mirror of `champ-check`).
+  - `rival-check <user>` -- career head-to-head record (matchup + category) between the sender's team and a tagged team.
+  - `trophy-case [user]` -- Championships/MVPs/RS 1st Place summary for a team, explicitly **without** Best Playoff Finish per the user's explicit ask.
+- [x] **Verified against real data, not just import-checked**: ran every command's underlying HTTP-calling logic directly against the live local dev backend (no Discord token needed for this part). Confirmed `score-check` for Fano at the current week (2026, week 21) correctly surfaced the real 2026 Final matchup (4-4-1 vs Juan) -- matching the playoff bracket data independently verified in Phase 3.25, a nice cross-check that both features agree. Confirmed the BYE-week case actually returns HTTP 404 (a bye team has no CSV row at all for that week, not a row with `opponent="BYE"` -- same discovery already made once this session while building the playoff bracket export, so the code was written to check `status == 404` as the primary bye/no-data signal from the start rather than repeating that mistake) and an unmapped/unknown team returns `200` with an empty list (caught by an explicit `not rows` check in every command).
+- [x] New `services/stat_bot/` entrypoint + `stat-bot` docker-compose service (reuses the same heavy Dockerfile as `feature-bot`/`discord-bot` for consistency -- the unused heavy deps sit on disk only, never imported at runtime, so it doesn't cost real RAM; genuinely lighter would need a 4th Dockerfile variant, not worth it here). No `/srv/unisfantasy/data` volume mount -- unlike the other bots, StatBot never reads local data files directly, only calls `dashboard-api` over the compose network and reads `discord_names.csv` baked into the image.
+
+**Not yet deployed**: needs its own Discord application/token (same Developer Portal steps as FeatureBot) before it can go live -- code is committed and locally verified, deploy is next once the user has a token.
 
 ### Deferred / not v1
 - Auth / per-member profiles
 - Postgres migration (revisit only if auth/profiles need per-user state)
-- Further changes to chatbot_bot.py (the old Q&A bot) or its query engine -- still slated for eventual removal; FeatureBot (Phase 3.27) was built independently of it for exactly this reason
+- Further changes to chatbot_bot.py (the old Q&A bot) or its query engine -- still slated for eventual removal; FeatureBot and StatBot (Phases 3.27-3.28) were both built independently of it for exactly this reason
 
 ---
 
