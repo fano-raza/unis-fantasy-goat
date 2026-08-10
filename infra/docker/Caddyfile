@@ -1,0 +1,9 @@
+# sslip.io resolves this hostname to the literal droplet IP (134.209.168.108)
+# -- a real, publicly-resolvable DNS record, so Caddy's automatic Let's
+# Encrypt (HTTP-01 challenge on :80, cert served on :443) works with zero
+# DNS setup. When a real domain is purchased: replace the site address
+# below, point its DNS A record at this droplet's IP, restart caddy --
+# nothing else in this file or the compose setup needs to change.
+134-209-168-108.sslip.io {
+	reverse_proxy dashboard-api:8090
+}

@@ -199,14 +199,24 @@ def build_team_summary_df(teams: list | None = None, reuse_managers: dict | None
 
     rows = []
 
-    # Precompute "lowest rating (worst rank) in week" flags per team for RS only
-    # We compute per-year-week max rank and count where team rank == that max.
+    # Precompute "lowest rating (worst rank) in week" flags per team for RS only.
+    # BUG (fixed): get_filtered_df() filters to Team==tm.name before this ran, so
+    # every row was the only one in its (Year, Week) group -- the max-rank compare
+    # was comparing each row to itself (always true), silently returning "how many
+    # RS weeks did this team play" instead of "how many weeks were they ranked
+    # last". Use tm.compStatDF (all teams, unfiltered) so the per-week max is
+    # computed across the real league, not a league of one.
     def _lowest_rating_count_rs(tm: teamManager) -> int:
-        df = tm.get_filtered_df(RS=True, PO=False, real=True)
+        df = tm.compStatDF
         if df.empty or "week_rank" not in df.columns:
             return 0
+        df = df[(df["Week Name"].str.startswith("M")) & (df["real_matchup"] >= 1)]
+        if df.empty:
+            return 0
         wk_max = df.groupby(["Year", "Week"])["week_rank"].transform("max")
-        return int((df["week_rank"] == wk_max).sum())
+        is_worst = df["week_rank"] == wk_max
+        is_this_team = df["Team"] == tm.name
+        return int((is_worst & is_this_team).sum())
 
     for name in teams:
         tm = managers[name]
@@ -260,6 +270,39 @@ def build_team_summary_df(teams: list | None = None, reuse_managers: dict | None
         longest_undefeated_streak_no_reset = get_longest_undefeated_streak(streak_df, year_reset=False)
         longest_loss_streak_no_reset = get_longest_loss_streak(streak_df, year_reset=False)
 
+        # --- Best single-season RS rating + best single-season RS standings finish.
+        # Distinct from "Avg Rating"/"RS 1st Place" below: this is per-season, not
+        # career-wide, and "finish" gives every team a best-ever result even if
+        # they've never won it outright (e.g. "2nd place" for a team with 0 RS 1sts).
+        # NOTE: uses get_team_position_WL()/get_team_position_Cats() directly rather
+        # than TeamManager's own positionWL attribute or get_best_RS_finish() -- both
+        # of those call get_team_position_Cats() unconditionally regardless of
+        # is_WL, a pre-existing bug (confirmed unrelated to this feature; left as-is
+        # since fixing it would change already-shipped GDoc/Discord output, out of
+        # scope here -- flagged for a separate follow-up).
+        per_year_rs_rating: dict[int, float] = {}
+        per_year_rs_finish: dict[int, int] = {}
+        for year in tm.yearsPlayed:
+            per_year_rs_rating[year] = float(tm.get_avg_rating(years=[year], RS=True, PO=False))
+            season = tm.regSeasons[year]
+            per_year_rs_finish[year] = int(
+                season.get_team_position_WL() if season.is_WL else season.get_team_position_Cats()
+            )
+
+        best_rs_rating = max(per_year_rs_rating.values()) if per_year_rs_rating else None
+        best_rs_rating_years = (
+            [y for y, v in per_year_rs_rating.items() if v == best_rs_rating]
+            if best_rs_rating is not None
+            else []
+        )
+
+        best_rs_finish = min(per_year_rs_finish.values()) if per_year_rs_finish else None
+        best_rs_finish_years = (
+            [y for y, v in per_year_rs_finish.items() if v == best_rs_finish]
+            if best_rs_finish is not None
+            else []
+        )
+
         # --- Ratings/Standings (RS only)
         rs_df = tm.get_filtered_df(RS=True, PO=False, real=True)
 
@@ -301,8 +344,8 @@ def build_team_summary_df(teams: list | None = None, reuse_managers: dict | None
             "Team": name,
 
             # Playoffs
-            "Chips": len(chips_years),
-            "Chip Years": ", ".join(map(str, chips_years)),
+            "Championships": len(chips_years),
+            "Championship Years": ", ".join(map(str, chips_years)),
             "Finals": len(finals_years),
             "Finals Years": ", ".join(map(str, finals_years)),
             "Playoffs": len(playoff_years),
@@ -312,14 +355,15 @@ def build_team_summary_df(teams: list | None = None, reuse_managers: dict | None
             "MVP Years": ", ".join(map(str, mvp_years.get(name, []))),
             "RS 1st Place": rs_chip_count,
             "RS 1st Years": ", ".join(map(str, rs_chip_years)),
+            "Best RS Rating": best_rs_rating,
+            "Best RS Rating Years": ", ".join(map(str, best_rs_rating_years)),
+            "Best RS Finish": best_rs_finish,
+            "Best RS Finish Years": ", ".join(map(str, best_rs_finish_years)),
 
             # Records
             "Career W/L": _record_dict_to_str(career_wl),
             "Career W/L %": career_wl_pct,
-            "Career Wins": career_wins,
-            "Career Losses": career_losses,
-            "Career Ties": career_ties,
-            "Career Games": career_games,
+            "Career Matchups": career_games,
             "RS W/L": _record_dict_to_str(rs_wl),
             "RS W/L %": rs_wl_pct,
             "PO W/L": _record_dict_to_str(po_wl),
@@ -327,9 +371,6 @@ def build_team_summary_df(teams: list | None = None, reuse_managers: dict | None
 
             "Career Cats": _record_dict_to_str(career_cats),
             "Career Cats %": career_cats_pct,
-            "Career Cat Wins": career_cat_wins,
-            "Career Cat Losses": career_cat_losses,
-            "Career Cat Ties": career_cat_ties,
             "Career Cat Games": career_cat_games,
             "RS Cats": _record_dict_to_str(rs_cats),
             "RS Cats %": rs_cats_pct,
@@ -366,7 +407,7 @@ def build_team_summary_df(teams: list | None = None, reuse_managers: dict | None
     df_out = pd.DataFrame(rows)
 
     # Optional: a nice default sort
-    sort_cols = ["Chips", "RS 1st Place", "MVPs"]
+    sort_cols = ["Championships", "RS 1st Place", "MVPs"]
     sort_cols = [c for c in sort_cols if c in df_out.columns]
     if sort_cols:
         df_out = df_out.sort_values(sort_cols, ascending=False).reset_index(drop=True)

@@ -1,3 +1,13 @@
-ML/
+.venv
+__pycache__
+*.pyc
+.ipynb_checkpoints
 *.ipynb
-.ipynb_checkpoints/
+ML
+.git
+
+# Next.js app -- deployed separately via Vercel, irrelevant to the Python
+# service images built from this context. Leading slash matters here:
+# dashboard_site/web/ is a *different* directory (its own legacy static
+# frontend, mounted by dashboard_site/api/app.py) that must NOT be excluded.
+/web/

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fantasy Stats Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      :root {
+        --bg: #f4f6fb;
+        --panel: #ffffff;
+        --text: #162033;
+        --muted: #5f6b85;
+        --accent: #0f6fff;
+        --border: #d8dfeb;
+      }
+      body { margin: 0; font-family: "IBM Plex Sans", "Segoe UI", sans-serif; background: linear-gradient(140deg, #f4f6fb 0%, #eaf0fb 100%); color: var(--text); }
+      .wrap { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
+      .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px; box-shadow: 0 8px 30px rgba(8, 30, 66, 0.06); }
+      h1 { margin: 0 0 12px; font-size: 1.5rem; }
+      .muted { color: var(--muted); font-size: 0.9rem; }
+      .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-top: 12px; }
+      label { font-size: 0.82rem; color: var(--muted); display: flex; flex-direction: column; gap: 6px; }
+      input, select, button { border-radius: 10px; border: 1px solid var(--border); padding: 8px 10px; font-size: 0.9rem; }
+      details.multi { border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+      details.multi > summary { cursor: pointer; list-style: none; padding: 8px 10px; font-size: 0.9rem; color: var(--text); }
+      details.multi > summary::-webkit-details-marker { display: none; }
+      .multi-body { max-height: 180px; overflow: auto; border-top: 1px solid var(--border); padding: 8px 10px; display: grid; gap: 6px; }
+      .multi-body label { flex-direction: row; align-items: center; gap: 8px; color: var(--text); font-size: 0.88rem; }
+      .multi-actions { display: flex; gap: 8px; border-top: 1px solid var(--border); padding: 8px 10px; }
+      .multi-actions button { background: #eef3ff; color: #0f4ccf; border: 1px solid #cbd8ff; padding: 6px 8px; font-size: 0.8rem; }
+      button { background: var(--accent); color: white; border: none; font-weight: 600; cursor: pointer; }
+      .btns { display: flex; gap: 8px; margin-top: 12px; }
+      .grid { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 16px; }
+      @media (min-width: 980px) { .grid { grid-template-columns: 1.1fr 0.9fr; } }
+      table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+      th, td { border-bottom: 1px solid var(--border); text-align: left; padding: 8px; }
+      th { color: var(--muted); font-weight: 600; }
+      .err { color: #aa1e2d; margin-top: 10px; font-size: 0.88rem; }
+      .ok { color: #2c7a4b; margin-top: 10px; font-size: 0.88rem; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="panel">
+        <h1>Fantasy Stats Dashboard</h1>
+        <div class="muted">Deterministic query engine with flexible filters (year/week/team/season/opponent).</div>
+
+        <div class="filters">
+          <label>Metric
+            <select id="metric"></select>
+          </label>
+          <label>Aggregation
+            <select id="aggregation">
+              <option value="sum">sum</option>
+              <option value="avg">avg</option>
+              <option value="rank">rank</option>
+              <option value="max">max</option>
+              <option value="min">min</option>
+              <option value="count">count</option>
+            </select>
+          </label>
+          <label>Group By
+            <details class="multi" id="groupByMulti">
+              <summary id="groupBySummary">Team</summary>
+              <div class="multi-body" id="groupByOptions"></div>
+            </details>
+          </label>
+          <label>Years
+            <details class="multi" id="yearsMulti">
+              <summary id="yearsSummary">Select years</summary>
+              <div class="multi-body" id="yearsOptions"></div>
+              <div class="multi-actions">
+                <button type="button" id="yearsSelectAll">Select all</button>
+                <button type="button" id="yearsClear">Clear</button>
+              </div>
+            </details>
+          </label>
+          <label>Weeks
+            <details class="multi" id="weeksMulti">
+              <summary id="weeksSummary">Select weeks</summary>
+              <div class="multi-body" id="weeksOptions"></div>
+            </details>
+          </label>
+          <label>Teams
+            <details class="multi" id="teamsMulti">
+              <summary id="teamsSummary">Select teams</summary>
+              <div class="multi-body" id="teamsOptions"></div>
+              <div class="multi-actions">
+                <button type="button" id="teamsSelectAll">Select all</button>
+                <button type="button" id="teamsClear">Clear</button>
+              </div>
+            </details>
+          </label>
+          <label>Opponents
+            <details class="multi" id="oppsMulti">
+              <summary id="oppsSummary">Select opponents</summary>
+              <div class="multi-body" id="oppsOptions"></div>
+            </details>
+          </label>
+          <label>Seasons
+            <select id="seasons">
+              <option value="">All</option>
+              <option value="RS">RS</option>
+              <option value="PO">PO</option>
+            </select>
+          </label>
+          <label>Limit
+            <input id="limit" type="number" min="1" max="200" value="25" />
+          </label>
+        </div>
+
+        <div class="btns">
+          <button id="runQuery">Run Table Query</button>
+          <button id="runTs">Run Time Series</button>
+          <button id="runSwap">Run Schedule Swap</button>
+        </div>
+        <div id="status" class="muted"></div>
+      </div>
+
+      <div class="grid">
+        <div class="panel">
+          <h2 style="margin-top:0">Table</h2>
+          <div id="tableWrap" class="muted">No query yet.</div>
+        </div>
+        <div class="panel">
+          <h2 style="margin-top:0">Trend</h2>
+          <canvas id="trend"></canvas>
+        </div>
+      </div>
+    </div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

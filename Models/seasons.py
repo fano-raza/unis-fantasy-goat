@@ -17,8 +17,8 @@ import csv
 from StatGenerator import *
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import MinMaxScaler
 from shared.runtime_config import comp_stats_csv_path
+from shared.weighted_rank import per_week_rating
 
 class regSeason:
     def __init__(self, year, extStatDict = None, extStatDF = None):
@@ -831,17 +831,19 @@ class regSeason:
         for matchup in self.full_matchups[self.teamCount * (self.teamCount - 1) * (startWeek - 1) :
                                             self.teamCount * (self.teamCount-1) * endWeek]:
             if matchup.is_reg:
-                # print(matchup)
-                try:
-                    if matchup.winner == matchup.team1:
-                        recDict[matchup.team1]['wins'] += 1
-                        recDict[matchup.team1]['score'] += 1
-                    elif matchup.loser == matchup.team1:
-                        recDict[matchup.team1]['losses'] += 1
-                except KeyError:  # if matchup was a tie
-                    # only do team1 because hyp_matchups will have a separate matchup obj for team2 (where team2 is team1)
+                # only do team1 because hyp_matchups will have a separate matchup obj for team2 (where team2 is team1)
+                # NOTE: was previously a try/except KeyError expecting matchup.winner/.loser lookups to raise on
+                # a tie, but they're both None on a tie (not a missing dict key) -- neither comparison below ever
+                # matched, no exception was ever raised, and every all-play tie silently vanished from every
+                # team's record (confirmed: 0 ties reported across every season). Checking is_tied directly fixes it.
+                if matchup.is_tied:
                     recDict[matchup.team1]['ties'] += 1
                     recDict[matchup.team1]['score'] += 0.49
+                elif matchup.winner == matchup.team1:
+                    recDict[matchup.team1]['wins'] += 1
+                    recDict[matchup.team1]['score'] += 1
+                elif matchup.loser == matchup.team1:
+                    recDict[matchup.team1]['losses'] += 1
 
         sortedTeams = sorted(recDict, key=lambda k: recDict[k]['score'])
         sortedTeams.reverse()
@@ -923,46 +925,7 @@ class regSeason:
         negCats, negCats_opp = ['TO'], ['TO_opp']
         self.statDF.drop('Count', axis=1)
 
-        scaler = MinMaxScaler()
-        # WEIGHTED RANKING scale; scales values from 1 to 0 (lowest to highest)
-        def minmax_rank_scale(df, columns):
-            return df.groupby('Week')[columns].transform(
-                lambda x: 1-pd.Series(scaler.fit_transform(x.values.reshape(-1, 1)).flatten(), index=x.index))
-
-        # RATING scale; scales values from 0 to 1 (lowest to highest)
-        def minmax_rating_scale(df, columns):
-            return df.groupby('Week')[columns].transform(
-                lambda x: pd.Series(scaler.fit_transform(x.values.reshape(-1, 1)).flatten(), index=x.index))*100
-
-        # add columns for cat ranks + overall week rank
-        for col in posCats:
-            self.statDF[col + '_rank'] = self.statDF.groupby('Week')[col].rank(method='min', ascending=False)
-            self.statDF[col + '_wt_rank'] = minmax_rank_scale(self.statDF, [col])
-            self.statDF[col + '_rating'] = minmax_rating_scale(self.statDF, [col])
-
-        # Rank and rate neg Cats on their negative values
-        stat_df_copy = self.statDF.copy()
-        stat_df_copy[negCats] = -stat_df_copy[negCats]
-        for col in negCats:
-            self.statDF[col + '_rank'] = self.statDF.groupby('Week')[col].rank(method='min', ascending=True)
-            self.statDF[col + '_wt_rank'] = minmax_rank_scale(stat_df_copy, [col])
-            self.statDF[col + '_rating'] = minmax_rating_scale(stat_df_copy, [col])
-
-        rank_cols = [col + '_rank' for col in mainCats]
-        wt_rank_cols = [col + '_wt_rank' for col in mainCats]
-        rating_cols = [col + '_rating' for col in mainCats]
-
-        self.statDF['week_wt_rank'] = self.statDF[wt_rank_cols].mean(axis=1)
-        self.statDF['week_wt_rank'] = 1-minmax_rank_scale(self.statDF, ['week_wt_rank'])
-
-        self.statDF['week_rank'] = self.statDF.groupby('Week')['week_wt_rank'].rank(method='min', ascending=True)
-
-        self.statDF['week_rating'] = self.statDF[rating_cols].mean(axis=1)
-        self.statDF['week_rating'] = minmax_rating_scale(self.statDF, ['week_rating'])
-
-        # re-scale all RANK values so that they range from teamCount to 1 (worst to best)
-        self.statDF[wt_rank_cols+['week_wt_rank']] = self.statDF[wt_rank_cols+['week_wt_rank']].apply(
-            lambda x: (self.teamCount-1) * x+1)
+        self.statDF = per_week_rating(self.statDF, mainCats, negCats, self.teamCount)
 
         self.statDF['real_matchup'] = 1
         # add rows so that there is a row for every hypothetical matchup in which a team played another team
@@ -1086,6 +1049,7 @@ class poSeason(regSeason):
         # print(self.statDF.loc[self.statDF['Week']>self.RSweekCount][['Week','Team','Opp']])
 
         elimTeams = []
+        self.elim_week = {}
         thirdPlace = []
         for week in range(self.RSweekCount + 1, self.PO_currentWeek + 1):
             # print(f"eliminated teams: {elimTeams}")
@@ -1113,6 +1077,7 @@ class poSeason(regSeason):
                     loser = self._effective_loser(matchup_obj)
                     if loser:
                         elimTeams.append(loser)
+                        self.elim_week[loser] = week
                         self.PO_results[loser] = 'Below Top 4'
                     # print(f"loser: {matchup_obj.loser}")
 
@@ -1228,15 +1193,24 @@ class poSeason(regSeason):
         if not po_mask.any():
             return None
 
-        po_teams = set(self.PO_teams or [])
-        below_top4 = {team for team, res in (self.PO_results or {}).items() if team and str(res).strip().lower() == "below top 4"}
-        counting_teams = po_teams - below_top4 if po_teams else set()
-        if not counting_teams:
+        elim_week = getattr(self, "elim_week", None) or {}
+        if not elim_week:
             return None
 
+        # A team eliminated in an early playoff round should stop counting for
+        # weeks strictly AFTER their elimination week -- not the elimination
+        # week itself, which is the real game that eliminated them and must
+        # still count. (Using a static "not in the final top-4 field" check
+        # here previously zeroed out the elimination-round game entirely --
+        # including the winner's row, since the winner's Opp was the very
+        # team just eliminated -- which silently dropped week-19-style
+        # play-in rounds whenever a team was actually eliminated there.)
+        def eliminated_before_this_week(team_col: str):
+            elim_at = self.statDF[team_col].map(elim_week)
+            return elim_at.notna() & (self.statDF["Week"] > elim_at)
+
         non_count_mask = po_mask & (
-            ~self.statDF["Team"].isin(counting_teams) |
-            ~self.statDF["Opp"].isin(counting_teams)
+            eliminated_before_this_week("Team") | eliminated_before_this_week("Opp")
         )
         if non_count_mask.any():
             if "Count" in self.statDF.columns:

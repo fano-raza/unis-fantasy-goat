@@ -3,7 +3,7 @@ from Models.Draft import *
 from Models.TeamManager import *
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import MinMaxScaler
+from shared.weighted_rank import aggregate_rating
 
 class fantasyLeague():
     def __init__(self, startYear: int = 0, endYear: int = 0, include: list = [], exclude: list = []):
@@ -91,27 +91,7 @@ class fantasyLeague():
 
         # Perform the groupby + aggregation
         df = df.groupby(groupby_col, as_index=False).agg(agg_dict)
-
-        scaler = MinMaxScaler()
-        # WEIGHTED RANKING scale; scales values from 1 to 0 (lowest to highest)
-        def minmax_rating_scale(df, columns):
-            return df[columns].transform(
-                lambda x: pd.Series(scaler.fit_transform(x.values.reshape(-1, 1)).flatten(), index=x.index))
-
-        for col in posCats:
-            df[col + '_rank'] = df[col].rank(method='min', ascending=False)
-            df[col + '_rating'] = minmax_rating_scale(df, [col])
-
-        stat_df_copy = df.copy()
-        stat_df_copy[negCats] = -stat_df_copy[negCats]
-        for col in negCats:
-            df[col + '_rank'] = df[col].rank(method='min', ascending=True)
-            df[col + '_rating'] = minmax_rating_scale(stat_df_copy, [col])
-
-        df['avg_rating'] = df[mainCats_ratings].mean(axis=1)
-        df['Rank'] = df['avg_rating'].rank(ascending=False)
-
-        return df
+        return aggregate_rating(df, mainCats, negCats)
 
     def get_avg_df(self, groupby_col: str | list[str] = 'Team', years=[], weeks=[], teams=[], opps=[], RS=True, PO=True, real=True):
         if isinstance(groupby_col, str):
@@ -119,27 +99,7 @@ class fantasyLeague():
 
         df = self.get_filtered_df(years=years, weeks=weeks, teams=teams, opps=opps, RS=RS, PO=PO, real=real)[['Team', 'Year', 'Week']+mainCats]
         df = df.groupby(groupby_col, as_index=False).mean()
-
-        scaler = MinMaxScaler()
-        # WEIGHTED RANKING scale; scales values from 1 to 0 (lowest to highest)
-        def minmax_rating_scale(df, columns):
-            return df[columns].transform(
-                lambda x: pd.Series(scaler.fit_transform(x.values.reshape(-1, 1)).flatten(), index=x.index))
-
-        for col in posCats:
-            df[col + '_rank'] = df[col].rank(method='min', ascending=False)
-            df[col + '_rating'] = minmax_rating_scale(df, [col])
-
-        stat_df_copy = df.copy()
-        stat_df_copy[negCats] = -stat_df_copy[negCats]
-        for col in negCats:
-            df[col + '_rank'] = df[col].rank(method='min', ascending=True)
-            df[col + '_rating'] = minmax_rating_scale(stat_df_copy, [col])
-
-        df['avg_rating'] = df[mainCats_ratings].mean(axis=1)
-        df['Rank'] = df['avg_rating'].rank(ascending=False)
-
-        return df
+        return aggregate_rating(df, mainCats, negCats)
 
 class leagueSeason:
     def __init__(self, year):

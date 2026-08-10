@@ -28,3 +28,40 @@ services:
       - /srv/unisfantasy/state:/srv/unisfantasy/state
       - /srv/unisfantasy/secrets:/srv/unisfantasy/secrets:ro
     restart: unless-stopped
+
+  # Web app backend (dashboard_site) -- separate, lighter Dockerfile than
+  # gdoc-updater/discord-bot (see Dockerfile.dashboard). Deliberately no
+  # `ports:` here: only reachable inside the compose network, at
+  # dashboard-api:8090. caddy is the sole public entry point.
+  dashboard-api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.dashboard
+    container_name: unisfantasy-dashboard-api
+    environment:
+      FANTASY_REF_DIR: /srv/unisfantasy/data/ref
+    volumes:
+      - /srv/unisfantasy/data:/srv/unisfantasy/data:ro
+    restart: unless-stopped
+
+  # Reverse proxy + automatic HTTPS (Let's Encrypt) in front of
+  # dashboard-api. Caddyfile currently points at a sslip.io hostname (no
+  # owned domain yet) -- swap to a real domain there + point DNS when one
+  # is purchased, no other changes needed.
+  caddy:
+    image: caddy:2-alpine
+    container_name: unisfantasy-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - dashboard-api
+
+volumes:
+  caddy_data:
+  caddy_config:
