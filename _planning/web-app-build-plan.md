@@ -459,10 +459,17 @@ Verified end-to-end: `tsc --noEmit` clean, `npm run build` clean, both persisted
 
 Verified end-to-end: `tsc --noEmit` clean, `npm run build` clean, both persisted Playwright regression suites (50 checks, zero regressions), plus targeted checks -- Chirayu shows exactly one 🐐 badge and it's the first chip rendered, every other team shows zero, tooltip reads "GOAT All-Time", subtitle counter correctly shows the new /14 denominator. **Committed, pushed, and deployed** to both Vercel (frontend) and the droplet (backend).
 
+### Phase 3.30 — Bot cleanup + FeatureBot `/feature-request` slash command — DONE 2026-08-10 (session 13 continued)
+
+- [x] **Old bot's slash commands removed from the server**: confirmed the old `chatbot_bot.py` application (6 commands: `ask_stats`/`standings`/`leader`/`compare`/`head_to_head`/`team_summary`) was still showing in the `/` picker even though its container had been stopped since Phase 3.22 -- global slash-command registration persists as long as a bot remains a server member, independent of whether its process is running. Not something fixable from this side (needs the user's own Discord account, not the bot's token) -- user kicked it from the server, confirmed gone.
+- [x] **Diagnosed a real StatBot invite issue directly against Discord's API**, not by guessing: when the user reported only the old bot's commands showing after adding StatBot, queried `GET /applications/{id}/commands` with StatBot's own token and confirmed all 7 commands *were* correctly registered server-side -- ruling out a registration bug on this end. Root cause was the invite URL missing the `applications.commands` OAuth2 scope (only `bot` was checked) -- re-authorizing with both scopes fixed it, confirmed working by the user.
+- [x] New `/feature-request` slash command on FeatureBot, alongside (not replacing) the existing `@mention` trigger -- same `append_feature_request()` write path. Since a slash command interaction has no user-authored message to react to, the checkbox goes on the bot's own confirmation reply instead (`inter.original_response()` then `add_reaction`). Extracted `parse_test_guild_ids()` into `bot_env.py` (now shared by both bots) along the way -- StatBot already had its own copy, and FeatureBot needed the same logic for its first slash command.
+- [x] Deployed scoped to just `feature-bot`; confirmed via `docker ps` the other 4 services were untouched, and verified the new command via Discord's API directly (`GET /applications/{id}/commands` shows `feature-request` with its required `request` string option) rather than just trusting the container started.
+
 ### Deferred / not v1
 - Auth / per-member profiles
 - Postgres migration (revisit only if auth/profiles need per-user state)
-- Further changes to chatbot_bot.py (the old Q&A bot) or its query engine -- still slated for eventual removal; FeatureBot and StatBot (Phases 3.27-3.28) were both built independently of it for exactly this reason
+- Further changes to chatbot_bot.py (the old Q&A bot) or its query engine -- kicked from the server (Phase 3.30), still slated for eventual full removal; FeatureBot and StatBot (Phases 3.27-3.28) were both built independently of it for exactly this reason
 
 ---
 
