@@ -2,7 +2,8 @@
 
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { BadgeInstance } from "@/lib/badges";
+import { Podium } from "lucide-react";
+import { PODIUM_ICON_MARKER, type BadgeInstance } from "@/lib/badges";
 import { cn } from "@/lib/utils";
 
 interface TooltipPosition {
@@ -57,9 +58,21 @@ function BadgeChip({ badge, open, onOpen, onClose }: {
     // viewport, where "below" previously rendered off-screen).
     const placement: "above" | "below" =
       rect.bottom + TOOLTIP_HEIGHT_ESTIMATE > window.innerHeight ? "above" : "below";
+    // The tooltip is centered on this x via -translate-x-1/2 -- clamp it
+    // so a badge near the left/right edge (e.g. leftmost chip in a narrow
+    // mobile drawer) doesn't push the tooltip half off-screen. Generous
+    // width estimate (badge labels run up to ~"Championship 2021"-length)
+    // since the tooltip's real width isn't known until after it renders.
+    const TOOLTIP_WIDTH_ESTIMATE = 170;
+    const halfWidth = TOOLTIP_WIDTH_ESTIMATE / 2;
+    const rawCenter = rect.left + rect.width / 2;
+    const clampedCenter = Math.min(
+      Math.max(rawCenter, halfWidth + 8),
+      window.innerWidth - halfWidth - 8,
+    );
     onOpen({
       top: placement === "below" ? rect.bottom : rect.top,
-      left: rect.left + rect.width / 2,
+      left: clampedCenter,
       placement,
     });
   }
@@ -80,6 +93,8 @@ function BadgeChip({ badge, open, onOpen, onClose }: {
       >
         {badge.icon === "L" ? (
           <span className="font-mono text-sm font-extrabold text-muted-foreground">L</span>
+        ) : badge.icon === PODIUM_ICON_MARKER ? (
+          <Podium className="size-5" />
         ) : (
           badge.icon
         )}

@@ -1,8 +1,14 @@
 import { MAIN_CATS, type Category, type CategoryHistoryResponse, type TeamSummary } from "./api";
 
+// Sentinel for badges rendered with a real lucide icon component instead of
+// an emoji glyph -- there's no podium emoji in standard Unicode, but lucide
+// has an actual Podium SVG, so team-badges.tsx special-cases this marker
+// the same way it already special-cases "L" for RS Last Place.
+export const PODIUM_ICON_MARKER = "__podium__";
+
 export interface BadgeInstance {
   id: string;
-  icon: string; // emoji glyph, or "L" for RS Last Place (no clean emoji fits)
+  icon: string; // emoji glyph, "L" for RS Last Place, or PODIUM_ICON_MARKER (no clean emoji fits either)
   label: string; // e.g. "PTS Leader" or "Championship" -- shown with the year on hover/tap
   year: number;
   positive: boolean;
@@ -93,7 +99,7 @@ function otherBadges(profile: TeamSummary): BadgeInstance[] {
   for (const y of champYears) badges.push({ id: `champ-${y}`, icon: "🏆", label: "Championship", year: y, positive: true, type: "Championship" });
   for (const y of runnerUpYears) badges.push({ id: `runnerup-${y}`, icon: "🥈", label: "Runner-Up", year: y, positive: true, type: "Runner-Up" });
   for (const y of parseYears(profile["MVP Years"])) badges.push({ id: `mvp-${y}`, icon: "⭐", label: "MVP", year: y, positive: true, type: "MVP" });
-  for (const y of parseYears(profile["RS 1st Years"])) badges.push({ id: `rs1st-${y}`, icon: "🥇", label: "RS 1st Place", year: y, positive: true, type: "RS 1st Place" });
+  for (const y of parseYears(profile["RS 1st Years"])) badges.push({ id: `rs1st-${y}`, icon: PODIUM_ICON_MARKER, label: "RS 1st Place", year: y, positive: true, type: "RS 1st Place" });
   for (const y of parseYears(profile["Worst Rating Years"])) badges.push({ id: `worstrating-${y}`, icon: "🗑️", label: "Worst Rating", year: y, positive: false, type: "Worst Rating" });
   for (const y of parseYears(profile["RS Last Years"])) badges.push({ id: `rslast-${y}`, icon: "L", label: "RS Last Place", year: y, positive: false, type: "RS Last Place" });
 

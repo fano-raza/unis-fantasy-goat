@@ -6,7 +6,7 @@ import { Award } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogPortal, DialogTrigger } from "@/components/ui/dialog";
 import { TeamBadges } from "@/components/team-badges";
-import type { BadgeInstance } from "@/lib/badges";
+import { POSITIVE_BADGE_TYPES, type BadgeInstance } from "@/lib/badges";
 
 interface BadgeDrawerProps {
   positive: BadgeInstance[];
@@ -18,6 +18,7 @@ interface BadgeDrawerProps {
 // filter-drawer.tsx), just displaying badges instead of filter controls.
 export function BadgeDrawer({ positive, negative }: BadgeDrawerProps) {
   const [open, setOpen] = useState(false);
+  const uniquePositiveTypes = new Set(positive.map((b) => b.type)).size;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -31,6 +32,17 @@ export function BadgeDrawer({ positive, negative }: BadgeDrawerProps) {
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold tracking-wider uppercase">Badges</span>
             <DialogClose render={<Button variant="ghost" size="sm" />}>Close</DialogClose>
+          </div>
+          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+            <span>
+              Total: <span className="font-mono font-extrabold text-foreground">{positive.length}</span>
+            </span>
+            <span>
+              Unique:{" "}
+              <span className="font-mono font-extrabold text-foreground">
+                {uniquePositiveTypes}/{POSITIVE_BADGE_TYPES.length}
+              </span>
+            </span>
           </div>
           <div className="flex-1 overflow-y-auto">
             <TeamBadges positive={positive} negative={negative} />

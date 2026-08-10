@@ -25,7 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatTable } from "@/components/stat-table";
-import { Medal, Star, Trophy } from "lucide-react";
+import { Podium, Star, Trophy } from "lucide-react";
 import {
   getAverages,
   getCategoryHistory,
@@ -299,7 +299,7 @@ export default function ProfilePage() {
             label="RS 1st Place"
             value={profile["RS 1st Place"] ?? 0}
             sub={splitYears(profile["RS 1st Years"])}
-            icon={Medal}
+            icon={Podium}
           />
           <StatTile
             label="Best RS Finish"
