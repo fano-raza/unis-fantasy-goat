@@ -425,10 +425,21 @@ Verified end-to-end: `tsc --noEmit` clean, `npm run build` clean, both persisted
 
 Verified end-to-end: `tsc --noEmit` clean, `npm run build` clean, both persisted Playwright regression suites (50 checks, zero regressions), plus targeted checks — all six tile hrefs computed correctly (spot-checked against real data: Fano's Championships → `/standings?year=2026&tree=1`; Zahir's 0 Championships correctly fell back to `/standings?year=2026&tree=1` while his real 3 MVPs correctly resolved to `/season?year=2025`, and his real "Runner-up" Best Playoff Finish correctly resolved to `/standings?year=2019&tree=1`), two full click-throughs confirmed real navigation + the tree toggle actually turns on via the URL param (not just the href string), desktop subtitle renders while mobile keeps only the drawer counter (verified `isVisible()` false on mobile viewport), zero regressions to the pre-existing badge drawer behavior. **Committed, pushed, and deployed** to Vercel (frontend-only, no backend changes).
 
+### Phase 3.27 — FeatureBot: Discord feature-request logger — DONE 2026-08-10 (session 13 continued)
+
+- [x] Scoped the storage backend with the user (previously deferred as "not yet scoped" -- see session log): a plain Markdown checklist file on the droplet (`shared/runtime_config.feature_requests_path()`, defaults to `<DATA_ROOT>/feature_requests.md`), not Google Drive. Reasoning discussed directly with the user: the available Google Drive tools can read/create but not edit an existing file's content, so marking a request "done" would mean recreating the whole file each time -- a plain file I can read+edit in place is simpler, needs no new credentials, and won't silently fail on an API call.
+- [x] New independent bot, `discord/feature_bot.py` -- deliberately NOT built on top of `chatbot_bot.py` (the old, being-retired Q&A bot); the two share nothing (no LLM, no stats querying) so a from-scratch ~150-line file was simpler than trying to extend or share code with a file slated for removal. Listens for `@FeatureBot` mentions, appends the message under the file's `## Open` section (creating the file with `## Open`/`## Done`/`## Ignored` headers on first use), reacts with ☑️ to acknowledge. Verified the append logic in isolation (correct insertion under `## Open`, and still finds the right insertion point after a request is manually moved to `## Done` elsewhere in the file) before ever touching Discord.
+- [x] New `services/feature_bot/` entrypoint + `feature-bot` docker-compose service, mirroring the existing `discord-bot` service's shape (same Dockerfile/dependencies -- `disnake` was already installed for the old bot) but its own container, env file, and `FEATURE_BOT_TOKEN` (deliberately a different env var name from the old bot's `DISCORD_BOT_TOKEN`, so the two can't collide if both ever ran at once).
+- [x] **Deployed scoped to just the new service** (`docker compose up -d --build feature-bot`, not the standing `server_pull_and_restart.sh` script) specifically to avoid the discord-bot-restart side effect that bit the last two deploys this session -- confirmed via `docker compose ps` afterward that `discord-bot` correctly stayed stopped and `dashboard-api`/`gdoc-updater` were untouched.
+- [x] User provided the real bot token directly in chat; set it on the droplet via a Python `re.sub` over the env file (never echoed the value back in any tool output afterward, verified success via a `grep -c` on just the key prefix) rather than printing/logging the full secret again.
+- [x] **Verified live, not just deployed**: container logs show `FeatureBot logged in as FeatBot#2213` -- a real, successful Discord gateway connection with the production token, not just "the container started."
+
+Not yet done: a live end-to-end test (actually tagging `@FeatureBot` in the server and confirming the ☑️ reaction + file write) -- next step is for the user to send a real test message.
+
 ### Deferred / not v1
 - Auth / per-member profiles
 - Postgres migration (revisit only if auth/profiles need per-user state)
-- Any changes to the Discord bot or its query engine
+- Further changes to chatbot_bot.py (the old Q&A bot) or its query engine -- still slated for eventual removal; FeatureBot (Phase 3.27) was built independently of it for exactly this reason
 
 ---
 
