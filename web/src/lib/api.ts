@@ -219,6 +219,42 @@ export interface StandingsHistoryResponse {
   league_cats: Record<string, StandingsHistoryPoint[]>;
 }
 
+export interface PlayoffMatchup {
+  team1: string;
+  team2: string;
+  seed1: number | null;
+  seed2: number | null;
+  winner: string | null;
+  loser: string | null;
+  wins: number;
+  losses: number;
+  ties: number;
+  tiebreak_applied: boolean;
+  tiebreak_reason: string | null;
+  // Only present on the Final round's two matchups.
+  slot?: "Final" | "3rd Place";
+}
+
+export interface PlayoffRound {
+  week: number;
+  label: string;
+  byes: string[];
+  matchups: PlayoffMatchup[];
+}
+
+export interface PlayoffBracket {
+  status: "Active" | "Complete";
+  team_count: number;
+  seeding: Record<string, string>;
+  champion: string | null;
+  standings: Record<string, string>;
+  rounds: PlayoffRound[];
+}
+
+// year -> bracket, only present for years with a real (non-empty) playoff
+// field -- e.g. 2020 (playoffTeamCount 0) is absent entirely.
+export type PlayoffBracketsResponse = Record<string, PlayoffBracket>;
+
 class ApiError extends Error {
   constructor(
     public status: number,
@@ -297,6 +333,9 @@ export const getStandings = (req: StandingsRequest) =>
 
 export const getStandingsHistory = (req: StandingsRequest) =>
   post<StandingsHistoryResponse>("/league/standings_history", req);
+
+export const getPlayoffBrackets = () =>
+  apiFetch<PlayoffBracketsResponse>("/league/playoff_brackets");
 
 export interface RefreshStatus {
   // ISO 8601, or null if the backend hasn't found any ref-dir CSVs yet.

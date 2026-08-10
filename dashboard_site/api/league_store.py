@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -58,6 +59,7 @@ class LeagueStore:
         self._category_history: dict | None = None
         self._rs_finish_history: dict | None = None
         self._po_lookup = self._load_po_real_matchup_lookup()
+        self._playoff_brackets: dict | None = None
 
     def _load_po_real_matchup_lookup(self) -> dict[tuple[int, int, str, str], bool]:
         """Count==True is a reliable "real matchup" proxy for regular-season
@@ -320,6 +322,27 @@ class LeagueStore:
         dtype = {col: str for col in self._TEAM_SUMMARY_YEAR_LIST_COLS}
         self._team_summary_df = pd.read_csv(path, dtype=dtype)
         return self._team_summary_df
+
+    def playoff_brackets(self) -> dict:
+        """Per-year playoff bracket structure (rounds, matchups, seeding,
+        byes, final standings) for the Standings page's playoff tree toggle.
+        Reads scripts/export_playoff_brackets.py's precomputed
+        Ref/playoff_brackets.json directly -- bracket advancement/byes/
+        tiebreaks are seeding-derived logic living entirely in
+        Models/seasons.py::poSeason, so (same reasoning as the real-matchup
+        lookup above) it's precomputed by the heavy venv rather than
+        re-derived here. Returns {} (not an error) if the file hasn't been
+        generated yet, same degrade-gracefully behavior as that lookup."""
+        if self._playoff_brackets is not None:
+            return self._playoff_brackets
+        ref_dir = getattr(self.store, "ref_dir", None)
+        path = Path(ref_dir) / "playoff_brackets.json" if ref_dir else None
+        if path is None or not path.exists():
+            self._playoff_brackets = {}
+            return self._playoff_brackets
+        with open(path) as f:
+            self._playoff_brackets = json.load(f)
+        return self._playoff_brackets
 
     def head_to_head(
         self,

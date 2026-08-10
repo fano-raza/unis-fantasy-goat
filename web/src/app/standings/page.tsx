@@ -14,12 +14,14 @@ import {
 } from "recharts";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import { ChartLegend } from "@/components/chart-legend";
+import { PlayoffTree } from "@/components/playoff-tree";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import {
@@ -35,9 +37,11 @@ import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { categoricalPalette } from "@/lib/palette";
 import {
   getLeagueMeta,
+  getPlayoffBrackets,
   getStandings,
   getStandingsHistory,
   type LeagueMeta,
+  type PlayoffBracketsResponse,
   type StandingsHistoryResponse,
   type StandingsResponse,
   type StandingsRow,
@@ -157,9 +161,11 @@ function StandingsPageInner() {
   const [oneVOneMode, setOneVOneMode] = useState<"wl" | "cats">("wl");
   const [leagueMode, setLeagueMode] = useState<"wl" | "cats">("wl");
   const [showGraph, setShowGraph] = useState(true);
+  const [showPlayoffTree, setShowPlayoffTree] = useState(false);
   const [standings, setStandings] = useState<StandingsResponse | null>(null);
   const [previousStandings, setPreviousStandings] = useState<StandingsResponse | null>(null);
   const [history, setHistory] = useState<StandingsHistoryResponse | null>(null);
+  const [brackets, setBrackets] = useState<PlayoffBracketsResponse>({});
   const [error, setError] = useState<string | null>(null);
   const searchParams = useSearchParams();
 
@@ -174,6 +180,12 @@ function StandingsPageInner() {
     // Deliberately only reads searchParams once, at mount -- see the
     // matching comment on Profile's ?team= handling for why.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // All years' bracket data is a single small payload -- fetched once, not
+  // refetched per year switch (mirrors getLeagueMeta's own one-shot fetch).
+  useEffect(() => {
+    getPlayoffBrackets().then(setBrackets);
   }, []);
 
   const maxWeek = useMemo(() => {
@@ -302,6 +314,12 @@ function StandingsPageInner() {
               <CardHeader>
                 <CardTitle>1v1 Standings</CardTitle>
                 <CardDescription>Real matchup win-loss-tie record, by matchup outcome or aggregate category record</CardDescription>
+                <CardAction>
+                  <label className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
+                    <span className="text-muted-foreground">Playoff Tree</span>
+                    <Switch checked={showPlayoffTree} onCheckedChange={setShowPlayoffTree} />
+                  </label>
+                </CardAction>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
                 <label className="flex items-center gap-2 self-start text-[11px] font-bold tracking-wider uppercase">
@@ -323,79 +341,93 @@ function StandingsPageInner() {
               </CardContent>
             </Card>
 
-            {showGraph && historyChartData.length > 0 && (
+            {showPlayoffTree ? (
               <Card>
                 <CardHeader>
-                  <CardTitle>Position Over Time</CardTitle>
+                  <CardTitle>Playoff Tree</CardTitle>
                   <CardDescription>
-                    Each team&apos;s {oneVOneMode === "wl" ? "W/L" : "Cats"} standings place,
-                    week by week over the selected range
+                    Bracket advancement, round by round
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-[360px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={historyChartData} margin={{ left: 8, right: 16, top: 8, bottom: 24 }}>
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                        <XAxis
-                          dataKey="week"
-                          type="number"
-                          domain={[weekRange[0], weekRange[1]]}
-                          ticks={Array.from(
-                            { length: weekRange[1] - weekRange[0] + 1 },
-                            (_, i) => weekRange[0] + i,
-                          )}
-                          tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
-                          stroke="var(--border)"
-                          label={{
-                            value: "Week",
-                            position: "insideBottom",
-                            offset: -4,
-                            fill: "var(--muted-foreground)",
-                            fontSize: 12,
-                          }}
-                        />
-                        <YAxis
-                          reversed
-                          allowDecimals={false}
-                          domain={[1, historyTeams.length]}
-                          width={32}
-                          tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
-                          stroke="var(--border)"
-                          label={{
-                            value: "Place",
-                            angle: -90,
-                            position: "insideLeft",
-                            fill: "var(--muted-foreground)",
-                            fontSize: 12,
-                          }}
-                        />
-                        <Tooltip
-                          contentStyle={{
-                            background: "var(--card)",
-                            border: "1px solid var(--border)",
-                            fontSize: 12,
-                          }}
-                          labelFormatter={(w) => `Week ${w}`}
-                          itemSorter={(item) => (typeof item.value === "number" ? item.value : Infinity)}
-                        />
-                        {historyTeams.map((team, i) => (
-                          <Line
-                            key={team}
-                            dataKey={team}
-                            name={team}
-                            stroke={historyColors[i]}
-                            connectNulls
-                            dot={{ r: 2 }}
-                            isAnimationActive={false}
-                          />
-                        ))}
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <ChartLegend items={historyTeams.map((team, i) => ({ key: team, color: historyColors[i] }))} />
+                  <PlayoffTree bracket={brackets[String(year)]} year={year} />
                 </CardContent>
               </Card>
+            ) : (
+              showGraph && historyChartData.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Position Over Time</CardTitle>
+                    <CardDescription>
+                      Each team&apos;s {oneVOneMode === "wl" ? "W/L" : "Cats"} standings place,
+                      week by week over the selected range
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-[360px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={historyChartData} margin={{ left: 8, right: 16, top: 8, bottom: 24 }}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                          <XAxis
+                            dataKey="week"
+                            type="number"
+                            domain={[weekRange[0], weekRange[1]]}
+                            ticks={Array.from(
+                              { length: weekRange[1] - weekRange[0] + 1 },
+                              (_, i) => weekRange[0] + i,
+                            )}
+                            tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
+                            stroke="var(--border)"
+                            label={{
+                              value: "Week",
+                              position: "insideBottom",
+                              offset: -4,
+                              fill: "var(--muted-foreground)",
+                              fontSize: 12,
+                            }}
+                          />
+                          <YAxis
+                            reversed
+                            allowDecimals={false}
+                            domain={[1, historyTeams.length]}
+                            width={32}
+                            tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
+                            stroke="var(--border)"
+                            label={{
+                              value: "Place",
+                              angle: -90,
+                              position: "insideLeft",
+                              fill: "var(--muted-foreground)",
+                              fontSize: 12,
+                            }}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              background: "var(--card)",
+                              border: "1px solid var(--border)",
+                              fontSize: 12,
+                            }}
+                            labelFormatter={(w) => `Week ${w}`}
+                            itemSorter={(item) => (typeof item.value === "number" ? item.value : Infinity)}
+                          />
+                          {historyTeams.map((team, i) => (
+                            <Line
+                              key={team}
+                              dataKey={team}
+                              name={team}
+                              stroke={historyColors[i]}
+                              connectNulls
+                              dot={{ r: 2 }}
+                              isAnimationActive={false}
+                            />
+                          ))}
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <ChartLegend items={historyTeams.map((team, i) => ({ key: team, color: historyColors[i] }))} />
+                  </CardContent>
+                </Card>
+              )
             )}
 
             <Card>

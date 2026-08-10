@@ -196,6 +196,11 @@ def league_rs_finish_history() -> dict:
     return league_store.rs_finish_history()
 
 
+@app.get("/league/playoff_brackets")
+def league_playoff_brackets() -> dict:
+    return league_store.playoff_brackets()
+
+
 @app.post("/league/weekly_team")
 def league_weekly_team(req: WeeklyTeamRequest) -> dict:
     try:
