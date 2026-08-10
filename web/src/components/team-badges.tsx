@@ -70,8 +70,8 @@ function BadgeChip({ badge, open, onOpen, onClose }: {
         ref={ref}
         type="button"
         className={cn(
-          "flex size-9 items-center justify-center rounded-full border border-border bg-card text-lg leading-none transition-transform hover:scale-110",
-          !badge.positive && "grayscale opacity-70",
+          "flex size-9 items-center justify-center border border-border bg-card text-lg leading-none transition-transform hover:scale-110",
+          badge.positive ? "rounded-full" : "rounded-sm grayscale opacity-70",
         )}
         onMouseEnter={computeAndOpen}
         onMouseLeave={onClose}

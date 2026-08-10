@@ -361,6 +361,14 @@ Triggered by the user reporting Standings "isn't loading properly — nothing sh
 
 Verified end-to-end: `npm run build` clean, `tsc --noEmit` clean, full Playwright regression suite (50 checks, zero regressions), plus targeted checks — Champions Lounge password-every-visit and taunt randomness, and the loading indicator specifically verified *rendering* (not just "no crash") by intercepting and delaying the relevant network requests on all 6 pages it was added to, confirming 3 basketballs actually appear during the delay window. **Committed, pushed, and deployed** to both the droplet and Vercel.
 
+### Phase 3.20 — Profile badge counters, negative-badge shape — DONE 2026-08-10 (session 13 continued)
+
+- [x] New `POSITIVE_BADGE_TYPES` export (`web/src/lib/badges.ts`) — the 13 distinct positive badge *types* that can exist (Championship/Runner-Up/MVP/RS 1st Place + one Leader badge per of the 9 categories), the denominator for the new counter below.
+- [x] Two new StatTiles on Profile (`web/src/app/profile/page.tsx`): "Total Badges" (`badges.positive.length` — every positive badge *instance*, one per year earned, not deduped) and "Unique Badges" (`{distinct types}/{POSITIVE_BADGE_TYPES.length}`, e.g. "10/13"). Confirmed already correctly includes the non-stat-leader achievements (Championship/Runner-Up/MVP/RS 1st Place) alongside the 9 category leaders per the user's explicit clarification ("anything that's not the worst at something is a positive badge") — `buildBadges()` already merges `categoryBadges()` and `otherBadges()` into one list before splitting by `.positive`, so this needed no code change, just verification: re-checked Zahir's known 27-badge breakdown by hand (16 positive instances, 10 of 13 unique types, correctly including his 3 MVP/1 RS-1st-Place/1 Runner-Up alongside 11 category-leader instances) against the rendered tile values — exact match.
+- [x] Negative badges now render as a rounded square (`rounded-sm`, matching this app's scoreboard-identity corner radius elsewhere) instead of a circle — positive badges keep `rounded-full`. `web/src/components/team-badges.tsx`.
+
+Verified end-to-end: `npm run build` clean, `tsc --noEmit` clean, full Playwright regression suite (50 checks, zero regressions), plus the Zahir-data counter cross-check and a computed-style check confirming positive badges render fully circular (`border-radius` ≈ 9999px) and negative badges render as a small-radius square (2.4px, matching this theme's `--radius-sm` token). **Committed, pushed, and deployed** to both the droplet and Vercel.
+
 ### Deferred / not v1
 - Auth / per-member profiles
 - Postgres migration (revisit only if auth/profiles need per-user state)

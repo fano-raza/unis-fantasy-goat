@@ -38,6 +38,17 @@ const BADGE_TYPE_ORDER = [
   ...MAIN_CATS.flatMap((cat) => [`${cat} Leader`, `${cat} Loser`]),
 ];
 
+// Every distinct positive badge *type* that can possibly exist (4 "other"
+// achievements + one Leader badge per category) -- the denominator for the
+// Profile page's "Unique Badges" counter, e.g. "6/13".
+export const POSITIVE_BADGE_TYPES = [
+  "Championship",
+  "Runner-Up",
+  "MVP",
+  "RS 1st Place",
+  ...MAIN_CATS.map((cat) => `${cat} Leader`),
+];
+
 function parseYears(value: string | number | null | undefined): number[] {
   if (typeof value !== "string" || !value.trim()) return [];
   return value

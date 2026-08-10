@@ -46,7 +46,7 @@ import { comparableFields, formatValue, ordinal, rankFor } from "@/lib/team-summ
 import { cn } from "@/lib/utils";
 import { ProfileHistoryChart } from "@/components/profile-history-chart";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
-import { buildBadges } from "@/lib/badges";
+import { buildBadges, POSITIVE_BADGE_TYPES } from "@/lib/badges";
 import { TeamBadges } from "@/components/team-badges";
 import { BadgeDrawer } from "@/components/badge-drawer";
 
@@ -314,6 +314,16 @@ export default function ProfilePage() {
               valueClassName={playoffFinish.label === "Champion" ? "text-amber-400" : undefined}
             />
           )}
+          <StatTile
+            label="Total Badges"
+            value={badges.positive.length}
+            sub="Positive badges earned"
+          />
+          <StatTile
+            label="Unique Badges"
+            value={`${new Set(badges.positive.map((b) => b.type)).size}/${POSITIVE_BADGE_TYPES.length}`}
+            sub="Distinct badge types earned"
+          />
         </div>
       )}
 
