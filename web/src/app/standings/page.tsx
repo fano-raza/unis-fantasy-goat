@@ -171,8 +171,11 @@ function StandingsPageInner() {
 
   useEffect(() => {
     // A ?year= link (from a Profile stat-tile deep link) wins over the
-    // default current year, if it's a real year for this league.
+    // default current year, if it's a real year for this league. A
+    // ?tree=1 alongside it pre-enables the Playoff Tree toggle (used by the
+    // Championships/Best Playoff Finish stat-tile links).
     const yearFromUrl = Number(searchParams.get("year"));
+    if (searchParams.get("tree") === "1") setShowPlayoffTree(true);
     getLeagueMeta().then((m) => {
       setMeta(m);
       setYear(m.years.includes(yearFromUrl) ? yearFromUrl : m.current_year);

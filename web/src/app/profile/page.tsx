@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState, type ComponentType } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import {
   Card,
   CardAction,
@@ -142,6 +143,18 @@ function splitYears(value: string | number | null | undefined): string {
   return value;
 }
 
+// Parses a comma-joined years string (e.g. "2019, 2021, 2023") and returns
+// the most recent one, or null if the field is empty/missing -- used to
+// resolve each stat tile's "latest year they achieved X" deep-link target.
+function latestYear(value: string | number | null | undefined): number | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const years = value
+    .split(",")
+    .map((y) => Number(y.trim()))
+    .filter((y) => Number.isFinite(y));
+  return years.length ? Math.max(...years) : null;
+}
+
 export default function ProfilePage() {
   return (
     <Suspense fallback={<LoadingBasketballs label="Loading" />}>
@@ -214,6 +227,8 @@ function ProfilePageInner() {
     if (!team || !profile || !categoryHistory) return { positive: [], negative: [] };
     return buildBadges(team, profile, categoryHistory);
   }, [team, profile, categoryHistory]);
+
+  const uniquePositiveCount = new Set(badges.positive.map((b) => b.type)).size;
 
   const playoffFinish = useMemo(() => {
     if (!profile) return null;
@@ -296,6 +311,9 @@ function ProfilePageInner() {
           <div>
             <CardDescription>Career Profile</CardDescription>
             <CardTitle className="text-4xl sm:text-5xl">{team}</CardTitle>
+            <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
+              {badges.positive.length} total badges &middot; {uniquePositiveCount}/{POSITIVE_BADGE_TYPES.length} unique
+            </p>
           </div>
           <CardAction className="hidden max-w-md sm:block">
             <TeamBadges positive={badges.positive} negative={badges.negative} />
@@ -313,23 +331,33 @@ function ProfilePageInner() {
             value={profile.Championships ?? 0}
             sub={splitYears(profile["Championship Years"])}
             icon={Trophy}
+            href={`/standings?year=${latestYear(profile["Championship Years"]) ?? meta.current_year}&tree=1`}
           />
-          <StatTile label="MVPs" value={profile.MVPs ?? 0} sub={splitYears(profile["MVP Years"])} icon={Star} />
+          <StatTile
+            label="MVPs"
+            value={profile.MVPs ?? 0}
+            sub={splitYears(profile["MVP Years"])}
+            icon={Star}
+            href={`/season?year=${latestYear(profile["MVP Years"]) ?? meta.current_year}`}
+          />
           <StatTile
             label="Best RS Rating"
             value={typeof profile["Best RS Rating"] === "number" ? profile["Best RS Rating"].toFixed(1) : "—"}
             sub={splitYears(profile["Best RS Rating Years"])}
+            href={`/season?year=${latestYear(profile["Best RS Rating Years"]) ?? meta.current_year}`}
           />
           <StatTile
             label="RS 1st Place"
             value={profile["RS 1st Place"] ?? 0}
             sub={splitYears(profile["RS 1st Years"])}
             icon={Podium}
+            href={`/standings?year=${latestYear(profile["RS 1st Years"]) ?? meta.current_year}`}
           />
           <StatTile
             label="Best RS Finish"
             value={typeof profile["Best RS Finish"] === "number" ? ordinal(profile["Best RS Finish"]) : "—"}
             sub={splitYears(profile["Best RS Finish Years"])}
+            href={`/standings?year=${latestYear(profile["Best RS Finish Years"]) ?? meta.current_year}`}
           />
           {playoffFinish && (
             <StatTile
@@ -337,18 +365,9 @@ function ProfilePageInner() {
               value={playoffFinish.label}
               sub={playoffFinish.years}
               valueClassName={playoffFinish.label === "Champion" ? "text-amber-400" : undefined}
+              href={`/standings?year=${latestYear(playoffFinish.years) ?? meta.current_year}&tree=1`}
             />
           )}
-          <StatTile
-            label="Total Badges"
-            value={badges.positive.length}
-            sub="Positive badges earned"
-          />
-          <StatTile
-            label="Unique Badges"
-            value={`${new Set(badges.positive.map((b) => b.type)).size}/${POSITIVE_BADGE_TYPES.length}`}
-            sub="Distinct badge types earned"
-          />
         </div>
       )}
 
@@ -426,6 +445,7 @@ function StatTile({
   sub,
   icon: Icon,
   valueClassName,
+  href,
 }: {
   label: string;
   value: string | number;
@@ -434,10 +454,18 @@ function StatTile({
   // 2 trophies), not just once as a static decoration.
   icon?: ComponentType<{ className?: string }>;
   valueClassName?: string;
+  // When present, the whole tile links out to the resolved-year page for
+  // this stat (Ratings page or playoff tree) -- see the per-tile hrefs
+  // computed in ProfilePageInner for the exact per-stat resolution logic.
+  href?: string;
 }) {
   const iconCount = Icon && typeof value === "number" ? value : 0;
-  return (
-    <div className="rounded-sm border border-border p-4">
+  const className = cn(
+    "rounded-sm border border-border p-4",
+    href && "transition-colors hover:border-primary",
+  );
+  const content = (
+    <>
       <div className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
         {label}
       </div>
@@ -457,6 +485,14 @@ function StatTile({
           ))}
       </div>
       <div className="mt-1 text-xs text-muted-foreground">{sub}</div>
-    </div>
+    </>
   );
+  if (href) {
+    return (
+      <Link href={href} className={className}>
+        {content}
+      </Link>
+    );
+  }
+  return <div className={className}>{content}</div>;
 }
