@@ -90,7 +90,10 @@ def run_bot() -> None:
 
     intents = disnake.Intents.default()
     connector = build_ssl_connector()
-    bot = commands.Bot(command_prefix="!", intents=intents, connector=connector)
+    # No prefix commands here, only slash commands -- when_mentioned avoids
+    # disnake's warning about a "!" prefix needing Message Content intent
+    # for functionality this bot never uses.
+    bot = commands.Bot(command_prefix=commands.when_mentioned, intents=intents, connector=connector)
     test_guild_ids = _parse_test_guild_ids()
     slash_kwargs = {"guild_ids": test_guild_ids} if test_guild_ids else {}
 
