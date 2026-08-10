@@ -20,6 +20,7 @@ import {
   type WeekRow,
 } from "@/lib/api";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { LoadingBasketballs } from "@/components/loading-basketballs";
 
 // Steps to the previous/next value in an ordered option list, clamped at
 // either end (no wraparound -- season and week each step independently).
@@ -134,7 +135,7 @@ export default function WeeklyStatsPage() {
   const focusOptions = useMemo(() => [...rows.map((r) => r.team)].sort(), [rows]);
 
   if (metaError) return <BackendUnreachable error={metaError} />;
-  if (!meta || year == null || week == null) return null;
+  if (!meta || year == null || week == null) return <LoadingBasketballs label="Loading" />;
 
   return (
     <div className="flex flex-col gap-4">

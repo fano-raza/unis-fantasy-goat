@@ -45,6 +45,7 @@ import { NEG_CATS } from "@/lib/highlight";
 import { comparableFields, formatValue, ordinal, rankFor } from "@/lib/team-summary-fields";
 import { cn } from "@/lib/utils";
 import { ProfileHistoryChart } from "@/components/profile-history-chart";
+import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { buildBadges } from "@/lib/badges";
 import { TeamBadges } from "@/components/team-badges";
 import { BadgeDrawer } from "@/components/badge-drawer";
@@ -237,7 +238,7 @@ export default function ProfilePage() {
       .sort((a, b) => a.rank - b.rank);
   }, [team, allTeams, totals, averages, queryTotals]);
 
-  if (!meta || !team) return null;
+  if (!meta || !team) return <LoadingBasketballs label="Loading" />;
 
   return (
     <div className="flex flex-col gap-4">

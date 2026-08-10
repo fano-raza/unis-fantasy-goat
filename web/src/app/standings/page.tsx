@@ -29,6 +29,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { LabeledSelect } from "@/components/labeled-select";
+import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { categoricalPalette } from "@/lib/palette";
 import {
   getLeagueMeta,
@@ -221,7 +222,7 @@ export default function StandingsPage() {
   );
   const historyColors = useMemo(() => categoricalPalette(historyTeams.length), [historyTeams.length]);
 
-  if (!meta || year == null || !weekRange) return null;
+  if (!meta || year == null || !weekRange) return <LoadingBasketballs label="Loading" />;
 
   return (
     <div className="flex flex-col gap-4">
@@ -268,6 +269,8 @@ export default function StandingsPage() {
             <p className="text-sm text-muted-foreground">No data for the current filters ({error}).</p>
           </CardContent>
         </Card>
+      ) : !standings ? (
+        <LoadingBasketballs label="Loading standings" />
       ) : (
         standings && (
           <>

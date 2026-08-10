@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { StatTable } from "@/components/stat-table";
 import { LabeledSelect, NO_FOCUS_TEAM } from "@/components/labeled-select";
+import { LoadingBasketballs } from "@/components/loading-basketballs";
 import {
   getAverages,
   getLeagueMeta,
@@ -94,7 +95,7 @@ export default function SeasonPage() {
     setFocusTeam(topTeam?.team ?? NO_FOCUS_TEAM);
   }, [rows, focusTeam]);
 
-  if (!meta || year == null) return null;
+  if (!meta || year == null) return <LoadingBasketballs label="Loading" />;
 
   return (
     <div className="flex flex-col gap-4">

@@ -1,71 +1,98 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Lock } from "lucide-react";
 
 const PASSWORD = "whogotnext";
-const UNLOCKED_KEY = "champions-lounge-unlocked";
 
 // Purely a joke gate for a private friend-group app, not real security --
-// exact client-side string match, remembered in localStorage so it doesn't
-// re-prompt every visit.
+// exact client-side string match. Deliberately NOT persisted anywhere
+// (no localStorage) -- the password is required on every single visit,
+// per the user's explicit ask.
 const RING_EMOJIS = ["🔍", "🔺", "🕵️", "👀", "🏆", "🪙", "🔫", "💥"];
 
-function EmojiRing() {
-  // Radius kept well inside the ring's own box so wide multi-codepoint
-  // glyphs (e.g. the detective emoji) can't push the page into horizontal
-  // scroll -- measured actual overflow at two larger radius/size values
-  // before landing here; re-verified clean at the narrowest common mobile
-  // width (320px) as well as 390px, across several seconds of the
-  // animation (not just a single frame).
-  const radius = 62;
+// Picked fresh on every successful unlock (see handleSubmit) -- all on the
+// theme of "you got lucky" / "you don't actually deserve this," even
+// though they just got the password right.
+const TAUNTS = [
+  "YOU PROBABLY DON'T DESERVE TO BE HERE! 🤡🤡🤡",
+  "CONGRATS ON THE LUCKIEST SCHEDULE IN LEAGUE HISTORY 🍀🍀🍀",
+  "YOUR RING IS MADE OF PARTICIPATION TROPHY METAL 🏆❌",
+  "SOMEWHERE, A REAL CHAMPION IS LAUGHING AT YOU 😂😂😂",
+  "THIS TITLE HAS AN ASTERISK THE SIZE OF THE MOON 🌕*️⃣",
+  "YOU BEAT BOTS, NOT MEN 🤖🤖🤖",
+  "EVEN YOUR BENCH IS EMBARRASSED FOR YOU 🪑😳",
+  "STATISTICALLY, THIS SHOULDN'T HAVE HAPPENED 📊🚫",
+  "YOUR DRAFT BOARD WAS A DARTBOARD 🎯🍺",
+  "THIS CHAMPIONSHIP WAS BROUGHT TO YOU BY LUCK, NOT SKILL 🎰🎰🎰",
+  "WE CHECKED THE TAPE. IT WAS FRAUD 📼🚨",
+  "SECURITY IS ON THE WAY TO ESCORT YOU OUT 🚔👋",
+  "YOUR OPPONENT'S STAR PLAYER GOT HURT AT HALFTIME. SUSPICIOUS 🤕🔍",
+  "IMPOSTER SYNDROME? NO, JUST AN IMPOSTER 🎭🎭🎭",
+  "PLEASE ENJOY YOUR STAY UNTIL WE FIGURE OUT HOW YOU GOT IN 🕵️‍♂️🚪",
+  "THIS IS WHAT WE CALL A RIGGED LOTTERY WIN 🎟️🎰",
+  "EVEN YOUR TROPHY LOOKS CONFUSED 🏆❓",
+  "A MONKEY WITH A DARTBOARD COULD'VE DRAFTED BETTER 🐒🎯",
+  "THE COMMISSIONER IS QUIETLY INVESTIGATING YOU 🕵️‍♀️📁",
+];
+
+// Evenly spaced points around an equilateral triangle's PERIMETER (not
+// just the 3 vertices) -- with 8 points that lands as 3/3/2 per edge,
+// close enough to even for a decorative shape.
+function trianglePerimeterPoints(n: number, r: number): { x: number; y: number }[] {
+  const vertices = [0, 1, 2].map((i) => {
+    const rad = ((-90 + i * 120) * Math.PI) / 180;
+    return { x: r * Math.cos(rad), y: r * Math.sin(rad) };
+  });
+  return Array.from({ length: n }, (_, k) => {
+    const edgeFloat = (k / n) * 3;
+    const edgeIndex = Math.min(2, Math.floor(edgeFloat));
+    const localT = edgeFloat - edgeIndex;
+    const a = vertices[edgeIndex];
+    const b = vertices[(edgeIndex + 1) % 3];
+    return { x: a.x + (b.x - a.x) * localT, y: a.y + (b.y - a.y) * localT };
+  });
+}
+
+function EmojiTriangle() {
+  // Same radius that was verified overflow-free (across 320/360/390px
+  // viewports, sampled over several seconds of animation) for the earlier
+  // circular layout -- a triangle's vertices are exactly this far from
+  // center too, so it's the same worst case.
+  const points = useMemo(() => trianglePerimeterPoints(RING_EMOJIS.length, 62), []);
   return (
     <div className="relative mx-auto size-44 champions-ring">
-      {RING_EMOJIS.map((emoji, i) => {
-        const angle = (360 / RING_EMOJIS.length) * i;
-        return (
-          <div
-            key={i}
-            className="absolute top-1/2 left-1/2"
-            style={{ transform: `rotate(${angle}deg) translate(${radius}px) rotate(${-angle}deg)` }}
-          >
-            <span className="champions-ring-item inline-block text-2xl">{emoji}</span>
-          </div>
-        );
-      })}
+      {RING_EMOJIS.map((emoji, i) => (
+        <div
+          key={i}
+          className="absolute top-1/2 left-1/2"
+          style={{ transform: `translate(${points[i].x}px, ${points[i].y}px)` }}
+        >
+          <span className="champions-ring-item inline-block text-2xl">{emoji}</span>
+        </div>
+      ))}
     </div>
   );
 }
 
 export default function ChampionsLoungePage() {
   const [unlocked, setUnlocked] = useState(false);
-  const [checkedStorage, setCheckedStorage] = useState(false);
   const [input, setInput] = useState("");
   const [wrong, setWrong] = useState(false);
-
-  useEffect(() => {
-    try {
-      if (localStorage.getItem(UNLOCKED_KEY) === "true") setUnlocked(true);
-    } catch {}
-    setCheckedStorage(true);
-  }, []);
+  const [taunt, setTaunt] = useState("");
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (input === PASSWORD) {
+      setTaunt(TAUNTS[Math.floor(Math.random() * TAUNTS.length)]);
       setUnlocked(true);
       setWrong(false);
-      try {
-        localStorage.setItem(UNLOCKED_KEY, "true");
-      } catch {}
     } else {
       setWrong(true);
     }
   }
-
-  if (!checkedStorage) return null;
 
   if (!unlocked) {
     return (
@@ -100,9 +127,9 @@ export default function ChampionsLoungePage() {
 
   return (
     <div className="flex flex-col items-center justify-center gap-10 py-20">
-      <EmojiRing />
+      <EmojiTriangle />
       <p className="max-w-lg text-center font-mono text-lg font-extrabold tracking-wide uppercase">
-        You probably don&apos;t deserve to be here! 🤡🤡🤡
+        {taunt}
       </p>
       <style>{`
         .champions-ring {

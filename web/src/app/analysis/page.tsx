@@ -13,6 +13,7 @@ import { AnalysisGraph } from "@/components/analysis-graph";
 import { FilterPanel, type FilterPanelValue } from "@/components/filter-panel";
 import { FilterDrawer } from "@/components/filter-drawer";
 import { getAnalysisRows, getLeagueMeta, type AnalysisRow, type LeagueMeta } from "@/lib/api";
+import { LoadingBasketballs } from "@/components/loading-basketballs";
 
 const MAX_GRAPHS = 3;
 const FILTER_KEY = "analysis-filter";
@@ -105,7 +106,7 @@ export default function AnalysisPage() {
     return Array.from({ length: maxWeek }, (_, i) => i + 1);
   }, [meta]);
 
-  if (!meta || !filter) return null;
+  if (!meta || !filter) return <LoadingBasketballs label="Loading" />;
 
   return (
     <div className="flex flex-col gap-4 sm:flex-row">

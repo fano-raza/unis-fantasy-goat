@@ -13,6 +13,7 @@ import { StatTable } from "@/components/stat-table";
 import { FilterPanel, type FilterPanelValue } from "@/components/filter-panel";
 import { FilterDrawer } from "@/components/filter-drawer";
 import { LabeledSelect, NO_FOCUS_TEAM } from "@/components/labeled-select";
+import { LoadingBasketballs } from "@/components/loading-basketballs";
 import {
   getAverages,
   getLeagueMeta,
@@ -98,7 +99,7 @@ export default function CareerStatsPage() {
     setFocusTeam(topTeam?.team ?? NO_FOCUS_TEAM);
   }, [rows, focusTeam]);
 
-  if (!meta || !filter) return null;
+  if (!meta || !filter) return <LoadingBasketballs label="Loading" />;
 
   return (
     <div className="flex flex-col gap-4 sm:flex-row">
