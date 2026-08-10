@@ -377,6 +377,14 @@ Verified end-to-end: `npm run build` clean, `tsc --noEmit` clean, full Playwrigh
 
 Verified end-to-end: `npm run build` clean, `tsc --noEmit` clean, full Playwright regression suite (50 checks, zero regressions), plus targeted checks for all three items above (drawer counter presence, tooltip clamped-in-bounds at the true worst-case position, podium `<svg class="lucide-podium">` confirmed present in both the badge chip and the StatTile's rendered HTML). **Committed, pushed, and deployed** to both the droplet and Vercel.
 
+### Phase 3.22 — Discord bot stopped, Standings week-slider fixes — DONE 2026-08-10 (session 13 continued)
+
+- [x] **Old discord-bot stopped** on the droplet (`docker compose stop discord-bot`, container preserved, not removed) — the code-level `ImportError` fix from Phase 3.19 resolved that crash, but immediately surfaced a second, unrelated problem: no `DISCORD_BOT_TOKEN` configured on the droplet at all, so the bot can't start regardless. Given the user's stated plan to replace this bot entirely (see session log), chasing that credential was explicitly deprioritized in favor of stopping the crash loop cleanly — confirmed via `docker inspect` this was a plain `exitcode=1`, not `OOMKilled`, i.e. a real missing-config issue, not resource exhaustion.
+- [x] **Real bug fixed**: the Standings week-range slider's two thumbs could be dragged past each other (min > max), breaking the range. Fixed with base-ui Slider's own built-in `minStepsBetweenValues={1}` prop — no custom clamping logic needed. Verified by aggressively dragging the min thumb past the max thumb's start position; it stops one week short of max instead of crossing.
+- [x] New optional `thumbLabels` prop on the shared `Slider` component (`web/src/components/ui/slider.tsx`) — a small label above each thumb, shown via CSS `group-hover`/`group-focus-visible`/`group-active` (covers desktop hover and mobile tap/drag with zero JS state, and doesn't add any new pointer-capturing overlay that could interfere with the existing drag behavior). Standings passes `Week {value}` per thumb.
+
+Verified end-to-end: `npm run build` clean, `tsc --noEmit` clean, full Playwright regression suite (50 checks, zero regressions), plus the two targeted checks above. **Committed, pushed, and deployed** — frontend change deployed to Vercel; the discord-bot stop was applied directly on the droplet (not a code change, nothing to redeploy for it).
+
 ### Deferred / not v1
 - Auth / per-member profiles
 - Postgres migration (revisit only if auth/profiles need per-user state)

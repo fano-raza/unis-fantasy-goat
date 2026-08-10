@@ -251,8 +251,10 @@ export default function StandingsPage() {
               min={1}
               max={maxWeek}
               step={1}
+              minStepsBetweenValues={1}
               value={weekRange}
               onValueChange={(v) => setWeekRange(v as [number, number])}
+              thumbLabels={[`Week ${weekRange[0]}`, `Week ${weekRange[1]}`]}
             />
           </div>
           <label className="flex items-center gap-2 self-start text-[11px] font-bold tracking-wider uppercase">
