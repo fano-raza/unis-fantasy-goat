@@ -184,6 +184,10 @@ export interface SeasonLeadersResponse {
   [category: string]: { best: SeasonLeaderEntry; worst: SeasonLeaderEntry };
 }
 
+// year -> category -> {best, worst} -- RS-totals league leader/lowest per
+// category per season, powering Profile's per-category badges.
+export type CategoryHistoryResponse = Record<string, SeasonLeadersResponse>;
+
 export interface StandingsRow {
   team: string;
   wins: number;
@@ -265,6 +269,9 @@ export const getLeaders = (req: LeadersRequest = {}) =>
 
 export const getSeasonLeaders = (req: SeasonLeadersRequest) =>
   post<SeasonLeadersResponse>("/league/season_leaders", req);
+
+export const getCategoryHistory = () =>
+  apiFetch<CategoryHistoryResponse>("/league/category_history");
 
 export const getHeadToHead = (req: HeadToHeadRequest) =>
   post<HeadToHeadResponse>("/league/head_to_head", req);

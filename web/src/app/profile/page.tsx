@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type ComponentType } from "react";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -27,6 +28,7 @@ import { StatTable } from "@/components/stat-table";
 import { Medal, Star, Trophy } from "lucide-react";
 import {
   getAverages,
+  getCategoryHistory,
   getLeagueMeta,
   getQuery,
   getTeamSummary,
@@ -34,6 +36,7 @@ import {
   MAIN_CATS,
   type AggregateRow,
   type Category,
+  type CategoryHistoryResponse,
   type LeagueMeta,
   type QueryRow,
   type TeamSummary,
@@ -42,6 +45,9 @@ import { NEG_CATS } from "@/lib/highlight";
 import { comparableFields, formatValue, ordinal, rankFor } from "@/lib/team-summary-fields";
 import { cn } from "@/lib/utils";
 import { ProfileHistoryChart } from "@/components/profile-history-chart";
+import { buildBadges } from "@/lib/badges";
+import { TeamBadges } from "@/components/team-badges";
+import { BadgeDrawer } from "@/components/badge-drawer";
 
 // Gold / silver / bronze for the League Top 3 table's 1st/2nd/3rd rank text
 // -- topFields is always filtered to rank <= 3, so no 4th-place case exists.
@@ -59,9 +65,13 @@ function rankColorClass(rank: number): string {
 const TOP3_EXCLUDED = new Set([
   "Championship Years",
   "MVP Years",
+  "Worst Ratings",
+  "Worst Rating Years",
   "Best RS Rating",
   "Best RS Rating Years",
   "RS 1st Years",
+  "RS Last Place",
+  "RS Last Years",
   "Best RS Finish",
   "Best RS Finish Years",
   "Best Week Rating",
@@ -136,6 +146,7 @@ export default function ProfilePage() {
   const [totals, setTotals] = useState<AggregateRow[]>([]);
   const [averages, setAverages] = useState<AggregateRow[]>([]);
   const [queryTotals, setQueryTotals] = useState<Record<string, QueryRow[]>>({});
+  const [categoryHistory, setCategoryHistory] = useState<CategoryHistoryResponse | null>(null);
   const [team, setTeam] = useState<string | null>(null);
 
   useEffect(() => {
@@ -151,6 +162,7 @@ export default function ProfilePage() {
     getTeamSummary({}).then(setAllTeams);
     getTotals({}).then(setTotals);
     getAverages({}).then(setAverages);
+    getCategoryHistory().then(setCategoryHistory);
     Promise.all(
       QUERY_TOTAL_FIELDS.map((f) =>
         getQuery({
@@ -171,6 +183,11 @@ export default function ProfilePage() {
   const profile = allTeams.find((r) => r.Team === team);
   const totalsRow = totals.find((r) => r.team === team);
   const averagesRow = averages.find((r) => r.team === team);
+
+  const badges = useMemo(() => {
+    if (!team || !profile || !categoryHistory) return { positive: [], negative: [] };
+    return buildBadges(team, profile, categoryHistory);
+  }, [team, profile, categoryHistory]);
 
   const playoffFinish = useMemo(() => {
     if (!profile) return null;
@@ -224,29 +241,34 @@ export default function ProfilePage() {
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="sticky top-0 z-30 flex items-center gap-2 rounded-sm border border-border bg-card px-3 py-2 shadow-sm">
+        <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+          Team
+        </span>
+        <Select value={team} onValueChange={(v) => v !== null && setTeam(v)}>
+          <SelectTrigger size="sm">
+            <SelectValue>{(v: string) => v}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {meta.members.map((m) => (
+              <SelectItem key={m} value={m}>
+                {m}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       <Card>
         <CardHeader>
           <CardDescription>Career Profile</CardDescription>
           <CardTitle className="text-4xl sm:text-5xl">{team}</CardTitle>
+          <CardAction className="hidden max-w-md sm:block">
+            <TeamBadges positive={badges.positive} negative={badges.negative} />
+          </CardAction>
         </CardHeader>
-        <CardContent>
-          <label className="flex items-center gap-2">
-            <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
-              Team
-            </span>
-            <Select value={team} onValueChange={(v) => v !== null && setTeam(v)}>
-              <SelectTrigger size="sm">
-                <SelectValue>{(v: string) => v}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {meta.members.map((m) => (
-                  <SelectItem key={m} value={m}>
-                    {m}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </label>
+        <CardContent className="sm:hidden">
+          <BadgeDrawer positive={badges.positive} negative={badges.negative} />
         </CardContent>
       </Card>
 

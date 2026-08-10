@@ -131,6 +131,54 @@ export default function ComparisonPage() {
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="sticky top-0 z-30 flex flex-wrap items-center gap-2 rounded-sm border border-border bg-card px-3 py-2 shadow-sm">
+        {visibleSelected.map((team) => (
+          <span
+            key={team}
+            className="flex items-center gap-1.5 rounded-sm bg-secondary px-3 py-1 text-xs font-bold tracking-wide text-secondary-foreground uppercase"
+          >
+            {team}
+            <button
+              type="button"
+              onClick={() => setSelected((s) => s.filter((t) => t !== team))}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          </span>
+        ))}
+        {canAddMore && (
+          <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger
+              className={buttonVariants({ variant: "outline", size: "sm" })}
+            >
+              + Add team
+            </PopoverTrigger>
+            <PopoverContent className="w-56 p-0">
+              <Command>
+                <CommandInput placeholder="Search teams..." />
+                <CommandList>
+                  <CommandEmpty>No teams found.</CommandEmpty>
+                  <CommandGroup>
+                    {available.map((row) => (
+                      <CommandItem
+                        key={row.Team}
+                        onSelect={() => {
+                          setSelected((s) => [...s, row.Team]);
+                          setOpen(false);
+                        }}
+                      >
+                        {row.Team}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+        )}
+      </div>
+
       <Card>
         <CardHeader>
           <CardTitle>Career Comparison</CardTitle>
@@ -138,53 +186,6 @@ export default function ComparisonPage() {
             Add teams to compare career profile stats side by side
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-wrap items-center gap-2">
-          {visibleSelected.map((team) => (
-            <span
-              key={team}
-              className="flex items-center gap-1.5 rounded-sm bg-secondary px-3 py-1 text-xs font-bold tracking-wide text-secondary-foreground uppercase"
-            >
-              {team}
-              <button
-                type="button"
-                onClick={() => setSelected((s) => s.filter((t) => t !== team))}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X className="size-3.5" />
-              </button>
-            </span>
-          ))}
-          {canAddMore && (
-            <Popover open={open} onOpenChange={setOpen}>
-              <PopoverTrigger
-                className={buttonVariants({ variant: "outline", size: "sm" })}
-              >
-                + Add team
-              </PopoverTrigger>
-              <PopoverContent className="w-56 p-0">
-                <Command>
-                  <CommandInput placeholder="Search teams..." />
-                  <CommandList>
-                    <CommandEmpty>No teams found.</CommandEmpty>
-                    <CommandGroup>
-                      {available.map((row) => (
-                        <CommandItem
-                          key={row.Team}
-                          onSelect={() => {
-                            setSelected((s) => [...s, row.Team]);
-                            setOpen(false);
-                          }}
-                        >
-                          {row.Team}
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
-          )}
-        </CardContent>
       </Card>
 
       <Card>

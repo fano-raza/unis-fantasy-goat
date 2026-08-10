@@ -19,6 +19,41 @@ import {
   type LeagueMeta,
   type WeekRow,
 } from "@/lib/api";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+
+// Steps to the previous/next value in an ordered option list, clamped at
+// either end (no wraparound -- season and week each step independently).
+function step<T>(options: T[], current: T, delta: 1 | -1): T {
+  const idx = options.indexOf(current);
+  if (idx === -1) return current;
+  const next = idx + delta;
+  return next >= 0 && next < options.length ? options[next] : current;
+}
+
+function StepButton({
+  direction,
+  onClick,
+  disabled,
+  label,
+}: {
+  direction: "prev" | "next";
+  onClick: () => void;
+  disabled: boolean;
+  label: string;
+}) {
+  const Icon = direction === "prev" ? ChevronLeft : ChevronRight;
+  return (
+    <Button
+      variant="secondary"
+      size="icon-sm"
+      disabled={disabled}
+      onClick={onClick}
+      aria-label={label}
+    >
+      <Icon className="size-4" />
+    </Button>
+  );
+}
 
 // Standard competition ranking (ties share a rank) over just the rows
 // actually shown, using each row's rating -- NOT the backend's raw `rank`.
@@ -111,18 +146,46 @@ export default function WeeklyStatsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-4">
-          <LabeledSelect
-            label="Season"
-            value={String(year)}
-            onValueChange={(v) => setYear(Number(v))}
-            options={meta.years.map((y) => ({ value: String(y), label: String(y) }))}
-          />
-          <LabeledSelect
-            label="Week"
-            value={String(week)}
-            onValueChange={(v) => setWeek(Number(v))}
-            options={weekOptions.map((w) => ({ value: String(w), label: String(w) }))}
-          />
+          <div className="flex items-center gap-1">
+            <LabeledSelect
+              label="Season"
+              value={String(year)}
+              onValueChange={(v) => setYear(Number(v))}
+              options={meta.years.map((y) => ({ value: String(y), label: String(y) }))}
+            />
+            <StepButton
+              direction="prev"
+              label="Previous season"
+              disabled={meta.years.indexOf(year) <= 0}
+              onClick={() => setYear(step(meta.years, year, -1))}
+            />
+            <StepButton
+              direction="next"
+              label="Next season"
+              disabled={meta.years.indexOf(year) >= meta.years.length - 1}
+              onClick={() => setYear(step(meta.years, year, 1))}
+            />
+          </div>
+          <div className="flex items-center gap-1">
+            <LabeledSelect
+              label="Week"
+              value={String(week)}
+              onValueChange={(v) => setWeek(Number(v))}
+              options={weekOptions.map((w) => ({ value: String(w), label: String(w) }))}
+            />
+            <StepButton
+              direction="prev"
+              label="Previous week"
+              disabled={weekOptions.indexOf(week) <= 0}
+              onClick={() => setWeek(step(weekOptions, week, -1))}
+            />
+            <StepButton
+              direction="next"
+              label="Next week"
+              disabled={weekOptions.indexOf(week) >= weekOptions.length - 1}
+              onClick={() => setWeek(step(weekOptions, week, 1))}
+            />
+          </div>
           <Button
             variant="secondary"
             size="sm"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   Table,
   TableBody,
@@ -64,11 +64,18 @@ function formatValue(value: number | undefined, cat: Category, mode: StatDisplay
 }
 
 // Team is always frozen on horizontal scroll; Score (only present when
-// showFocusScore is on, i.e. Weekly Stats) freezes right after it. Fixed
-// widths make the Score column's sticky `left` offset a reliable constant
-// rather than depending on Team's variable text width.
+// showFocusScore is on, i.e. Weekly Stats) freezes right after it.
+// `w-24` on the Team cell is only a hint, not authoritative: this table
+// uses table-layout: auto (needed so the 9 category columns can size to
+// their own content), and under auto layout the browser's own column-
+// sizing algorithm can render a `width`-styled <td> narrower than its
+// specified width (measured ~81px in practice, not 96px). A hardcoded
+// `left-24` on Score assumed exactly 96px, leaving a gap that let
+// horizontally-scrolled content show through between the two sticky
+// columns on narrow viewports. Fixed below by measuring Team's actual
+// rendered width and positioning Score there instead of assuming a
+// constant.
 const TEAM_COL_WIDTH = "w-24";
-const SCORE_COL_LEFT = "left-24";
 
 type SortKey = "team" | "score" | "rank" | "rating" | Category;
 type SortDir = "desc" | "asc";
@@ -82,17 +89,19 @@ function SortableHead({
   sort,
   onToggle,
   className,
+  style,
   children,
 }: {
   sortKey: SortKey;
   sort: SortState | null;
   onToggle: (key: SortKey) => void;
   className?: string;
+  style?: CSSProperties;
   children: ReactNode;
 }) {
   const active = sort?.key === sortKey;
   return (
-    <TableHead className={className}>
+    <TableHead className={className} style={style}>
       <button
         type="button"
         onClick={() => onToggle(sortKey)}
@@ -116,6 +125,21 @@ function SortableHead({
 export function StatTable({ rows, mode, focusTeam, showFocusScore }: StatTableProps) {
   const [sort, setSort] = useState<SortState | null>(null);
   const baseline = focusTeam ? rows.find((r) => r.team === focusTeam) : undefined;
+
+  // Measures the first row's actual rendered Team-cell width and positions
+  // the sticky Score column there -- see the TEAM_COL_WIDTH comment above
+  // for why a hardcoded offset isn't reliable here.
+  const firstTeamCellRef = useRef<HTMLTableCellElement | null>(null);
+  const [scoreLeft, setScoreLeft] = useState<number>(96);
+  useEffect(() => {
+    const el = firstTeamCellRef.current;
+    if (!el || !showFocusScore) return;
+    const update = () => setScoreLeft(el.getBoundingClientRect().width);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [showFocusScore, rows]);
 
   // Click a header: first click sorts largest-to-smallest (or A-Z for
   // Team), a second click on the same column flips to smallest-to-largest,
@@ -175,7 +199,8 @@ export function StatTable({ rows, mode, focusTeam, showFocusScore }: StatTablePr
               sortKey="score"
               sort={sort}
               onToggle={toggleSort}
-              className={cn("text-right", "sticky z-10 bg-card", SCORE_COL_LEFT)}
+              className={cn("text-right", "sticky z-10 bg-card")}
+              style={{ left: scoreLeft }}
             >
               Score
             </SortableHead>
@@ -194,13 +219,14 @@ export function StatTable({ rows, mode, focusTeam, showFocusScore }: StatTablePr
         </TableRow>
       </TableHeader>
       <TableBody>
-        {sortedRows.map((row) => {
+        {sortedRows.map((row, i) => {
           const source = mode === "stat" ? row.stats : row.ratings;
           const baseSource = baseline ? (mode === "stat" ? baseline.stats : baseline.ratings) : undefined;
           const isFocus = row.team === focusTeam;
           return (
             <TableRow key={row.team} className={isFocus ? "bg-focus-row" : undefined}>
               <TableCell
+                ref={i === 0 ? firstTeamCellRef : undefined}
                 className={cn(
                   TEAM_COL_WIDTH,
                   "sticky left-0 z-10 bg-card font-sans font-extrabold tracking-wide uppercase",
@@ -214,11 +240,8 @@ export function StatTable({ rows, mode, focusTeam, showFocusScore }: StatTablePr
               </TableCell>
               {showFocusScore && (
                 <TableCell
-                  className={cn(
-                    "sticky z-10 bg-card text-right",
-                    SCORE_COL_LEFT,
-                    isFocus && "bg-focus-row",
-                  )}
+                  className={cn("sticky z-10 bg-card text-right", isFocus && "bg-focus-row")}
+                  style={{ left: scoreLeft }}
                 >
                   {baseline && !isFocus ? (
                     (() => {
@@ -271,12 +294,16 @@ export function StatTable({ rows, mode, focusTeam, showFocusScore }: StatTablePr
                     key={cat}
                     className={cn("text-right font-semibold", comparisonClass[comparison])}
                   >
-                    {formatValue(value, cat, mode)}
-                    {record && (
-                      <span className="ml-1 font-mono text-xs text-muted-foreground">
-                        ({record.w}-{record.l}
-                        {record.t > 0 ? `-${record.t}` : ""})
+                    {record ? (
+                      <span className="flex flex-col items-end leading-tight">
+                        <span>{formatValue(value, cat, mode)}</span>
+                        <span className="font-mono text-[10px] text-muted-foreground">
+                          ({record.w}-{record.l}
+                          {record.t > 0 ? `-${record.t}` : ""})
+                        </span>
                       </span>
+                    ) : (
+                      formatValue(value, cat, mode)
                     )}
                   </TableCell>
                 );

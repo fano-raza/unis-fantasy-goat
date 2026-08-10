@@ -218,6 +218,24 @@ class LeagueStore:
             }
         return out
 
+    def category_history(self) -> dict:
+        """For every year, per-category league leader and lowest team (RS
+        totals) -- powers Profile's per-category badge system ("led the
+        league" / "bottom of the league" for a given stat, per season).
+        Regular-season only, matching this app's "RS 1st Place"/"RS Last
+        Place" framing for league-wide season-level distinctions. Reuses
+        season_leaders() per year rather than a new aggregation -- cheap,
+        since _filtered_raw's underlying data is already loaded/cached."""
+        df = self.store.df
+        years = sorted(df["Year"].dropna().astype(int).unique().tolist())
+        out: dict[int, dict] = {}
+        for year in years:
+            try:
+                out[year] = self.season_leaders(years=[year], weeks=None, RS=True, PO=False, mode="totals")
+            except Exception:
+                continue
+        return out
+
     def team_summary(self, teams: list[str] | None = None) -> list[dict]:
         """Career profile stats (chips, finals, playoffs, streaks, draft scores)
         for the Career Comparison page. Reads scripts/export_team_summary.py's
@@ -239,7 +257,9 @@ class LeagueStore:
         "Finals Years",
         "Playoff Years",
         "MVP Years",
+        "Worst Rating Years",
         "RS 1st Years",
+        "RS Last Years",
         "Best RS Rating Years",
         "Best RS Finish Years",
     ]

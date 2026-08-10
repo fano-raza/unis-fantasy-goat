@@ -168,10 +168,18 @@ def build_team_summary_df(teams: list | None = None, reuse_managers: dict | None
     if not teams:
         teams = managers.keys()
 
-    # --- MVP count + MVP years: for each year, find the team(s) with best (lowest) avg RS rating
+    # --- MVP count + MVP years: for each year, find the team(s) with best (lowest) avg RS rating.
+    # "Worst Rating" is the symmetric opposite (highest/worst avg RS rating that
+    # year) -- an anti-MVP, added for the Profile page's badge system.
     member_keys = list(managers.keys())
     mvp_count = {name: 0 for name in member_keys}
     mvp_years = {name: [] for name in member_keys}
+    worst_rating_count = {name: 0 for name in member_keys}
+    worst_rating_years = {name: [] for name in member_keys}
+    # Also used below to detect "RS Last Place" -- how many teams were in the
+    # league that year, so a team's own per_year_rs_finish can be compared
+    # against the bottom of that year's standings.
+    team_count_by_year: dict[int, int] = {}
 
     years_all = sorted({y for tm in managers.values() for y in tm.yearsPlayed})
 
@@ -179,6 +187,7 @@ def build_team_summary_df(teams: list | None = None, reuse_managers: dict | None
         teams_that_year = [t for t in member_keys if year in managers[t].yearsPlayed]
         if not teams_that_year:
             continue
+        team_count_by_year[year] = len(teams_that_year)
 
         year_avg = {}
         for t in teams_that_year:
@@ -192,10 +201,15 @@ def build_team_summary_df(teams: list | None = None, reuse_managers: dict | None
 
         best_val = min(year_avg.values())
         winners = [t for t, v in year_avg.items() if v == best_val]
+        worst_val = max(year_avg.values())
+        losers = [t for t, v in year_avg.items() if v == worst_val]
 
         for w in winners:
             mvp_count[w] += 1
             mvp_years[w].append(year)
+        for w in losers:
+            worst_rating_count[w] += 1
+            worst_rating_years[w].append(year)
 
     rows = []
 
@@ -303,6 +317,13 @@ def build_team_summary_df(teams: list | None = None, reuse_managers: dict | None
             else []
         )
 
+        # --- RS Last Place: years this team finished dead last in the RS
+        # standings (the symmetric opposite of RS 1st Place below) -- added
+        # for the Profile page's badge system.
+        rs_last_years = [
+            y for y, v in per_year_rs_finish.items() if v == team_count_by_year.get(y)
+        ]
+
         # --- Ratings/Standings (RS only)
         rs_df = tm.get_filtered_df(RS=True, PO=False, real=True)
 
@@ -353,8 +374,12 @@ def build_team_summary_df(teams: list | None = None, reuse_managers: dict | None
 
             "MVPs": mvp_count.get(name, 0),
             "MVP Years": ", ".join(map(str, mvp_years.get(name, []))),
+            "Worst Ratings": worst_rating_count.get(name, 0),
+            "Worst Rating Years": ", ".join(map(str, worst_rating_years.get(name, []))),
             "RS 1st Place": rs_chip_count,
             "RS 1st Years": ", ".join(map(str, rs_chip_years)),
+            "RS Last Place": len(rs_last_years),
+            "RS Last Years": ", ".join(map(str, rs_last_years)),
             "Best RS Rating": best_rs_rating,
             "Best RS Rating Years": ", ".join(map(str, best_rs_rating_years)),
             "Best RS Finish": best_rs_finish,

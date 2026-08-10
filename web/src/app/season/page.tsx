@@ -177,18 +177,18 @@ export default function SeasonPage() {
                       {cat}
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-2">
-                      <span className="text-xs font-bold tracking-wide text-win uppercase">
+                      <span className="text-xs font-bold tracking-wide text-foreground uppercase">
                         {entry.best.team}
                       </span>
-                      <span className="font-mono text-sm font-extrabold tabular-nums text-win">
+                      <span className="font-mono text-sm font-extrabold tabular-nums text-foreground">
                         {formatCatValue(cat, entry.best.value)}
                       </span>
                     </div>
                     <div className="mt-1 flex items-center justify-between gap-2">
-                      <span className="text-xs font-bold tracking-wide text-loss uppercase">
+                      <span className="text-xs font-bold tracking-wide text-muted-foreground uppercase">
                         {entry.worst.team}
                       </span>
-                      <span className="font-mono text-sm font-extrabold tabular-nums text-loss">
+                      <span className="font-mono text-sm font-extrabold tabular-nums text-muted-foreground">
                         {formatCatValue(cat, entry.worst.value)}
                       </span>
                     </div>
