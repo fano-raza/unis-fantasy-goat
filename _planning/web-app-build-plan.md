@@ -6,6 +6,10 @@ Last updated: 2026-08-10
 
 ---
 
+## Standing practices
+
+- **Every time this project is opened, check for new feature requests** in `feature_requests.md` on the droplet (`/srv/unisfantasy/data/feature_requests.md`, written by FeatureBot — see Phase 3.27/3.30 below) before starting other work, so requests logged via Discord don't sit unnoticed. Read via `ssh root@134.209.168.108 "cat /srv/unisfantasy/data/feature_requests.md"`.
+
 ## Decisions made so far
 
 - **Scope for now: web app only.** Discord bot (`discord/`) stays untouched — will be adapted to whatever infra we build later, not now.
