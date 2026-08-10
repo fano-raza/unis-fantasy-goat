@@ -60,6 +60,8 @@ class LeagueStore:
         self._rs_finish_history: dict | None = None
         self._po_lookup = self._load_po_real_matchup_lookup()
         self._playoff_brackets: dict | None = None
+        self._goat_computed = False
+        self._goat: str | None = None
 
     def _load_po_real_matchup_lookup(self) -> dict[tuple[int, int, str, str], bool]:
         """Count==True is a reliable "real matchup" proxy for regular-season
@@ -135,7 +137,61 @@ class LeagueStore:
             "total_matchup_count": total_matchup_count,
             "categories": MAIN_CATS,
             "season_format": season_format,
+            "goat": self.goat(),
         }
+
+    def goat(self) -> str | None:
+        """League GOAT: most Championships, tiebreak MVPs, then RS 1st
+        Place, then (still tied) career head-to-head net wins among just
+        the remaining tied teams -- per the user's exact spec. Cached like
+        the other precomputed views on this class (a fresh LeagueStore
+        instance is built on each background reload, so this naturally
+        recomputes when the underlying data changes)."""
+        if self._goat_computed:
+            return self._goat
+        self._goat_computed = True
+
+        df = self._ensure_team_summary_df()
+        if df.empty:
+            self._goat = None
+            return None
+
+        working = df.copy()
+        for col in ["Championships", "MVPs", "RS 1st Place"]:
+            working[col] = pd.to_numeric(working[col], errors="coerce").fillna(0)
+
+        def _narrow(frame: pd.DataFrame, col: str) -> pd.DataFrame:
+            if len(frame) <= 1:
+                return frame
+            best = frame[col].max()
+            return frame[frame[col] == best]
+
+        working = _narrow(working, "Championships")
+        working = _narrow(working, "MVPs")
+        working = _narrow(working, "RS 1st Place")
+
+        teams = sorted(working["Team"].astype(str).tolist())
+        if len(teams) <= 1:
+            self._goat = teams[0] if teams else None
+            return self._goat
+
+        # Career head-to-head net (wins - losses) against just the other
+        # still-tied teams, not the whole league -- generalizes cleanly to
+        # the common 2-team-tie case (reduces to "who won more of their own
+        # meetings") while still giving a deterministic answer if 3+ teams
+        # are ever tied all the way down to this point.
+        weekly = self._ensure_weekly_df()
+        best_team: str | None = None
+        best_net: int | None = None
+        for team in teams:
+            mask = weekly["Team"].isin([team]) & weekly["Opp"].isin([t for t in teams if t != team])
+            sub = weekly[mask]
+            net = int(sub["MATCHUP_WINS"].sum()) - int(sub["MATCHUP_LOSSES"].sum())
+            if best_net is None or net > best_net:
+                best_net = net
+                best_team = team
+        self._goat = best_team or teams[0]
+        return self._goat
 
     def weekly_team(self, year: int, week: int, team: str) -> dict:
         df = self._ensure_weekly_df()

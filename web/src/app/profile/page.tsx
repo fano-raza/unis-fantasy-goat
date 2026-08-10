@@ -225,8 +225,8 @@ function ProfilePageInner() {
 
   const badges = useMemo(() => {
     if (!team || !profile || !categoryHistory) return { positive: [], negative: [] };
-    return buildBadges(team, profile, categoryHistory);
-  }, [team, profile, categoryHistory]);
+    return buildBadges(team, profile, categoryHistory, meta?.goat);
+  }, [team, profile, categoryHistory, meta?.goat]);
 
   const uniquePositiveCount = new Set(badges.positive.map((b) => b.type)).size;
 

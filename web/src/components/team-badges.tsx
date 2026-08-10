@@ -89,7 +89,7 @@ function BadgeChip({ badge, open, onOpen, onClose }: {
         onMouseEnter={computeAndOpen}
         onMouseLeave={onClose}
         onClick={() => (open ? onClose() : computeAndOpen())}
-        aria-label={`${badge.label} ${badge.year}`}
+        aria-label={`${badge.label} ${badge.yearLabel ?? badge.year}`}
       >
         {badge.icon === "L" ? (
           <span className="font-mono text-sm font-extrabold text-muted-foreground">L</span>
@@ -150,7 +150,7 @@ export function TeamBadges({
         (() => {
           const badge = allBadges.find((b) => b.id === open.id);
           return badge ? (
-            <BadgeTooltip text={`${badge.label} ${badge.year}`} position={open.position} />
+            <BadgeTooltip text={`${badge.label} ${badge.yearLabel ?? badge.year}`} position={open.position} />
           ) : null;
         })()}
     </div>

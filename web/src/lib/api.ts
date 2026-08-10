@@ -34,6 +34,10 @@ export interface LeagueMeta {
   // Some seasons were actually scored by matchup W/L, others by aggregate
   // category wins -- used to default the Standings page's toggles.
   season_format: Record<string, "wl" | "cats">;
+  // Most Championships, tiebreak MVPs, then RS 1st Place, then career
+  // head-to-head among the remaining tied teams. null only if there's no
+  // team_summary data at all.
+  goat: string | null;
 }
 
 export interface WeekRow {

@@ -451,6 +451,14 @@ Verified end-to-end: `tsc --noEmit` clean, `npm run build` clean, both persisted
 
 **Not yet deployed**: needs its own Discord application/token (same Developer Portal steps as FeatureBot) before it can go live -- code is committed and locally verified, deploy is next once the user has a token.
 
+### Phase 3.29 — GOAT badge — DONE 2026-08-10 (session 13 continued)
+
+- [x] New `LeagueStore.goat()` (`dashboard_site/api/league_store.py`), exposed as a new `goat` field on `/league/meta`'s existing response (no new endpoint needed -- every page that would show this badge already fetches `meta`). Tiebreak chain exactly per the user's spec: most Championships -> most MVPs -> most RS 1st Place -> career head-to-head net wins among just the still-tied teams (not the whole league, so it correctly reduces to "who beat whom" for the common 2-team-tie case). Cached on the `LeagueStore` instance the same way `category_history`/`rs_finish_history` already are, so it naturally recomputes on the next background data reload rather than going stale.
+- [x] **Verified the tiebreak chain actually works, not just the trivial no-tie case**: the real data resolved to Chirayu without ever needing a tiebreak (2 championships, clear league lead) -- so separately monkeypatched a synthetic 3-stat tie between Fano and Sama and confirmed the head-to-head fallback correctly picked Sama, matching their real career head-to-head record (10-6) independently verified earlier this session.
+- [x] Frontend: `BadgeInstance` gained an optional `yearLabel` (defaults to the numeric `year` in the hover/tap tooltip when absent) so the GOAT badge -- an all-time distinction, not tied to one year -- can show "All-Time" instead of a year without touching how every other badge already renders. `buildBadges()` takes a new optional `goatTeam` param and pushes a 🐐-icon GOAT badge when the profile being viewed matches it. Added "GOAT" to the front of both `BADGE_TYPE_ORDER` (user asked it be the first badge shown) and `POSITIVE_BADGE_TYPES` (so the Profile page's "Unique Badges" denominator correctly became 14, not 13).
+
+Verified end-to-end: `tsc --noEmit` clean, `npm run build` clean, both persisted Playwright regression suites (50 checks, zero regressions), plus targeted checks -- Chirayu shows exactly one 🐐 badge and it's the first chip rendered, every other team shows zero, tooltip reads "GOAT All-Time", subtitle counter correctly shows the new /14 denominator. **Committed, pushed, and deployed** to both Vercel (frontend) and the droplet (backend).
+
 ### Deferred / not v1
 - Auth / per-member profiles
 - Postgres migration (revisit only if auth/profiles need per-user state)

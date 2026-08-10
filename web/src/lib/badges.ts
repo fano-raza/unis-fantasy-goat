@@ -13,6 +13,9 @@ export interface BadgeInstance {
   year: number;
   positive: boolean;
   type: string; // groups badges of the same kind together regardless of year -- see BADGE_TYPE_ORDER
+  // Overrides the numeric year in the hover/tap tooltip -- for badges not
+  // tied to a single year (currently only GOAT, an all-time distinction).
+  yearLabel?: string;
 }
 
 // Best-effort emoji picks for the user's spec -- FT% loser has no exact
@@ -35,6 +38,7 @@ const CATEGORY_BADGE_ICONS: Record<Category, { leader: string; loser: string }> 
 // are grouped together regardless of year (sortBadges below sorts by this
 // index first, year only as the tiebreak within a type).
 const BADGE_TYPE_ORDER = [
+  "GOAT",
   "Championship",
   "Runner-Up",
   "MVP",
@@ -44,10 +48,11 @@ const BADGE_TYPE_ORDER = [
   ...MAIN_CATS.flatMap((cat) => [`${cat} Leader`, `${cat} Loser`]),
 ];
 
-// Every distinct positive badge *type* that can possibly exist (4 "other"
+// Every distinct positive badge *type* that can possibly exist (5 "other"
 // achievements + one Leader badge per category) -- the denominator for the
-// Profile page's "Unique Badges" counter, e.g. "6/13".
+// Profile page's "Unique Badges" counter, e.g. "6/14".
 export const POSITIVE_BADGE_TYPES = [
+  "GOAT",
   "Championship",
   "Runner-Up",
   "MVP",
@@ -119,8 +124,20 @@ export function buildBadges(
   team: string,
   profile: TeamSummary,
   history: CategoryHistoryResponse,
+  goatTeam?: string | null,
 ): { positive: BadgeInstance[]; negative: BadgeInstance[] } {
   const all = [...categoryBadges(team, history), ...otherBadges(profile)];
+  if (goatTeam && team === goatTeam) {
+    all.push({
+      id: "goat",
+      icon: "🐐",
+      label: "GOAT",
+      year: 0,
+      yearLabel: "All-Time",
+      positive: true,
+      type: "GOAT",
+    });
+  }
   return {
     positive: sortBadges(all.filter((b) => b.positive)),
     negative: sortBadges(all.filter((b) => !b.positive)),
