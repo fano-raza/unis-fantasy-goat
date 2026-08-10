@@ -21,7 +21,13 @@ from pathlib import Path
 import disnake
 from disnake.ext import commands
 
-from discord.bot_env import build_ssl_connector, ensure_ssl_ca_bundle, load_local_env, strip_bot_mention
+from discord.bot_env import (
+    build_ssl_connector,
+    ensure_ssl_ca_bundle,
+    load_local_env,
+    parse_test_guild_ids,
+    strip_bot_mention,
+)
 from shared.runtime_config import feature_requests_path
 
 CHECKBOX_REACTION = "☑️"  # ballot box with check (☑️)
@@ -34,6 +40,10 @@ def _ensure_file(path: Path) -> None:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("# Feature Requests\n\n" + "\n\n".join(f"{h}\n" for h in SECTION_HEADERS))
+
+
+def _location_for(channel) -> str:
+    return f"#{channel.name}" if hasattr(channel, "name") else "a DM"
 
 
 def append_feature_request(author: str, location: str, content: str) -> None:
@@ -69,7 +79,12 @@ def run_bot() -> None:
     intents.message_content = True
 
     connector = build_ssl_connector()
-    bot = commands.Bot(command_prefix="!", intents=intents, connector=connector)
+    # No prefix commands here, only slash + mention-based -- avoids disnake's
+    # warning about a "!" prefix needing Message Content intent for
+    # functionality this bot never uses.
+    bot = commands.Bot(command_prefix=commands.when_mentioned, intents=intents, connector=connector)
+    test_guild_ids = parse_test_guild_ids()
+    slash_kwargs = {"guild_ids": test_guild_ids} if test_guild_ids else {}
 
     @bot.event
     async def on_ready():
@@ -86,10 +101,9 @@ def run_bot() -> None:
         if not content:
             return
 
-        location = f"#{message.channel.name}" if hasattr(message.channel, "name") else "a DM"
         append_feature_request(
             author=str(message.author.display_name or message.author.name),
-            location=location,
+            location=_location_for(message.channel),
             content=content,
         )
 
@@ -97,5 +111,23 @@ def run_bot() -> None:
             await message.add_reaction(CHECKBOX_REACTION)
         except Exception as exc:
             print(f"Failed to react to feature request message: {exc}")
+
+    @bot.slash_command(
+        name="feature-request",
+        description="Log a feature request without tagging the bot.",
+        **slash_kwargs,
+    )
+    async def feature_request(inter: disnake.ApplicationCommandInteraction, request: str):
+        append_feature_request(
+            author=str(inter.author.display_name or inter.author.name),
+            location=_location_for(inter.channel),
+            content=request,
+        )
+        await inter.response.send_message(f'📋 Logged: "{request}"')
+        try:
+            msg = await inter.original_response()
+            await msg.add_reaction(CHECKBOX_REACTION)
+        except Exception as exc:
+            print(f"Failed to react to feature request confirmation: {exc}")
 
     bot.run(token)

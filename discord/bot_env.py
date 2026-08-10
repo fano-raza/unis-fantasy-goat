@@ -63,3 +63,14 @@ def load_local_env() -> None:
 
 def strip_bot_mention(content: str, bot_user_id: int) -> str:
     return content.replace(f"<@{bot_user_id}>", "").replace(f"<@!{bot_user_id}>", "").strip()
+
+
+def parse_test_guild_ids() -> list[int] | None:
+    """Comma-separated DISCORD_TEST_GUILD_IDS -> guild-scoped slash command
+    registration (near-instant) instead of global (can take up to an hour
+    to propagate, sometimes longer)."""
+    raw = os.getenv("DISCORD_TEST_GUILD_IDS", "").strip()
+    if not raw:
+        return None
+    ids = [int(p.strip()) for p in raw.split(",") if p.strip()]
+    return ids or None

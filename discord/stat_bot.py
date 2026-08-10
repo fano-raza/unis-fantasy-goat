@@ -18,17 +18,9 @@ import aiohttp
 import disnake
 from disnake.ext import commands
 
-from discord.bot_env import build_ssl_connector, ensure_ssl_ca_bundle, load_local_env
+from discord.bot_env import build_ssl_connector, ensure_ssl_ca_bundle, load_local_env, parse_test_guild_ids
 
 API_BASE_URL = os.getenv("DASHBOARD_API_BASE_URL", "http://dashboard-api:8090")
-
-
-def _parse_test_guild_ids() -> list[int] | None:
-    raw = os.getenv("DISCORD_TEST_GUILD_IDS", "").strip()
-    if not raw:
-        return None
-    ids = [int(p.strip()) for p in raw.split(",") if p.strip()]
-    return ids or None
 
 
 def _load_user_team_maps() -> tuple[dict[str, str], dict[str, list[str]]]:
@@ -94,7 +86,7 @@ def run_bot() -> None:
     # disnake's warning about a "!" prefix needing Message Content intent
     # for functionality this bot never uses.
     bot = commands.Bot(command_prefix=commands.when_mentioned, intents=intents, connector=connector)
-    test_guild_ids = _parse_test_guild_ids()
+    test_guild_ids = parse_test_guild_ids()
     slash_kwargs = {"guild_ids": test_guild_ids} if test_guild_ids else {}
 
     def _resolve_team(user: disnake.User | disnake.Member) -> Optional[str]:
