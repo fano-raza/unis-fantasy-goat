@@ -14,6 +14,7 @@ from GDoc.GDoc_AllTime import *
 from datetime import timedelta
 from discord.discord_messages import notify_milestones
 from shared.runtime_config import calendar_csv_path
+from scripts.export_playoff_brackets import main as export_playoff_brackets
 
 app = Flask(__name__)
 EASTERN_TZ = ZoneInfo("America/New_York")
@@ -73,6 +74,20 @@ def run_updater():
             try:
                 updateStatCSV(year)
                 updateStandings(year)
+
+                # Playoff bracket data (Standings page's playoff tree toggle) only
+                # changes when there's a new playoff result. currentWeek can't
+                # gate this: bs_calList() pins it at the calendar's last row
+                # forever once today is past the season's final date, so months
+                # after the season ends this would otherwise look identical to
+                # being mid-playoffs. Check real calendar proximity to the
+                # season's actual final week (calList's last row) instead.
+                last_week_start = calList[-1][1]
+                if playoffTeamCount.get(year, 0) > 0 and abs((today - last_week_start).days) <= 10:
+                    try:
+                        export_playoff_brackets()
+                    except Exception as bracket_exc:
+                        print(f"playoff_brackets export warning: {bracket_exc}")
 
                 league = fantasyLeague()
 
