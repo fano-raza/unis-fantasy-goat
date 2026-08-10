@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Card,
   CardContent,
@@ -31,6 +32,17 @@ function formatCatValue(cat: Category, value: number): string {
 }
 
 export default function SeasonPage() {
+  return (
+    <Suspense fallback={<LoadingBasketballs label="Loading" />}>
+      <SeasonPageInner />
+    </Suspense>
+  );
+}
+
+// useSearchParams() (for the ?year= deep link) requires a Suspense boundary
+// around whatever calls it, per Next.js -- the actual page content lives
+// here, wrapped by the plain default export above.
+function SeasonPageInner() {
   const [meta, setMeta] = useState<LeagueMeta | null>(null);
   const [year, setYear] = useState<number | null>(null);
   const [statMode, setStatMode] = useState<"totals" | "averages">("totals");
@@ -40,12 +52,19 @@ export default function SeasonPage() {
   const [rows, setRows] = useState<AggregateRow[]>([]);
   const [leaders, setLeaders] = useState<SeasonLeadersResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const searchParams = useSearchParams();
 
   useEffect(() => {
+    // A ?year= link (from a Profile stat-tile deep link) wins over the
+    // default current year, if it's a real year for this league.
+    const yearFromUrl = Number(searchParams.get("year"));
     getLeagueMeta().then((m) => {
       setMeta(m);
-      setYear(m.current_year);
+      setYear(m.years.includes(yearFromUrl) ? yearFromUrl : m.current_year);
     });
+    // Deliberately only reads searchParams once, at mount -- see the
+    // matching comment on Profile's ?team= handling for why.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const weeks = useMemo(() => {

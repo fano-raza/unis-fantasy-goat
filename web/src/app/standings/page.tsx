@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   CartesianGrid,
@@ -139,6 +140,17 @@ function toRankMap(rows: StandingsRow[]): Map<string, number> {
 }
 
 export default function StandingsPage() {
+  return (
+    <Suspense fallback={<LoadingBasketballs label="Loading" />}>
+      <StandingsPageInner />
+    </Suspense>
+  );
+}
+
+// useSearchParams() (for the ?year= deep link) requires a Suspense boundary
+// around whatever calls it, per Next.js -- the actual page content lives
+// here, wrapped by the plain default export above.
+function StandingsPageInner() {
   const [meta, setMeta] = useState<LeagueMeta | null>(null);
   const [year, setYear] = useState<number | null>(null);
   const [weekRange, setWeekRange] = useState<[number, number] | null>(null);
@@ -149,12 +161,19 @@ export default function StandingsPage() {
   const [previousStandings, setPreviousStandings] = useState<StandingsResponse | null>(null);
   const [history, setHistory] = useState<StandingsHistoryResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const searchParams = useSearchParams();
 
   useEffect(() => {
+    // A ?year= link (from a Profile stat-tile deep link) wins over the
+    // default current year, if it's a real year for this league.
+    const yearFromUrl = Number(searchParams.get("year"));
     getLeagueMeta().then((m) => {
       setMeta(m);
-      setYear(m.current_year);
+      setYear(m.years.includes(yearFromUrl) ? yearFromUrl : m.current_year);
     });
+    // Deliberately only reads searchParams once, at mount -- see the
+    // matching comment on Profile's ?team= handling for why.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const maxWeek = useMemo(() => {

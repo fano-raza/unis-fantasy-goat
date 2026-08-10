@@ -392,6 +392,13 @@ Verified end-to-end: `npm run build` clean, `tsc --noEmit` clean, full Playwrigh
 
 Verified end-to-end: `tsc --noEmit` clean, `npm run build` clean, both persisted Playwright regression suites (29 + 21 = 50 checks, zero regressions), plus targeted checks — direct `?team=` deep link, Standings/Weekly Stats/Career Stats/Comparison links all present with correct `href`s, and a full click-through (Standings row → `/profile?team=Fano`, correct team selected). **Committed, pushed, and deployed** to Vercel (frontend-only change, no backend touched, no droplet redeploy needed).
 
+### Phase 3.24 — Season + Standings: `?year=` URL param support — DONE 2026-08-10 (session 13 continued)
+
+- [x] Same pattern as Phase 3.23's `?team=` support: both `web/src/app/season/page.tsx` and `web/src/app/standings/page.tsx` split into a thin `Suspense`-wrapped default export plus an `*Inner` component reading `useSearchParams()`. A `?year=` link is honored only if it's a real year in `meta.years`; otherwise (missing or invalid) falls back to `meta.current_year` exactly as before this existed. Read once at mount only, same reasoning as `?team=`.
+- [x] This exists specifically as a prerequisite for Phase 3.25/#28 (Profile's stat-tile deep links) — Season now doubles as the "Ratings page" a specific year, and Standings as the "RS finish" page for a specific year.
+
+Verified end-to-end: `tsc --noEmit` clean, `npm run build` clean, both persisted Playwright regression suites (50 checks, zero regressions), plus targeted checks — `?year=2021` correctly selects 2021 on both pages, an invalid `?year=1999` correctly falls back to the current year (2026) rather than erroring or showing nothing. **Committed, pushed, and deployed** to Vercel (frontend-only change).
+
 ### Deferred / not v1
 - Auth / per-member profiles
 - Postgres migration (revisit only if auth/profiles need per-user state)
@@ -482,4 +489,5 @@ Verified end-to-end: `tsc --noEmit` clean, `npm run build` clean, both persisted
   - Broke this into 4 tracked tasks: global team-name links (#25, this entry), URL `?year=` support for Season/Standings (#26, prerequisite for #28), the playoff-tree feature itself (#27), and the Profile stat-tile deep links (#28, depends on #26 and #27). Sequenced this way because #28's per-tile logic needs both #26 (a Ratings-page link target) and #27 (a playoff-tree link target) to exist first.
   - **Closed out #25 this entry**: `?team=` param support added to Profile (`web/src/app/profile/page.tsx`, required splitting the page into a `Suspense`-wrapped shell + inner component since `useSearchParams()` needs that boundary in the App Router -- hit and fixed the resulting build error). Team-name cells now link to `/profile?team=<team>` in `stat-table.tsx` (Weekly Stats/Career Stats/Profile's own tables), `standings/page.tsx`, and `comparison/page.tsx`. Full detail in Phase 3.23 above.
   - Verified end-to-end (`tsc --noEmit`, `npm run build`, both 50-check Playwright regression suites, targeted click-through and href checks on every page) and deployed to Vercel (frontend-only, no backend change).
-  - Next up in this batch: #26 (year param support), then #27 (playoff tree -- will need a new heavy-venv precomputed export script following `export_real_matchup_flags.py`'s pattern, per this project's established rule against re-deriving bracket/seeding logic in the lightweight dashboard_site path), then #28.
+  - **Closed out #26 this entry**: `?year=` param support on Season and Standings, same Suspense-split pattern as `?team=`. Full detail in Phase 3.24 above.
+  - Next up in this batch: #27 (playoff tree -- will need a new heavy-venv precomputed export script following `export_real_matchup_flags.py`'s pattern, per this project's established rule against re-deriving bracket/seeding logic in the lightweight dashboard_site path), then #28.
