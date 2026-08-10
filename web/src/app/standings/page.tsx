@@ -2,6 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import {
   Card,
   CardContent,
   CardDescription,
@@ -19,13 +29,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { LabeledSelect } from "@/components/labeled-select";
+import { categoricalPalette } from "@/lib/palette";
 import {
   getLeagueMeta,
   getStandings,
+  getStandingsHistory,
   type LeagueMeta,
+  type StandingsHistoryResponse,
   type StandingsResponse,
   type StandingsRow,
 } from "@/lib/api";
+import { ArrowDown, ArrowUp } from "lucide-react";
 
 // Games Behind: leader's score minus this row's score, score = wins + 0.5*ties
 // (the user's own explicit formula -- note this is a plain half-point, not
@@ -42,7 +56,16 @@ function formatGB(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
-function StandingsTable({ rows }: { rows: StandingsRow[] }) {
+function StandingsTable({
+  rows,
+  previousRanks,
+}: {
+  rows: StandingsRow[];
+  // Rank as of one week earlier than the current week-range selection --
+  // when present and different, renders a green/red movement arrow next to
+  // Place. Omitted (no arrows) when the selected range is a single week.
+  previousRanks?: Map<string, number>;
+}) {
   const gb = gamesBehind(rows);
   return (
     <Table>
@@ -55,21 +78,60 @@ function StandingsTable({ rows }: { rows: StandingsRow[] }) {
         </TableRow>
       </TableHeader>
       <TableBody>
-        {rows.map((row) => (
-          <TableRow key={row.team}>
-            <TableCell>{row.rank}</TableCell>
-            <TableCell className="font-sans font-extrabold tracking-wide uppercase">
-              {row.team}
-            </TableCell>
-            <TableCell className="text-right">
-              {row.wins}-{row.losses}-{row.ties}
-            </TableCell>
-            <TableCell className="text-right">{formatGB(gb.get(row.team) ?? 0)}</TableCell>
-          </TableRow>
-        ))}
+        {rows.map((row) => {
+          const previousRank = previousRanks?.get(row.team);
+          return (
+            <TableRow key={row.team}>
+              <TableCell>
+                <span className="inline-flex items-center gap-1">
+                  {row.rank}
+                  {previousRank != null &&
+                    previousRank !== row.rank &&
+                    (row.rank < previousRank ? (
+                      <ArrowUp className="size-3 text-win" />
+                    ) : (
+                      <ArrowDown className="size-3 text-loss" />
+                    ))}
+                </span>
+              </TableCell>
+              <TableCell className="font-sans font-extrabold tracking-wide uppercase">
+                {row.team}
+              </TableCell>
+              <TableCell className="text-right">
+                {row.wins}-{row.losses}-{row.ties}
+              </TableCell>
+              <TableCell className="text-right">{formatGB(gb.get(row.team) ?? 0)}</TableCell>
+            </TableRow>
+          );
+        })}
       </TableBody>
     </Table>
   );
+}
+
+// Reshapes standings_history's {type: {team: [{week, rank}]}} into one row
+// per week with a rank column per team, the shape recharts' LineChart wants.
+function buildHistoryChartData(
+  byTeam: Record<string, { week: number; rank: number }[]>,
+  minWeek: number,
+  maxWeek: number,
+): Record<string, number>[] {
+  const teams = Object.keys(byTeam);
+  const rows: Record<string, number>[] = [];
+  for (let week = minWeek; week <= maxWeek; week++) {
+    const row: Record<string, number> = { week };
+    for (const team of teams) {
+      const point = byTeam[team]?.find((p) => p.week === week);
+      if (point) row[team] = point.rank;
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+// team -> rank, for the prior-week movement arrows.
+function toRankMap(rows: StandingsRow[]): Map<string, number> {
+  return new Map(rows.map((r) => [r.team, r.rank]));
 }
 
 export default function StandingsPage() {
@@ -79,6 +141,8 @@ export default function StandingsPage() {
   const [oneVOneMode, setOneVOneMode] = useState<"wl" | "cats">("wl");
   const [leagueMode, setLeagueMode] = useState<"wl" | "cats">("wl");
   const [standings, setStandings] = useState<StandingsResponse | null>(null);
+  const [previousStandings, setPreviousStandings] = useState<StandingsResponse | null>(null);
+  const [history, setHistory] = useState<StandingsHistoryResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -117,19 +181,44 @@ export default function StandingsPage() {
   // would be unnecessary friction here.
   useEffect(() => {
     if (year == null || !weekRange) return;
+    const [minWeek, maxWeek] = weekRange;
     const timeout = setTimeout(() => {
-      getStandings({ year, min_week: weekRange[0], max_week: weekRange[1] })
-        .then((r) => {
-          setStandings(r);
+      // "Prior" = the same range with its single latest week dropped, so
+      // the Place column can show a green/red movement arrow. Skipped for
+      // a single-week range -- there's no earlier state to compare to.
+      const priorReq = maxWeek > minWeek ? { year, min_week: minWeek, max_week: maxWeek - 1 } : null;
+      Promise.all([
+        getStandings({ year, min_week: minWeek, max_week: maxWeek }),
+        priorReq ? getStandings(priorReq).catch(() => null) : Promise.resolve(null),
+        getStandingsHistory({ year, min_week: minWeek, max_week: maxWeek }),
+      ])
+        .then(([current, prior, hist]) => {
+          setStandings(current);
+          setPreviousStandings(prior);
+          setHistory(hist);
           setError(null);
         })
         .catch((err) => {
           setStandings(null);
+          setPreviousStandings(null);
+          setHistory(null);
           setError(err instanceof Error ? err.message : String(err));
         });
     }, 200);
     return () => clearTimeout(timeout);
   }, [year, weekRange]);
+
+  // Line-graph data: mirrors the 1v1 Standings card's own WL/Cats toggle,
+  // no separate control (per the plan's clarified scope).
+  const historyChartData = useMemo(() => {
+    if (!history || !weekRange) return [];
+    return buildHistoryChartData(history[oneVOneMode], weekRange[0], weekRange[1]);
+  }, [history, oneVOneMode, weekRange]);
+  const historyTeams = useMemo(
+    () => (history ? Object.keys(history[oneVOneMode]).sort() : []),
+    [history, oneVOneMode],
+  );
+  const historyColors = useMemo(() => categoricalPalette(historyTeams.length), [historyTeams.length]);
 
   if (!meta || year == null || !weekRange) return null;
 
@@ -187,9 +276,90 @@ export default function StandingsPage() {
                   />
                   <span className="text-muted-foreground">Cats</span>
                 </label>
-                <StandingsTable rows={oneVOneMode === "wl" ? standings.wl : standings.cats} />
+                <StandingsTable
+                  rows={oneVOneMode === "wl" ? standings.wl : standings.cats}
+                  previousRanks={
+                    previousStandings
+                      ? toRankMap(oneVOneMode === "wl" ? previousStandings.wl : previousStandings.cats)
+                      : undefined
+                  }
+                />
               </CardContent>
             </Card>
+
+            {historyChartData.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Position Over Time</CardTitle>
+                  <CardDescription>
+                    Each team&apos;s {oneVOneMode === "wl" ? "W/L" : "Cats"} standings place,
+                    week by week over the selected range
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-[360px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={historyChartData} margin={{ left: 8, right: 16, top: 8, bottom: 24 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                        <XAxis
+                          dataKey="week"
+                          type="number"
+                          domain={[weekRange[0], weekRange[1]]}
+                          ticks={Array.from(
+                            { length: weekRange[1] - weekRange[0] + 1 },
+                            (_, i) => weekRange[0] + i,
+                          )}
+                          tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
+                          stroke="var(--border)"
+                          label={{
+                            value: "Week",
+                            position: "insideBottom",
+                            offset: -4,
+                            fill: "var(--muted-foreground)",
+                            fontSize: 12,
+                          }}
+                        />
+                        <YAxis
+                          reversed
+                          allowDecimals={false}
+                          domain={[1, historyTeams.length]}
+                          width={32}
+                          tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
+                          stroke="var(--border)"
+                          label={{
+                            value: "Place",
+                            angle: -90,
+                            position: "insideLeft",
+                            fill: "var(--muted-foreground)",
+                            fontSize: 12,
+                          }}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            background: "var(--card)",
+                            border: "1px solid var(--border)",
+                            fontSize: 12,
+                          }}
+                          labelFormatter={(w) => `Week ${w}`}
+                        />
+                        <Legend wrapperStyle={{ color: "var(--muted-foreground)", fontSize: 12 }} />
+                        {historyTeams.map((team, i) => (
+                          <Line
+                            key={team}
+                            dataKey={team}
+                            name={team}
+                            stroke={historyColors[i]}
+                            connectNulls
+                            dot={{ r: 2 }}
+                            isAnimationActive={false}
+                          />
+                        ))}
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             <Card>
               <CardHeader>
@@ -207,7 +377,16 @@ export default function StandingsPage() {
                   />
                   <span className="text-muted-foreground">Cats</span>
                 </label>
-                <StandingsTable rows={leagueMode === "wl" ? standings.league_wl : standings.league_cats} />
+                <StandingsTable
+                  rows={leagueMode === "wl" ? standings.league_wl : standings.league_cats}
+                  previousRanks={
+                    previousStandings
+                      ? toRankMap(
+                          leagueMode === "wl" ? previousStandings.league_wl : previousStandings.league_cats,
+                        )
+                      : undefined
+                  }
+                />
               </CardContent>
             </Card>
           </>

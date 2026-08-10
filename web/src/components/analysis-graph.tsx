@@ -48,7 +48,7 @@ interface GraphParams {
 const DEFAULT_PARAMS: GraphParams = {
   xKey: DEFAULT_X_FIELD,
   yKey: "overall_rating",
-  groupBy: { team: true, season: false },
+  groupBy: { team: true, season: false, week: false },
 };
 
 // Above this many series with a value at a single x-tick, Recharts' built-in
@@ -58,6 +58,13 @@ const DEFAULT_PARAMS: GraphParams = {
 // a custom `content` renderer chooses to draw. Past that threshold we don't
 // mount <Tooltip> at all; see the dense-mode hotspots below instead.
 const DENSE_THRESHOLD = 15;
+
+// FG%/FT% are fractions where the third decimal place is meaningful
+// (matches StatTable's formatValue convention for these two categories);
+// every other field keeps the existing 2-decimal tooltip formatting.
+function decimalsFor(fieldKey: string): number {
+  return fieldKey === "stat:FG%" || fieldKey === "stat:FT%" ? 3 : 2;
+}
 
 function isValidGraphParams(value: unknown): value is GraphParams {
   if (!value || typeof value !== "object") return false;
@@ -72,13 +79,12 @@ function isValidGraphParams(value: unknown): value is GraphParams {
 export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphProps) {
   const storageKey = `analysis-graph-${id}`;
 
-  // "draft" reflects the controls as the user edits them; "applied" is what
-  // actually feeds the pivot/chart -- kept separate so picking a new field or
-  // toggling group-by doesn't recompute/re-render on every click. With ~1,400
-  // rows and up to ~90 series (11 teams x 8 seasons), that recompute is the
-  // thing that was making the page feel slow.
-  const [draft, setDraft] = useState<GraphParams>(DEFAULT_PARAMS);
-  const [applied, setApplied] = useState<GraphParams>(DEFAULT_PARAMS);
+  // Auto-applied straight to the chart as the user edits the controls --
+  // previously gated behind a manual "Update" button (added when this page
+  // felt slow with ~1,400 rows / up to ~90 series), but that cost was from
+  // heavy chart re-render on rapid interaction (a slider), not infrequent
+  // dropdown/checkbox clicks, so no debounce is needed here either.
+  const [params, setParams] = useState<GraphParams>(DEFAULT_PARAMS);
   const [hoveredEdge, setHoveredEdge] = useState<"min" | "max" | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
@@ -94,8 +100,9 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
       if (raw) {
         const saved = JSON.parse(raw);
         if (isValidGraphParams(saved)) {
-          setDraft(saved);
-          setApplied(saved);
+          // Backfill `week` for graphs saved before this field existed.
+          const normalized = { ...saved, groupBy: { ...saved.groupBy, week: saved.groupBy.week ?? false } };
+          setParams(normalized);
         }
       }
     } catch {}
@@ -105,11 +112,11 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
 
   useEffect(() => {
     if (!hydrated) return;
-    localStorage.setItem(storageKey, JSON.stringify(applied));
-  }, [storageKey, applied, hydrated]);
+    localStorage.setItem(storageKey, JSON.stringify(params));
+  }, [storageKey, params, hydrated]);
 
-  const xField = getField(applied.xKey);
-  const yField = getField(applied.yKey);
+  const xField = getField(params.xKey);
+  const yField = getField(params.yKey);
 
   // Season/Week is a natural progression, worth connecting with a line;
   // any other X (a stat/rating/rank) renders as an unconnected scatter --
@@ -118,12 +125,12 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
   const isTimeAxis = xField.key === "year" || xField.key === "week";
 
   const { chartData, seriesKeys } = useMemo(
-    () => (isTimeAxis ? pivot(rows, xField, yField, applied.groupBy) : { chartData: [], seriesKeys: [] }),
-    [rows, xField, yField, applied.groupBy, isTimeAxis],
+    () => (isTimeAxis ? pivot(rows, xField, yField, params.groupBy) : { chartData: [], seriesKeys: [] }),
+    [rows, xField, yField, params.groupBy, isTimeAxis],
   );
   const scatterSeries = useMemo(
-    () => (isTimeAxis ? [] : pivotScatter(rows, xField, yField, applied.groupBy)),
-    [rows, xField, yField, applied.groupBy, isTimeAxis],
+    () => (isTimeAxis ? [] : pivotScatter(rows, xField, yField, params.groupBy)),
+    [rows, xField, yField, params.groupBy, isTimeAxis],
   );
   const activeSeriesKeys = isTimeAxis ? seriesKeys : scatterSeries.map((s) => s.key);
   const hasData = isTimeAxis ? chartData.length > 0 : scatterSeries.some((s) => s.points.length > 0);
@@ -143,42 +150,36 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
   }, [chartData]);
   const isDense = maxPointCount > DENSE_THRESHOLD;
 
-  const isDirty =
-    draft.xKey !== applied.xKey ||
-    draft.yKey !== applied.yKey ||
-    draft.groupBy.team !== applied.groupBy.team ||
-    draft.groupBy.season !== applied.groupBy.season;
-
   return (
     <Card>
       <CardContent className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-4">
           <FieldSelect
             label="X axis"
-            value={draft.xKey}
-            onValueChange={(xKey) => setDraft((d) => ({ ...d, xKey }))}
+            value={params.xKey}
+            onValueChange={(xKey) => setParams((d) => ({ ...d, xKey }))}
           />
           <FieldSelect
             label="Y axis"
-            value={draft.yKey}
-            onValueChange={(yKey) => setDraft((d) => ({ ...d, yKey }))}
+            value={params.yKey}
+            onValueChange={(yKey) => setParams((d) => ({ ...d, yKey }))}
           />
           <div className="flex items-center gap-3 text-[11px] font-bold tracking-wider uppercase">
             <span className="text-muted-foreground">Group by</span>
             <label className="flex items-center gap-1.5">
               <Checkbox
-                checked={draft.groupBy.team}
+                checked={params.groupBy.team}
                 onCheckedChange={() =>
-                  setDraft((d) => ({ ...d, groupBy: { ...d.groupBy, team: !d.groupBy.team } }))
+                  setParams((d) => ({ ...d, groupBy: { ...d.groupBy, team: !d.groupBy.team } }))
                 }
               />
               Team
             </label>
             <label className="flex items-center gap-1.5">
               <Checkbox
-                checked={draft.groupBy.season}
+                checked={params.groupBy.season}
                 onCheckedChange={() =>
-                  setDraft((d) => ({
+                  setParams((d) => ({
                     ...d,
                     groupBy: { ...d.groupBy, season: !d.groupBy.season },
                   }))
@@ -186,10 +187,16 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
               />
               Season
             </label>
+            <label className="flex items-center gap-1.5">
+              <Checkbox
+                checked={params.groupBy.week}
+                onCheckedChange={() =>
+                  setParams((d) => ({ ...d, groupBy: { ...d.groupBy, week: !d.groupBy.week } }))
+                }
+              />
+              Week
+            </label>
           </div>
-          <Button size="sm" disabled={!isDirty} onClick={() => setApplied(draft)}>
-            Update
-          </Button>
           {onRemove && (
             <Button
               variant="ghost"
@@ -208,7 +215,7 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
         ) : isTimeAxis ? (
           <div className="relative h-[440px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ left: 8, right: 16, top: 8, bottom: 24 }}>
+              <LineChart data={chartData} margin={{ left: 8, right: 16, top: 8, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                 <XAxis
                   dataKey="x"
@@ -239,7 +246,7 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
                     fontSize: 12,
                   }}
                 />
-                {seriesKeys.length > 1 && !(applied.groupBy.team && applied.groupBy.season) && (
+                {seriesKeys.length > 1 && seriesKeys.length <= DENSE_THRESHOLD && (
                   <Legend wrapperStyle={{ color: "var(--muted-foreground)", fontSize: 12 }} />
                 )}
                 {!isDense && (
@@ -253,7 +260,7 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
                     }}
                     labelFormatter={(x) => `${xField.label}: ${x}`}
                     formatter={(value, name) => [
-                      typeof value === "number" ? value.toFixed(2) : String(value),
+                      typeof value === "number" ? value.toFixed(decimalsFor(yField.key)) : String(value),
                       name,
                     ]}
                   />
@@ -291,6 +298,7 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
                     xLabel={xField.label}
                     row={hoveredEdge === "min" ? minRow : maxRow}
                     seriesKeys={seriesKeys}
+                    decimals={decimalsFor(yField.key)}
                   />
                 )}
               </>
@@ -306,7 +314,7 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
           // this fix (see the plan doc).
           <div className="h-[440px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <ScatterChart margin={{ left: 8, right: 16, top: 8, bottom: 24 }}>
+              <ScatterChart margin={{ left: 8, right: 16, top: 8, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                 <XAxis
                   dataKey="x"
@@ -337,7 +345,7 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
                     fontSize: 12,
                   }}
                 />
-                {activeSeriesKeys.length > 1 && !(applied.groupBy.team && applied.groupBy.season) && (
+                {activeSeriesKeys.length > 1 && activeSeriesKeys.length <= DENSE_THRESHOLD && (
                   <Legend wrapperStyle={{ color: "var(--muted-foreground)", fontSize: 12 }} />
                 )}
                 {scatterSeries.map((s, i) => (
@@ -365,11 +373,13 @@ function EdgeTooltip({
   row,
   seriesKeys,
   className,
+  decimals = 2,
 }: {
   xLabel: string;
   row: Record<string, number>;
   seriesKeys: string[];
   className?: string;
+  decimals?: number;
 }) {
   return (
     <div
@@ -387,7 +397,7 @@ function EdgeTooltip({
           .map((key) => (
             <div key={key} className="flex items-center justify-between gap-3">
               <span className="text-muted-foreground">{key}</span>
-              <span className="font-mono tabular-nums">{row[key].toFixed(2)}</span>
+              <span className="font-mono tabular-nums">{row[key].toFixed(decimals)}</span>
             </div>
           ))}
       </div>

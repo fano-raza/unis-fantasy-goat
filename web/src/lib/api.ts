@@ -80,6 +80,7 @@ export interface AnalysisRow {
   cat_losses: number;
   cat_ties: number;
   matchup_win: boolean;
+  opponent_rating: number | null;
 }
 
 // Keys/values mirror scripts/export_team_summary.py's output columns exactly
@@ -166,6 +167,23 @@ export interface StandingsRequest {
   max_week: number;
 }
 
+export interface SeasonLeadersRequest {
+  years?: number[];
+  weeks?: number[];
+  RS?: boolean;
+  PO?: boolean;
+  mode?: "totals" | "averages";
+}
+
+export interface SeasonLeaderEntry {
+  team: string;
+  value: number;
+}
+
+export interface SeasonLeadersResponse {
+  [category: string]: { best: SeasonLeaderEntry; worst: SeasonLeaderEntry };
+}
+
 export interface StandingsRow {
   team: string;
   wins: number;
@@ -179,6 +197,18 @@ export interface StandingsResponse {
   cats: StandingsRow[];
   league_wl: StandingsRow[];
   league_cats: StandingsRow[];
+}
+
+export interface StandingsHistoryPoint {
+  week: number;
+  rank: number;
+}
+
+export interface StandingsHistoryResponse {
+  wl: Record<string, StandingsHistoryPoint[]>;
+  cats: Record<string, StandingsHistoryPoint[]>;
+  league_wl: Record<string, StandingsHistoryPoint[]>;
+  league_cats: Record<string, StandingsHistoryPoint[]>;
 }
 
 class ApiError extends Error {
@@ -233,6 +263,9 @@ export const getAverages = (req: AggregateRequest = {}) =>
 export const getLeaders = (req: LeadersRequest = {}) =>
   post<LeadersResponse>("/league/leaders", req);
 
+export const getSeasonLeaders = (req: SeasonLeadersRequest) =>
+  post<SeasonLeadersResponse>("/league/season_leaders", req);
+
 export const getHeadToHead = (req: HeadToHeadRequest) =>
   post<HeadToHeadResponse>("/league/head_to_head", req);
 
@@ -247,3 +280,42 @@ export const getTeamSummary = (req: TeamSummaryRequest = {}) =>
 
 export const getStandings = (req: StandingsRequest) =>
   post<StandingsResponse>("/league/standings", req);
+
+export const getStandingsHistory = (req: StandingsRequest) =>
+  post<StandingsHistoryResponse>("/league/standings_history", req);
+
+export interface RefreshStatus {
+  // ISO 8601, or null if the backend hasn't found any ref-dir CSVs yet.
+  last_updated: string | null;
+}
+
+export const getRefreshStatus = () =>
+  apiFetch<RefreshStatus>("/refresh_status");
+
+export interface QueryRequest {
+  metric: string;
+  aggregation?: "sum" | "avg" | "min" | "max" | "count" | "rank";
+  group_by?: string[];
+  years?: number[];
+  weeks?: number[];
+  teams?: string[];
+  opponents?: string[];
+  seasons?: string[];
+  count_only?: boolean;
+  sort_desc?: boolean;
+  limit?: number;
+}
+
+export interface QueryRow {
+  Team?: string;
+  value: number;
+}
+
+export interface QueryResponse {
+  rows: QueryRow[];
+  row_count: number;
+  metric: string;
+  aggregation: string;
+}
+
+export const getQuery = (req: QueryRequest) => post<QueryResponse>("/query", req);

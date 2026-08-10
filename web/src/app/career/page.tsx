@@ -54,9 +54,21 @@ export default function CareerStatsPage() {
       PO: filter.po,
     };
     const fetcher = statMode === "totals" ? getTotals : getAverages;
-    fetcher(req)
-      .then((r) => {
-        setRows(r);
+
+    // "Prior" standings: the same filter with its single highest selected
+    // week dropped, so the Rank column can show a green/red movement arrow
+    // for one week's worth of change. Skipped (no arrow shown) when only
+    // one week is selected -- there's no earlier state to compare against.
+    const maxWeek = filter.weeks.length ? Math.max(...filter.weeks) : null;
+    const priorReq =
+      maxWeek != null && filter.weeks.length > 1
+        ? { ...req, weeks: filter.weeks.filter((w) => w !== maxWeek) }
+        : null;
+
+    Promise.all([fetcher(req), priorReq ? fetcher(priorReq) : Promise.resolve(null)])
+      .then(([current, prior]) => {
+        const priorRanks = new Map((prior ?? []).map((r) => [r.team, r.rank]));
+        setRows(current.map((r) => ({ ...r, previousRank: priorRanks.get(r.team) ?? null })));
         setError(null);
       })
       .catch((err) => {

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Nav } from "@/components/nav";
 import { MobileNav } from "@/components/mobile-nav";
+import { LastUpdated } from "@/components/last-updated";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -32,8 +33,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               <span className="text-xl font-black tracking-tight italic">
                 UNIS 2014 <span className="text-primary">FANTASY</span>
               </span>
-              <div className="sm:hidden">
-                <MobileNav />
+              <div className="flex items-center gap-3">
+                <LastUpdated />
+                <div className="sm:hidden">
+                  <MobileNav />
+                </div>
               </div>
             </div>
             <div className="hidden sm:block">

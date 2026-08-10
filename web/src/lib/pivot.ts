@@ -4,6 +4,11 @@ import type { AnalysisField } from "./fields";
 export interface GroupBy {
   team: boolean;
   season: boolean;
+  // Off by default -- when off, rows for the same (team[/season], X value)
+  // across different weeks are averaged together (pivot()'s normal
+  // bucketing), same as before this option existed. When on, each week
+  // becomes its own series/point instead of being averaged away.
+  week: boolean;
 }
 
 export interface PivotResult {
@@ -20,6 +25,7 @@ function groupKeyFor(row: AnalysisRow, groupBy: GroupBy): string {
   const parts: string[] = [];
   if (groupBy.team) parts.push(row.team);
   if (groupBy.season) parts.push(String(row.year));
+  if (groupBy.week) parts.push(`Wk${row.week}`);
   return parts.length ? parts.join(" ") : "All";
 }
 

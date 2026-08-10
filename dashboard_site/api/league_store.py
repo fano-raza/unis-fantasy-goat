@@ -186,6 +186,38 @@ class LeagueStore:
             out[cat] = {"team": str(row["Team"]), "value": float(row[cat])}
         return out
 
+    def season_leaders(
+        self,
+        years: list[int] | None = None,
+        weeks: list[int] | None = None,
+        RS: bool = True,
+        PO: bool = True,
+        mode: str = "totals",
+    ) -> dict:
+        """Best AND worst team per category for a filtered slice (the Season
+        page's leaders/lowest sections) -- unlike leaders() above (career-only,
+        best-only, always totals-aggregated), this supports an arbitrary
+        year/week/RS-PO filter and a totals/averages aggregation toggle to
+        match whatever the Season page's own controls are set to."""
+        df = self._filtered_raw(years, weeks, None, RS, PO)[["Team"] + MAIN_CATS]
+        if mode == "averages":
+            grouped = df.groupby("Team", as_index=False).mean()
+        else:
+            agg_dict = {c: "mean" for c in PCT_CATS}
+            agg_dict.update({c: "sum" for c in SUM_CATS})
+            grouped = df.groupby("Team", as_index=False).agg(agg_dict)
+
+        out: dict[str, dict] = {}
+        for cat in MAIN_CATS:
+            higher_is_better = cat not in NEG_CATS
+            best_row = grouped.loc[grouped[cat].idxmax() if higher_is_better else grouped[cat].idxmin()]
+            worst_row = grouped.loc[grouped[cat].idxmin() if higher_is_better else grouped[cat].idxmax()]
+            out[cat] = {
+                "best": {"team": str(best_row["Team"]), "value": float(best_row[cat])},
+                "worst": {"team": str(worst_row["Team"]), "value": float(worst_row[cat])},
+            }
+        return out
+
     def team_summary(self, teams: list[str] | None = None) -> list[dict]:
         """Career profile stats (chips, finals, playoffs, streaks, draft scores)
         for the Career Comparison page. Reads scripts/export_team_summary.py's
@@ -372,6 +404,32 @@ class LeagueStore:
             "league_cats": _standings("LEAGUE_CATS_WINS", "LEAGUE_CATS_LOSSES", "LEAGUE_CATS_DRAWS"),
         }
 
+    def standings_history(self, year: int, min_week: int, max_week: int) -> dict:
+        """For each week w in [min_week, max_week], the standings rank of
+        every team computed over the cumulative window [min_week, w] --
+        lets the Standings page plot a team's league position across the
+        course of a season. Built by calling standings() once per week
+        rather than re-deriving the ranking logic: _ensure_weekly_df() is
+        cached after the first call, so this loop is cheap (filter + groupby
+        per week, no re-computation of the underlying per-week data)."""
+        result: dict[str, dict[str, list[dict]]] = {
+            "wl": {},
+            "cats": {},
+            "league_wl": {},
+            "league_cats": {},
+        }
+        for w in range(min_week, max_week + 1):
+            try:
+                snapshot = self.standings(year, min_week, w)
+            except ValueError:
+                continue
+            for key, rows in snapshot.items():
+                for row in rows:
+                    result[key].setdefault(row["team"], []).append(
+                        {"week": w, "rank": row["rank"]}
+                    )
+        return result
+
     @staticmethod
     def _rank_standings(rows: list[dict]) -> list[dict]:
         """Standard competition ranking (ties share a rank) by win/loss
@@ -458,6 +516,14 @@ class LeagueStore:
         rated_df = self._ensure_rated_df()[rated_cols]
         weekly_df = matchup_df.merge(rated_df, on=["Year", "Week", "Season", "Team"], how="left")
 
+        # Each row's opponent's own week_rating -- computed once here (self-
+        # join on Opp==Team) so every consumer of this shared cache gets it
+        # for free, same pattern as the rating/rank merge just above.
+        opp_rating_df = rated_df[["Year", "Week", "Season", "Team", "week_rating"]].rename(
+            columns={"Team": "Opp", "week_rating": "opp_week_rating"}
+        )
+        weekly_df = weekly_df.merge(opp_rating_df, on=["Year", "Week", "Season", "Opp"], how="left")
+
         # A team on a bye that week never enters _build_matchup_features'
         # inner merge (Opp=="BYE" means Count=False, filtered out before
         # pairing even runs) -- surface them anyway with their real raw
@@ -500,6 +566,9 @@ class LeagueStore:
             "cat_losses": int(row["CAT_LOSSES"]),
             "cat_ties": int(row["CAT_TIES"]),
             "matchup_win": bool(row["MATCHUP_WINS"]),
+            "opponent_rating": (
+                round(float(row["opp_week_rating"]), 2) if pd.notna(row["opp_week_rating"]) else None
+            ),
         }
 
     @staticmethod
@@ -556,6 +625,14 @@ class LeagueStore:
 
 
 _league_store: LeagueStore | None = None
+
+
+def reset_league_store() -> None:
+    """Drop the cached singleton so the next get_league_store() call rebuilds
+    it -- used by app.py's periodic data reload, since a plain get_league_store
+    call would otherwise keep returning the stale pre-reload instance."""
+    global _league_store
+    _league_store = None
 
 
 def get_league_store(store: StatsStore | None = None) -> LeagueStore:

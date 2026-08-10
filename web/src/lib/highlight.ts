@@ -6,9 +6,12 @@ export const NEG_CATS: readonly Category[] = ["TO"];
 
 export type Comparison = "better" | "worse" | "neutral";
 
-// Weekly Stats highlight semantics (per the user's spec, the mirror image of
-// DashApp's red/green): green if THIS row's value is better than the
-// highlighted team's value, yellow if worse, neutral on a tie or no baseline.
+// Highlight semantics, colored from the focus team's perspective and shown
+// on the OTHER row: this row's cell is RED if the focus team is worse off
+// than this row in that category (this row "beat" focus), GREEN if the
+// focus team is better (this row "lost" to focus). `Comparison` names stay
+// row-centric ("better"/"worse" = how this row's own value compares to the
+// baseline) -- comparisonClass below is what actually inverts the color.
 export function compareCell(
   value: number | undefined,
   baseline: number | undefined,
@@ -23,8 +26,8 @@ export function compareCell(
 }
 
 export const comparisonClass: Record<Comparison, string> = {
-  better: "bg-win/15 text-win",
-  worse: "bg-loss/15 text-loss",
+  better: "bg-loss/15 text-loss",
+  worse: "bg-win/15 text-win",
   neutral: "",
 };
 
@@ -34,10 +37,11 @@ export interface CategoryScore {
   ties: number;
 }
 
-// All-play category W-L-T for one row's raw stats against a baseline row's
-// (Weekly Stats' "Score vs focus team" column) -- reuses compareCell's
-// per-category direction logic rather than re-deriving NEG_CATS a second
-// time.
+// All-play category W-L-T for `stats` against `baseline` (Weekly Stats'
+// "Score" column calls this with the focus team as `stats` and each other
+// row as `baseline`, so wins/losses read as the focus team's own record
+// against that opponent) -- reuses compareCell's per-category direction
+// logic rather than re-deriving NEG_CATS a second time.
 export function categoryScore(stats: CategoryStats, baseline: CategoryStats): CategoryScore {
   const score: CategoryScore = { wins: 0, losses: 0, ties: 0 };
   for (const cat of MAIN_CATS) {

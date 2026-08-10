@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 export const NAV_LINKS = [
   { href: "/", label: "Weekly Stats" },
   { href: "/career", label: "Career Stats" },
+  { href: "/season", label: "Season" },
   { href: "/standings", label: "Standings" },
   { href: "/profile", label: "Profile" },
   { href: "/comparison", label: "Comparison" },

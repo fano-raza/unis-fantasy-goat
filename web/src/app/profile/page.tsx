@@ -28,29 +28,39 @@ import { Medal, Star, Trophy } from "lucide-react";
 import {
   getAverages,
   getLeagueMeta,
+  getQuery,
   getTeamSummary,
   getTotals,
   MAIN_CATS,
   type AggregateRow,
   type Category,
   type LeagueMeta,
+  type QueryRow,
   type TeamSummary,
 } from "@/lib/api";
 import { NEG_CATS } from "@/lib/highlight";
 import { comparableFields, formatValue, ordinal, rankFor } from "@/lib/team-summary-fields";
+import { cn } from "@/lib/utils";
+import { ProfileHistoryChart } from "@/components/profile-history-chart";
 
-// Excluded from the "League Top 3" list -- either already shown as its own
-// stat tile above (nothing should appear twice), or asked to be dropped
+// Gold / silver / bronze for the League Top 3 table's 1st/2nd/3rd rank text
+// -- topFields is always filtered to rank <= 3, so no 4th-place case exists.
+function rankColorClass(rank: number): string {
+  if (rank === 1) return "text-[#d4af37]";
+  if (rank === 2) return "text-[#c0c0c0]";
+  return "text-[#cd7f32]";
+}
+
+// Excluded from the "League Top 3" list -- either not rankable (year lists
+// paired with a count field already included) or asked to be dropped
 // outright (Best/Worst Week Rating: a single-week fluke isn't a meaningful
-// "career" top-3 stat).
+// "career" top-3 stat). Championships/MVPs/RS 1st Place are shown both as
+// their own stat tile above AND here -- the user asked for them included.
 const TOP3_EXCLUDED = new Set([
-  "Championships",
   "Championship Years",
-  "MVPs",
   "MVP Years",
   "Best RS Rating",
   "Best RS Rating Years",
-  "RS 1st Place",
   "RS 1st Years",
   "Best RS Finish",
   "Best RS Finish Years",
@@ -76,6 +86,45 @@ function rankForCategory(cat: Category, rows: AggregateRow[], team: string): num
 
 const SELECTED_TEAM_KEY = "profile-selected-team";
 
+// Win/loss career totals for the "League Top 3" table -- not present in
+// team_summary.csv (that has W-L-T strings, not individually rankable
+// counts), so pulled from the generic /query endpoint instead of a new
+// export. "Total"/"Total Category" scope both RS+PO; the rest split by
+// season. Losses rank "lower is better" (fewest losses = rank 1), the same
+// convention this app already uses for "Worst Losing Streak"/"Lowest
+// Rating Weeks" in web/src/lib/team-summary-fields.ts.
+interface QueryTotalField {
+  label: string;
+  metric: string;
+  seasons?: string[];
+  direction: "higher" | "lower";
+}
+
+const QUERY_TOTAL_FIELDS: QueryTotalField[] = [
+  { label: "Total Wins", metric: "MATCHUP_WINS", seasons: ["RS", "PO"], direction: "higher" },
+  { label: "Total Losses", metric: "MATCHUP_LOSSES", seasons: ["RS", "PO"], direction: "lower" },
+  { label: "Total Category Wins", metric: "CAT_WINS", seasons: ["RS", "PO"], direction: "higher" },
+  { label: "Total Category Losses", metric: "CAT_LOSSES", seasons: ["RS", "PO"], direction: "lower" },
+  { label: "Total Reg Season Wins", metric: "MATCHUP_WINS", seasons: ["RS"], direction: "higher" },
+  { label: "Total Reg Season Losses", metric: "MATCHUP_LOSSES", seasons: ["RS"], direction: "lower" },
+  { label: "Total Playoff Wins", metric: "MATCHUP_WINS", seasons: ["PO"], direction: "higher" },
+  { label: "Total Playoff Losses", metric: "MATCHUP_LOSSES", seasons: ["PO"], direction: "lower" },
+];
+
+function rankFromQueryRows(
+  rows: QueryRow[],
+  team: string,
+  direction: "higher" | "lower",
+): { rank: number; value: number } | undefined {
+  const target = rows.find((r) => r.Team === team);
+  if (!target) return undefined;
+  const better =
+    direction === "higher"
+      ? rows.filter((r) => r.value > target.value).length
+      : rows.filter((r) => r.value < target.value).length;
+  return { rank: better + 1, value: target.value };
+}
+
 function splitYears(value: string | number | null | undefined): string {
   if (typeof value !== "string" || !value.trim()) return "—";
   return value;
@@ -86,6 +135,7 @@ export default function ProfilePage() {
   const [allTeams, setAllTeams] = useState<TeamSummary[]>([]);
   const [totals, setTotals] = useState<AggregateRow[]>([]);
   const [averages, setAverages] = useState<AggregateRow[]>([]);
+  const [queryTotals, setQueryTotals] = useState<Record<string, QueryRow[]>>({});
   const [team, setTeam] = useState<string | null>(null);
 
   useEffect(() => {
@@ -101,6 +151,17 @@ export default function ProfilePage() {
     getTeamSummary({}).then(setAllTeams);
     getTotals({}).then(setTotals);
     getAverages({}).then(setAverages);
+    Promise.all(
+      QUERY_TOTAL_FIELDS.map((f) =>
+        getQuery({
+          metric: f.metric,
+          aggregation: "sum",
+          group_by: ["Team"],
+          seasons: f.seasons,
+          limit: 50,
+        }).then((res) => [f.label, res.rows] as const),
+      ),
+    ).then((entries) => setQueryTotals(Object.fromEntries(entries)));
   }, []);
 
   useEffect(() => {
@@ -148,10 +209,16 @@ export default function ProfilePage() {
           ])
         : [];
 
-    return [...summaryFields, ...statFields]
+    const queryFields = QUERY_TOTAL_FIELDS.map((f) => {
+      const rows = queryTotals[f.label];
+      const result = rows ? rankFromQueryRows(rows, team, f.direction) : undefined;
+      return { field: f.label, rank: result?.rank, value: result?.value ?? null };
+    });
+
+    return [...summaryFields, ...statFields, ...queryFields]
       .filter((r): r is { field: string; rank: number; value: string | number | null } => r.rank !== undefined && r.rank <= 3)
       .sort((a, b) => a.rank - b.rank);
-  }, [team, allTeams, totals, averages]);
+  }, [team, allTeams, totals, averages, queryTotals]);
 
   if (!meta || !team) return null;
 
@@ -159,8 +226,8 @@ export default function ProfilePage() {
     <div className="flex flex-col gap-4">
       <Card>
         <CardHeader>
-          <CardTitle>Career Profile</CardTitle>
-          <CardDescription>Full career snapshot for one team</CardDescription>
+          <CardDescription>Career Profile</CardDescription>
+          <CardTitle className="text-4xl sm:text-5xl">{team}</CardTitle>
         </CardHeader>
         <CardContent>
           <label className="flex items-center gap-2">
@@ -209,7 +276,12 @@ export default function ProfilePage() {
             sub={splitYears(profile["Best RS Finish Years"])}
           />
           {playoffFinish && (
-            <StatTile label="Best Playoff Finish" value={playoffFinish.label} sub={playoffFinish.years} />
+            <StatTile
+              label="Best Playoff Finish"
+              value={playoffFinish.label}
+              sub={playoffFinish.years}
+              valueClassName={playoffFinish.label === "Champion" ? "text-amber-400" : undefined}
+            />
           )}
         </div>
       )}
@@ -238,7 +310,7 @@ export default function ProfilePage() {
                       {row.field}
                     </TableCell>
                     <TableCell className="text-right">{formatValue(row.value)}</TableCell>
-                    <TableCell className="text-right font-extrabold text-primary">
+                    <TableCell className={cn("text-right font-extrabold", rankColorClass(row.rank))}>
                       {ordinal(row.rank)}
                     </TableCell>
                   </TableRow>
@@ -276,6 +348,8 @@ export default function ProfilePage() {
           )}
         </CardContent>
       </Card>
+
+      <ProfileHistoryChart team={team} meta={meta} />
     </div>
   );
 }
@@ -285,6 +359,7 @@ function StatTile({
   value,
   sub,
   icon: Icon,
+  valueClassName,
 }: {
   label: string;
   value: string | number;
@@ -292,6 +367,7 @@ function StatTile({
   // Rendered once per count when value is a number (e.g. 2 championships ->
   // 2 trophies), not just once as a static decoration.
   icon?: ComponentType<{ className?: string }>;
+  valueClassName?: string;
 }) {
   const iconCount = Icon && typeof value === "number" ? value : 0;
   return (
@@ -300,7 +376,12 @@ function StatTile({
         {label}
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-1.5">
-        <span className="font-mono text-3xl font-extrabold tracking-wide text-primary uppercase tabular-nums">
+        <span
+          className={cn(
+            "font-mono text-3xl font-extrabold tracking-wide text-primary uppercase tabular-nums",
+            valueClassName,
+          )}
+        >
           {value}
         </span>
         {Icon &&

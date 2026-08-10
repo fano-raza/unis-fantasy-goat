@@ -134,8 +134,8 @@ export default function AnalysisPage() {
           <CardHeader>
             <CardTitle>Analysis</CardTitle>
             <CardDescription>
-              Build your own line graph(s) — all graphs share the filters on the
-              left but have their own axes and grouping
+              Build your own line graph(s) — all graphs share the filters but
+              have their own axes and grouping
             </CardDescription>
           </CardHeader>
         </Card>

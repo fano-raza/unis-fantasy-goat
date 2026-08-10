@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
 import { StatTable } from "@/components/stat-table";
 import { LabeledSelect, NO_FOCUS_TEAM } from "@/components/labeled-select";
 import {
@@ -122,6 +123,17 @@ export default function WeeklyStatsPage() {
             onValueChange={(v) => setWeek(Number(v))}
             options={weekOptions.map((w) => ({ value: String(w), label: String(w) }))}
           />
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={year === meta.current_year && week === meta.current_week}
+            onClick={() => {
+              setYear(meta.current_year);
+              setWeek(meta.current_week);
+            }}
+          >
+            Current Week
+          </Button>
           <LabeledSelect
             label="Focus team"
             value={focusTeam}

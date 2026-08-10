@@ -75,6 +75,11 @@ export const EMPHASIZED_FIELDS = new Set([
   "Best Draft Score",
 ]);
 
+// Comparison-page only: a single-week fluke isn't a meaningful comparison
+// stat. Separate from TOP3_EXCLUDED (Profile-only), even though both
+// happen to exclude the same two fields today, for a different reason.
+export const COMPARISON_EXCLUDED_FIELDS = new Set(["Best Week Rating", "Worst Week Rating"]);
+
 export const DEEMPHASIZED_FIELDS = new Set([
   "Championship Years",
   "Finals Years",

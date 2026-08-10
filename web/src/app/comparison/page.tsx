@@ -30,6 +30,7 @@ import { X } from "lucide-react";
 import { getTeamSummary, type TeamSummary } from "@/lib/api";
 import {
   comparableFields,
+  COMPARISON_EXCLUDED_FIELDS,
   DEEMPHASIZED_FIELDS,
   directionFor,
   EMPHASIZED_FIELDS,
@@ -40,6 +41,7 @@ import { useMediaQuery } from "@/lib/use-media-query";
 
 const SELECTED_TEAMS_KEY = "comparison-selected-teams";
 const MOBILE_TEAM_CAP = 2;
+const DESKTOP_TEAM_CAP = 4;
 
 type BestWorst = "best" | "worst" | "neutral";
 
@@ -108,19 +110,24 @@ export default function ComparisonPage() {
   }, [hydrated, selected]);
 
   const isMobile = useMediaQuery("(max-width: 639px)");
-  // Cap the *display* at 2 on mobile without mutating `selected` itself, so
-  // a wider-viewport selection (3+ teams, e.g. persisted from desktop)
-  // still fits without horizontal scroll rather than being silently
-  // discarded.
-  const visibleSelected = isMobile ? selected.slice(0, MOBILE_TEAM_CAP) : selected;
-  const canAddMore = !isMobile || selected.length < MOBILE_TEAM_CAP;
+  // Cap the *display* at MOBILE_TEAM_CAP on mobile / DESKTOP_TEAM_CAP on
+  // desktop without mutating `selected` itself, so a wider-viewport
+  // selection persisted from desktop still fits on mobile without
+  // horizontal scroll rather than being silently discarded.
+  const cap = isMobile ? MOBILE_TEAM_CAP : DESKTOP_TEAM_CAP;
+  const visibleSelected = selected.slice(0, cap);
+  const canAddMore = selected.length < cap;
 
-  const fields = comparableFields(allTeams);
+  const fields = comparableFields(allTeams).filter((f) => !COMPARISON_EXCLUDED_FIELDS.has(f));
   const selectedRows = visibleSelected
     .map((t) => allTeams.find((r) => r.Team === t))
     .filter((r): r is TeamSummary => !!r);
   const available = allTeams.filter((r) => !selected.includes(r.Team));
-  const mobileColWidth = selectedRows.length >= MOBILE_TEAM_CAP ? "w-1/3" : "w-1/2";
+  // Equal-width columns (Stat column + one per selected team) on every
+  // viewport -- computed as a percentage rather than a fixed Tailwind
+  // fraction class since the team count varies (1-4 on desktop, 1-2 on
+  // mobile).
+  const colWidthPct = `${100 / (selectedRows.length + 1)}%`;
 
   return (
     <div className="flex flex-col gap-4">
@@ -187,19 +194,20 @@ export default function ComparisonPage() {
               Add two or more teams to compare.
             </p>
           ) : (
-            <Table className="table-fixed sm:table-auto">
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead className={cn(mobileColWidth, "sm:w-auto", "whitespace-normal sm:whitespace-nowrap")}>
+                  <TableHead
+                    style={{ width: colWidthPct }}
+                    className="whitespace-normal sm:whitespace-nowrap"
+                  >
                     Stat
                   </TableHead>
                   {selectedRows.map((row) => (
                     <TableHead
                       key={row.Team}
-                      className={cn(
-                        mobileColWidth,
-                        "sm:w-auto whitespace-normal text-right text-primary sm:whitespace-nowrap",
-                      )}
+                      style={{ width: colWidthPct }}
+                      className="whitespace-normal text-right text-primary sm:whitespace-nowrap"
                     >
                       {row.Team}
                     </TableHead>

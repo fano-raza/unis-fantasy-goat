@@ -55,6 +55,12 @@ export const ANALYSIS_FIELDS: AnalysisField[] = [
     group: "Ranks",
     get: (r) => r.week_rank,
   },
+  {
+    key: "opponent_rating",
+    label: "Opponent Rating",
+    group: "Ratings",
+    get: (r) => r.opponent_rating ?? undefined,
+  },
   ...MAIN_CATS.map(
     (cat): AnalysisField => ({
       key: `stat:${cat}`,

@@ -85,6 +85,14 @@ class LeadersRequest(BaseModel):
     PO: bool = True
 
 
+class SeasonLeadersRequest(BaseModel):
+    years: list[int] | None = None
+    weeks: list[int] | None = None
+    RS: bool = True
+    PO: bool = True
+    mode: str = "totals"
+
+
 class HeadToHeadRequest(BaseModel):
     team_a: str
     team_b: str
