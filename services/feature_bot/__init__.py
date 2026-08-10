@@ -1,0 +1,1 @@
+"""FeatureBot service entrypoint package."""

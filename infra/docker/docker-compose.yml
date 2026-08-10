@@ -29,6 +29,22 @@ services:
       - /srv/unisfantasy/secrets:/srv/unisfantasy/secrets:ro
     restart: unless-stopped
 
+  # Tag @FeatureBot in Discord to log a feature request -- appends the
+  # message to /srv/unisfantasy/data/feature_requests.md and reacts with a
+  # checkbox. Independent of discord-bot (which is stopped/being retired);
+  # see discord/feature_bot.py.
+  feature-bot:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+    container_name: unisfantasy-feature-bot
+    command: ["python", "-m", "services.feature_bot.entrypoint"]
+    env_file:
+      - ./env/feature-bot.env
+    volumes:
+      - /srv/unisfantasy/data:/srv/unisfantasy/data
+    restart: unless-stopped
+
   # Web app backend (dashboard_site) -- separate, lighter Dockerfile than
   # gdoc-updater/discord-bot (see Dockerfile.dashboard). Deliberately no
   # `ports:` here: only reachable inside the compose network, at

@@ -28,3 +28,7 @@ def comp_stats_csv_path(year: int) -> str:
 
 def draft_results_csv_path(year: int) -> str:
     return str(DATA_ROOT / str(year) / f"{year} Draft Results.csv")
+
+
+def feature_requests_path() -> Path:
+    return DATA_ROOT / "feature_requests.md"
