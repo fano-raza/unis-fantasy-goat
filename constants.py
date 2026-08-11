@@ -12,11 +12,15 @@ from shared.runtime_config import (
 
 ## ESPN league/login info
 espn_leagueID = 82864377
-espn_s2 = os.getenv(
-    "ESPN_S2",
+# `os.getenv(key, default)` only falls back to `default` when the var is
+# entirely UNSET -- an env var explicitly set to "" (as ESPN_S2/ESPN_SWID
+# are on the droplet, likely a leftover from the Yahoo migration cleanup)
+# still counts as "set" and silently wins with an empty string, which
+# breaks any espn_fr auth attempt. `or` treats blank the same as unset.
+espn_s2 = os.getenv("ESPN_S2") or (
     'AEB10E76tw6SHjpKpDqw7nBJndJfFekcJaC%2FiUC0JrJ2wj1Nb5YcBVZ04ary1%2F%2FEiiqzXaA1UPb0CcRBu%2FMpigZ%2BX6Hr%2FqD0nan6hZfQok4YHbHuVkIAVHzfUnJ%2FLDPNMqtIcS8ZmhAFVwW62RM6HlhFSk1DZz6z29J0TZjioAkFhYwVDaf6ILm%2FrtaSTeBSPwdSOqxxyd%2F%2FzlZwt1avKDdP0fLxEytLrCGjtUpd8LANz6kvqXLgUBjRCz0YBrKbYlfzkc6zhmt2Fx%2Fncfcoi5eEOZbTPlFJRG%2B2k6Qw079Z7g%3D%3D'
 )
-espn_swid = os.getenv("ESPN_SWID", '{F1B30D95-9F03-4CA9-BE62-D89858BE885E}')
+espn_swid = os.getenv("ESPN_SWID") or '{F1B30D95-9F03-4CA9-BE62-D89858BE885E}'
 
 ## Yahoo league/login info
 yKey = os.getenv("YAHOO_KEY", "dj0yJmk9S0hLcFVjVVZtd2ZMJmQ9WVdrOWVqUk9XazV4YW1zbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PTQ3")
