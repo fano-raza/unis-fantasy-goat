@@ -603,28 +603,53 @@ function formatStat(cat: Category, value: number | null): string {
 }
 
 // FGM/FGA and FTM/FTA -- informational volume rows (made/attempted for the
-// group, summed across up to 5 players), not a win/loss comparison, so no
-// red/green highlight and no "Net" value (a combined made/attempted ratio
-// has no single meaningful difference the way a plain stat total does).
-const MADE_ATTEMPTED_ROWS = [
-  { label: "FGM/FGA", cat: "FG%" as const },
-  { label: "FTM/FTA", cat: "FT%" as const },
-];
+// group), not a win/loss comparison, so no red/green highlight and no "Net"
+// value (a combined made/attempted pair has no single meaningful difference
+// the way a plain stat total does). Rendered directly after their matching
+// percentage row (FG% / FT%), not grouped separately.
+const MADE_ATTEMPTED_BY_CAT: Partial<Record<Category, { label: string }>> = {
+  "FG%": { label: "FGM/FGA" },
+  "FT%": { label: "FTM/FTA" },
+};
 
-function madeAttempted(players: PlayerStat[], statWindow: StatWindow, cat: "FG%" | "FT%"): string {
-  let made = 0;
-  let att = 0;
-  let any = false;
+// Totals: real summed made/attempted across the group. Averages: each
+// player's own per-game made/attempted, averaged across the group -- same
+// "average of each player's own rate" convention the rest of this table's
+// Averages mode already uses for the 7 counting categories (see aggregate()
+// above), kept consistent rather than switching to a team-wide made/games
+// rate just for these two rows.
+function madeAttempted(players: PlayerStat[], statWindow: StatWindow, cat: "FG%" | "FT%", mode: "totals" | "averages"): string {
+  if (mode === "totals") {
+    let made = 0;
+    let att = 0;
+    let any = false;
+    for (const p of players) {
+      const m = p[`${statWindow}_${cat}_made`];
+      const a = p[`${statWindow}_${cat}_att`];
+      if (typeof m === "number" && typeof a === "number") {
+        made += m;
+        att += a;
+        any = true;
+      }
+    }
+    return any ? `${made}/${att}` : "—";
+  }
+
+  const madeRates: number[] = [];
+  const attRates: number[] = [];
   for (const p of players) {
     const m = p[`${statWindow}_${cat}_made`];
     const a = p[`${statWindow}_${cat}_att`];
-    if (typeof m === "number" && typeof a === "number") {
-      made += m;
-      att += a;
-      any = true;
+    const gp = p[`${statWindow}_GP`];
+    if (typeof m === "number" && typeof a === "number" && typeof gp === "number" && gp > 0) {
+      madeRates.push(m / gp);
+      attRates.push(a / gp);
     }
   }
-  return any ? `${made}/${att}` : "—";
+  if (madeRates.length === 0) return "—";
+  const avgMade = madeRates.reduce((sum, v) => sum + v, 0) / madeRates.length;
+  const avgAtt = attRates.reduce((sum, v) => sum + v, 0) / attRates.length;
+  return `${avgMade.toFixed(1)}/${avgAtt.toFixed(1)}`;
 }
 
 function PlayerPicker({
@@ -764,12 +789,12 @@ function TradeHub() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {MAIN_CATS.map((cat) => {
+                {MAIN_CATS.flatMap((cat) => {
                   const a = aggA[cat];
                   const b = aggB[cat];
                   const diff = a !== null && b !== null ? a - b : null;
                   const comparison = a !== null && b !== null ? compareCell(a, b, cat) : "neutral";
-                  return (
+                  const rows = [
                     <TableRow key={cat}>
                       <TableCell className="font-sans font-medium text-muted-foreground">{cat}</TableCell>
                       <TableCell className="text-right font-mono tabular-nums">{formatStat(cat, a)}</TableCell>
@@ -780,21 +805,29 @@ function TradeHub() {
                         {diff !== null && diff >= 0 ? "+" : ""}
                         {formatStat(cat, diff)}
                       </TableCell>
-                    </TableRow>
-                  );
+                    </TableRow>,
+                  ];
+                  // FGM/FGA directly after FG%, FTM/FTA directly after FT%
+                  // -- not grouped separately at the end.
+                  const madeAttRow = MADE_ATTEMPTED_BY_CAT[cat];
+                  if (madeAttRow) {
+                    rows.push(
+                      <TableRow key={madeAttRow.label}>
+                        <TableCell className="font-sans font-medium text-muted-foreground">
+                          {madeAttRow.label}
+                        </TableCell>
+                        <TableCell className="text-right font-mono tabular-nums">
+                          {madeAttempted(playersA, statWindow, cat as "FG%" | "FT%", mode)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono tabular-nums">
+                          {madeAttempted(playersB, statWindow, cat as "FG%" | "FT%", mode)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono tabular-nums text-muted-foreground">—</TableCell>
+                      </TableRow>,
+                    );
+                  }
+                  return rows;
                 })}
-                {MADE_ATTEMPTED_ROWS.map(({ label, cat }) => (
-                  <TableRow key={label}>
-                    <TableCell className="font-sans font-medium text-muted-foreground">{label}</TableCell>
-                    <TableCell className="text-right font-mono tabular-nums">
-                      {madeAttempted(playersA, statWindow, cat)}
-                    </TableCell>
-                    <TableCell className="text-right font-mono tabular-nums">
-                      {madeAttempted(playersB, statWindow, cat)}
-                    </TableCell>
-                    <TableCell className="text-right font-mono tabular-nums text-muted-foreground">—</TableCell>
-                  </TableRow>
-                ))}
               </TableBody>
             </Table>
           </CardContent>
