@@ -30,6 +30,7 @@ export default function AnalysisPage() {
   const [meta, setMeta] = useState<LeagueMeta | null>(null);
   const [filter, setFilter] = useState<FilterPanelValue | null>(null);
   const [rows, setRows] = useState<AnalysisRow[]>([]);
+  const [rowsLoading, setRowsLoading] = useState(true);
   const [graphIds, setGraphIds] = useState<number[]>([0]);
   const [nextGraphId, setNextGraphId] = useState(1);
   const [graphsHydrated, setGraphsHydrated] = useState(false);
@@ -93,13 +94,16 @@ export default function AnalysisPage() {
 
   useEffect(() => {
     if (!filter) return;
+    setRowsLoading(true);
     getAnalysisRows({
       years: filter.years,
       weeks: filter.weeks,
       teams: filter.teams,
       RS: filter.rs,
       PO: filter.po,
-    }).then(setRows);
+    })
+      .then(setRows)
+      .finally(() => setRowsLoading(false));
   }, [filter]);
 
   const allWeeks = useMemo(() => {
@@ -146,22 +150,30 @@ export default function AnalysisPage() {
           </CardHeader>
         </Card>
 
-        {graphIds.map((id) => (
-          <AnalysisGraph
-            key={id}
-            id={id}
-            rows={rows}
-            allYears={meta.years}
-            onRemove={
-              graphIds.length > 1
-                ? () => {
-                    localStorage.removeItem(`analysis-graph-${id}`);
-                    setGraphIds((ids) => ids.filter((existing) => existing !== id));
-                  }
-                : undefined
-            }
-          />
-        ))}
+        {rowsLoading ? (
+          <Card>
+            <CardContent>
+              <LoadingBasketballs label="Loading" />
+            </CardContent>
+          </Card>
+        ) : (
+          graphIds.map((id) => (
+            <AnalysisGraph
+              key={id}
+              id={id}
+              rows={rows}
+              allYears={meta.years}
+              onRemove={
+                graphIds.length > 1
+                  ? () => {
+                      localStorage.removeItem(`analysis-graph-${id}`);
+                      setGraphIds((ids) => ids.filter((existing) => existing !== id));
+                    }
+                  : undefined
+              }
+            />
+          ))
+        )}
 
         {graphIds.length < MAX_GRAPHS && (
           <Button

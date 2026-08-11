@@ -53,6 +53,7 @@ export default function WeeklyStatsPage() {
   const [mode, setMode] = useState<"stat" | "rating">("stat");
   const [rows, setRows] = useState<WeekRow[]>([]);
   const [rowsError, setRowsError] = useState<string | null>(null);
+  const [rowsLoading, setRowsLoading] = useState(true);
 
   useEffect(() => {
     getLeagueMeta()
@@ -66,6 +67,7 @@ export default function WeeklyStatsPage() {
 
   useEffect(() => {
     if (year == null || week == null) return;
+    setRowsLoading(true);
     getWeeklyLeaderboard({ year, week })
       .then((r) => {
         setRows(r);
@@ -74,7 +76,8 @@ export default function WeeklyStatsPage() {
       .catch((err) => {
         setRows([]);
         setRowsError(err instanceof Error ? err.message : String(err));
-      });
+      })
+      .finally(() => setRowsLoading(false));
   }, [year, week]);
 
   const displayRanks = useMemo(() => computeDisplayRanks(rows), [rows]);
@@ -168,7 +171,9 @@ export default function WeeklyStatsPage() {
 
       <Card>
         <CardContent>
-          {rowsError ? (
+          {rowsLoading ? (
+            <LoadingBasketballs label="Loading week" />
+          ) : rowsError ? (
             <p className="text-sm text-muted-foreground">
               No data for {year} week {week} ({rowsError}).
             </p>

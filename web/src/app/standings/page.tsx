@@ -227,6 +227,7 @@ function StandingsPageInner() {
   const [history, setHistory] = useState<StandingsHistoryResponse | null>(null);
   const [brackets, setBrackets] = useState<PlayoffBracketsResponse>({});
   const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Ratings view (absorbed from the retired Season page).
   const [ratingsStatMode, setRatingsStatMode] = useState<"totals" | "averages">("totals");
@@ -302,13 +303,19 @@ function StandingsPageInner() {
   // this app already uses elsewhere (e.g. Profile) -- the payloads are small.
   useEffect(() => {
     if (year == null || !weekRange || weeksInRange.length === 0) return;
+    // Set immediately (not inside the debounced timeout below) so a filter
+    // change shows the loading state right away instead of leaving the
+    // previous year/week-range's stale standings/ratings (or a stale error
+    // from an earlier request) on screen for the debounce window.
+    setIsLoading(true);
+    setError(null);
     const [minWeek, maxWeek] = weekRange;
     const timeout = setTimeout(() => {
       // "Prior" = the same range with its single latest week dropped, so
       // the Place column can show a green/red movement arrow. Skipped for
       // a single-week range -- there's no earlier state to compare to.
       const priorReq = maxWeek > minWeek ? { year, min_week: minWeek, max_week: maxWeek - 1 } : null;
-      Promise.all([
+      const standingsDone = Promise.all([
         getStandings({ year, min_week: minWeek, max_week: maxWeek }),
         priorReq ? getStandings(priorReq).catch(() => null) : Promise.resolve(null),
         getStandingsHistory({ year, min_week: minWeek, max_week: maxWeek }),
@@ -338,7 +345,7 @@ function StandingsPageInner() {
         ratingsMaxWeek != null && weeksInRange.length > 1
           ? { ...ratingsReq, weeks: weeksInRange.filter((w) => w !== ratingsMaxWeek) }
           : null;
-      Promise.all([
+      const ratingsDone = Promise.all([
         ratingsFetcher(ratingsReq),
         priorRatingsReq ? ratingsFetcher(priorRatingsReq).catch(() => null) : Promise.resolve(null),
         getSeasonLeaders({ ...ratingsReq, mode: ratingsStatMode }),
@@ -349,6 +356,8 @@ function StandingsPageInner() {
         setRatingsLeaders(leaders);
         setRatingsHistory(analysisRows);
       });
+
+      Promise.allSettled([standingsDone, ratingsDone]).then(() => setIsLoading(false));
     }, 200);
     return () => clearTimeout(timeout);
   }, [year, weekRange, weeksInRange, ratingsStatMode, ratingsRs, ratingsPo]);
@@ -438,7 +447,7 @@ function StandingsPageInner() {
             <p className="text-sm text-muted-foreground">No data for the current filters ({error}).</p>
           </CardContent>
         </Card>
-      ) : !standings ? (
+      ) : isLoading || !standings ? (
         <LoadingBasketballs label="Loading standings" />
       ) : (
         <>

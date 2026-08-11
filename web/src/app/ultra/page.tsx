@@ -25,6 +25,7 @@ export default function UltraPage() {
   const [focusTeam, setFocusTeam] = useState<string>(NO_FOCUS_TEAM);
   const [rows, setRows] = useState<AggregateRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     getLeagueMeta().then((m) => {
@@ -50,6 +51,7 @@ export default function UltraPage() {
 
   useEffect(() => {
     if (year == null || weeks.length === 0) return;
+    setLoading(true);
     getAverages({ years: [year], weeks, RS: true, PO: true })
       .then((res) => {
         setRows(res);
@@ -58,7 +60,8 @@ export default function UltraPage() {
       .catch((err) => {
         setRows([]);
         setError(err instanceof Error ? err.message : String(err));
-      });
+      })
+      .finally(() => setLoading(false));
   }, [year, weeks]);
 
   // Only teams actually shown in the current filtered rows, not the full
@@ -124,7 +127,9 @@ export default function UltraPage() {
 
         <Card>
           <CardContent>
-            {error ? (
+            {loading ? (
+              <LoadingBasketballs label="Loading" />
+            ) : error ? (
               <p className="text-sm text-muted-foreground">
                 No data for the current filters ({error}).
               </p>

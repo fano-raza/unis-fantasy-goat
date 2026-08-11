@@ -32,6 +32,7 @@ export default function CareerStatsPage() {
   const [filter, setFilter] = useState<FilterPanelValue | null>(null);
   const [rows, setRows] = useState<AggregateRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     getLeagueMeta().then((m) => {
@@ -49,6 +50,7 @@ export default function CareerStatsPage() {
 
   useEffect(() => {
     if (!filter) return;
+    setLoading(true);
     const req = {
       years: filter.years,
       weeks: filter.weeks,
@@ -77,7 +79,8 @@ export default function CareerStatsPage() {
       .catch((err) => {
         setRows([]);
         setError(err instanceof Error ? err.message : String(err));
-      });
+      })
+      .finally(() => setLoading(false));
   }, [filter, statMode]);
 
   const allWeeks = useMemo(() => {
@@ -170,7 +173,9 @@ export default function CareerStatsPage() {
 
         <Card>
           <CardContent>
-            {error ? (
+            {loading ? (
+              <LoadingBasketballs label="Loading" />
+            ) : error ? (
               <p className="text-sm text-muted-foreground">
                 No data for the current filters ({error}).
               </p>

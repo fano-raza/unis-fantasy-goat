@@ -287,11 +287,15 @@ function DraftHub({ meta }: { meta: LeagueMeta }) {
   const [groupBy, setGroupBy] = useState<DraftGroupBy>(DEFAULT_GROUP_BY);
   const [statMode, setStatMode] = useState<"totals" | "averages">("totals");
   const [picks, setPicks] = useState<DraftPick[]>([]);
+  const [picksLoading, setPicksLoading] = useState(true);
   const [sort, setSort] = useState<SortState>({ key: "draftScore", dir: "desc" });
   const [page, setPage] = useState(0);
 
   useEffect(() => {
-    getDraftPicks({ years: filters.years, teams: filters.teams }).then(setPicks);
+    setPicksLoading(true);
+    getDraftPicks({ years: filters.years, teams: filters.teams })
+      .then(setPicks)
+      .finally(() => setPicksLoading(false));
   }, [filters]);
 
   useEffect(() => {
@@ -470,7 +474,9 @@ function DraftHub({ meta }: { meta: LeagueMeta }) {
 
         <Card>
           <CardContent>
-            {rows.length === 0 ? (
+            {picksLoading ? (
+              <LoadingBasketballs label="Loading" />
+            ) : rows.length === 0 ? (
               <p className="text-sm text-muted-foreground">No picks for the current filters.</p>
             ) : (
               <>
@@ -758,6 +764,7 @@ function PlayerPicker({
 
 function TradeHub() {
   const [players, setPlayers] = useState<PlayerStat[]>([]);
+  const [playersLoading, setPlayersLoading] = useState(true);
   const [teamA, setTeamA] = useState<string[]>([]);
   const [teamB, setTeamB] = useState<string[]>([]);
   // Defaults to "season" -- during the NBA off-season the rolling windows
@@ -767,7 +774,9 @@ function TradeHub() {
   const [mode, setMode] = useState<"totals" | "averages">("averages");
 
   useEffect(() => {
-    getPlayerStats().then(setPlayers);
+    getPlayerStats()
+      .then(setPlayers)
+      .finally(() => setPlayersLoading(false));
   }, []);
 
   const playersA = players.filter((p) => teamA.includes(p.Player));
@@ -788,10 +797,14 @@ function TradeHub() {
           </CardAction>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <div className="flex flex-wrap gap-6">
-            <PlayerPicker label="Team A (up to 5)" selected={teamA} onChange={setTeamA} available={players} />
-            <PlayerPicker label="Team B (up to 5)" selected={teamB} onChange={setTeamB} available={players} />
-          </div>
+          {playersLoading ? (
+            <LoadingBasketballs label="Loading players" />
+          ) : (
+            <div className="flex flex-wrap gap-6">
+              <PlayerPicker label="Team A (up to 5)" selected={teamA} onChange={setTeamA} available={players} />
+              <PlayerPicker label="Team B (up to 5)" selected={teamB} onChange={setTeamB} available={players} />
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-6">
             <div className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
               <span className="text-muted-foreground">Window</span>
