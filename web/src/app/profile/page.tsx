@@ -72,6 +72,7 @@ import { buildBadges, POSITIVE_BADGE_TYPES } from "@/lib/badges";
 import { TeamBadges } from "@/components/team-badges";
 import { BadgeDrawer } from "@/components/badge-drawer";
 import { useMediaQuery } from "@/lib/use-media-query";
+import { useElementHeight } from "@/lib/use-element-height";
 
 type View = "profile" | "comparison";
 const VIEW_OPTIONS = [
@@ -324,6 +325,11 @@ function ProfilePageInner() {
   }
 
   const isMobile = useMediaQuery("(max-width: 639px)");
+  // Measures the sticky top bar's real height so the Comparison table's own
+  // header row can stick directly below it (see useElementHeight's comment
+  // for why a hardcoded offset isn't reliable -- the bar's height changes
+  // between the Profile/Comparison views and across viewport widths).
+  const [stickyBarRef, stickyBarHeight] = useElementHeight<HTMLDivElement>();
   // Cap the *display* at MOBILE_TEAM_CAP on mobile / DESKTOP_TEAM_CAP on
   // desktop without mutating `selected` itself, so a wider-viewport
   // selection persisted from desktop still fits on mobile without
@@ -405,7 +411,10 @@ function ProfilePageInner() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="sticky top-0 z-30 flex flex-wrap items-center gap-3 rounded-sm border border-border bg-card px-3 py-2 shadow-sm">
+      <div
+        ref={stickyBarRef}
+        className="sticky top-0 z-30 flex flex-wrap items-center gap-3 rounded-sm border border-border bg-card px-3 py-2 shadow-sm"
+      >
         <ArrowToggle options={VIEW_OPTIONS} value={view} onChange={handleViewChange} />
 
         {view === "profile" ? (
@@ -497,16 +506,16 @@ function ProfilePageInner() {
                   <TableHeader>
                     <TableRow>
                       <TableHead
-                        style={{ width: colWidthPct }}
-                        className="whitespace-normal sm:whitespace-nowrap"
+                        style={{ width: colWidthPct, top: stickyBarHeight }}
+                        className="sticky z-20 whitespace-normal bg-card sm:whitespace-nowrap"
                       >
                         Stat
                       </TableHead>
                       {selectedRows.map((row) => (
                         <TableHead
                           key={row.Team}
-                          style={{ width: colWidthPct }}
-                          className="whitespace-normal text-right text-primary sm:whitespace-nowrap"
+                          style={{ width: colWidthPct, top: stickyBarHeight }}
+                          className="sticky z-20 whitespace-normal bg-card text-right text-primary sm:whitespace-nowrap"
                         >
                           {row.Team}
                         </TableHead>

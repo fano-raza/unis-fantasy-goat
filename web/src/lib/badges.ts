@@ -43,10 +43,16 @@ const BADGE_TYPE_ORDER = [
   "Runner-Up",
   "MVP",
   "RS 1st Place",
+  "Playoff Appearances",
   "Worst Rating",
   "RS Last Place",
   ...MAIN_CATS.flatMap((cat) => [`${cat} Leader`, `${cat} Loser`]),
 ];
+
+// Milestone threshold for the "Playoff Appearances" badge (a single
+// all-time badge, like GOAT -- not one per year, unlike the other "other"
+// badges below).
+const PLAYOFF_APPEARANCES_THRESHOLD = 5;
 
 // Every distinct positive badge *type* that can possibly exist (5 "other"
 // achievements + one Leader badge per category) -- the denominator for the
@@ -57,6 +63,7 @@ export const POSITIVE_BADGE_TYPES = [
   "Runner-Up",
   "MVP",
   "RS 1st Place",
+  "Playoff Appearances",
   ...MAIN_CATS.map((cat) => `${cat} Leader`),
 ];
 
@@ -105,6 +112,22 @@ function otherBadges(profile: TeamSummary): BadgeInstance[] {
   for (const y of runnerUpYears) badges.push({ id: `runnerup-${y}`, icon: "🥈", label: "Runner-Up", year: y, positive: true, type: "Runner-Up" });
   for (const y of parseYears(profile["MVP Years"])) badges.push({ id: `mvp-${y}`, icon: "⭐", label: "MVP", year: y, positive: true, type: "MVP" });
   for (const y of parseYears(profile["RS 1st Years"])) badges.push({ id: `rs1st-${y}`, icon: PODIUM_ICON_MARKER, label: "RS 1st Place", year: y, positive: true, type: "RS 1st Place" });
+
+  // Single all-time badge (like GOAT), not one per year -- unlocked once a
+  // team has made the playoffs PLAYOFF_APPEARANCES_THRESHOLD times.
+  const playoffAppearances = parseYears(profile["Playoff Years"]).length;
+  if (playoffAppearances >= PLAYOFF_APPEARANCES_THRESHOLD) {
+    badges.push({
+      id: "playoff-appearances",
+      icon: "5",
+      label: "Playoff Appearances",
+      year: 0,
+      yearLabel: `${playoffAppearances}x`,
+      positive: true,
+      type: "Playoff Appearances",
+    });
+  }
+
   for (const y of parseYears(profile["Worst Rating Years"])) badges.push({ id: `worstrating-${y}`, icon: "🗑️", label: "Worst Rating", year: y, positive: false, type: "Worst Rating" });
   for (const y of parseYears(profile["RS Last Years"])) badges.push({ id: `rslast-${y}`, icon: "L", label: "RS Last Place", year: y, positive: false, type: "RS Last Place" });
 

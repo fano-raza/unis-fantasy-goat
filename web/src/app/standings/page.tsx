@@ -35,6 +35,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { LabeledSelect, NO_FOCUS_TEAM } from "@/components/labeled-select";
+import { SteppableSelect } from "@/components/steppable-select";
 import { ArrowToggle } from "@/components/arrow-toggle";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { categoricalPalette } from "@/lib/palette";
@@ -62,7 +63,7 @@ import { ArrowDown, ArrowUp } from "lucide-react";
 
 type View = "1v1" | "league_wins" | "ratings";
 const VIEW_OPTIONS = [
-  { value: "1v1", label: "1v1 Standings" },
+  { value: "1v1", label: "Season Standings" },
   { value: "league_wins", label: "League Wins" },
   { value: "ratings", label: "Ratings" },
 ];
@@ -381,12 +382,7 @@ function StandingsPageInner() {
   return (
     <div className="flex flex-col gap-4">
       <div className="sticky top-0 z-30 flex flex-wrap items-center gap-3 rounded-sm border border-border bg-card px-3 py-2 shadow-sm">
-        <LabeledSelect
-          label="Season"
-          value={String(year)}
-          onValueChange={(v) => setYear(Number(v))}
-          options={meta.years.map((y) => ({ value: String(y), label: String(y) }))}
-        />
+        <SteppableSelect label="Season" value={year} onValueChange={setYear} options={meta.years} />
         <ArrowToggle options={VIEW_OPTIONS} value={view} onChange={(v) => setView(v as View)} />
       </div>
 
@@ -434,7 +430,7 @@ function StandingsPageInner() {
             <>
               <Card>
                 <CardHeader>
-                  <CardTitle>1v1 Standings</CardTitle>
+                  <CardTitle>Season Standings</CardTitle>
                   <CardDescription>Real matchup win-loss-tie record, by matchup outcome or aggregate category record</CardDescription>
                   <CardAction>
                     <label className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">

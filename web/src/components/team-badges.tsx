@@ -93,6 +93,8 @@ function BadgeChip({ badge, open, onOpen, onClose }: {
       >
         {badge.icon === "L" ? (
           <span className="font-mono text-sm font-extrabold text-muted-foreground">L</span>
+        ) : badge.icon === "5" ? (
+          <span className="font-mono text-sm font-extrabold text-primary">5</span>
         ) : badge.icon === PODIUM_ICON_MARKER ? (
           <Podium className="size-5" />
         ) : (

@@ -15,7 +15,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ChartLegend } from "@/components/chart-legend";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -28,6 +27,7 @@ import {
 import type { AnalysisRow } from "@/lib/api";
 import { ANALYSIS_FIELDS, DEFAULT_X_FIELD, getField } from "@/lib/fields";
 import { categoricalPalette } from "@/lib/palette";
+import { niceTicks } from "@/lib/chart-ticks";
 import { pivot, pivotScatter, type GroupBy } from "@/lib/pivot";
 import { cn } from "@/lib/utils";
 import { ArrowLeftRight, X } from "lucide-react";
@@ -150,6 +150,46 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
   }, [chartData]);
   const isDense = maxPointCount > DENSE_THRESHOLD;
 
+  // Every tick must land on a multiple of 0.25 (whole numbers preferred) --
+  // computed from the actual rendered data's min/max, not the field's
+  // theoretical range, so ticks always bracket what's actually on screen.
+  const lineYTicks = useMemo(() => {
+    if (!isTimeAxis) return undefined;
+    let min = Infinity;
+    let max = -Infinity;
+    for (const row of chartData) {
+      for (const key of seriesKeys) {
+        const v = row[key];
+        if (typeof v === "number") {
+          min = Math.min(min, v);
+          max = Math.max(max, v);
+        }
+      }
+    }
+    return Number.isFinite(min) && Number.isFinite(max) ? niceTicks(min, max) : undefined;
+  }, [chartData, seriesKeys, isTimeAxis]);
+
+  const scatterXTicks = useMemo(() => {
+    if (isTimeAxis) return undefined;
+    const xs = scatterSeries.flatMap((s) => s.points.map((p) => p.x));
+    return xs.length ? niceTicks(Math.min(...xs), Math.max(...xs)) : undefined;
+  }, [scatterSeries, isTimeAxis]);
+  const scatterYTicks = useMemo(() => {
+    if (isTimeAxis) return undefined;
+    const ys = scatterSeries.flatMap((s) => s.points.map((p) => p.y));
+    return ys.length ? niceTicks(Math.min(...ys), Math.max(...ys)) : undefined;
+  }, [scatterSeries, isTimeAxis]);
+
+  // Label-only tooltip on scatter points ("what they represent", no value)
+  // -- only below this total point count, since Recharts' hover machinery
+  // is the same perf hazard documented for the line chart's DENSE_THRESHOLD,
+  // just triggered by raw point count here instead of series-at-one-x-tick.
+  const totalScatterPoints = useMemo(
+    () => scatterSeries.reduce((sum, s) => sum + s.points.length, 0),
+    [scatterSeries],
+  );
+  const showScatterTooltip = !isTimeAxis && totalScatterPoints < 200 && totalScatterPoints > 0;
+
   return (
     <Card>
       <CardContent className="flex flex-col gap-4">
@@ -172,38 +212,20 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
           >
             <ArrowLeftRight className="size-4" />
           </Button>
-          <div className="flex items-center gap-3 text-[11px] font-bold tracking-wider uppercase">
+          <div className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
             <span className="text-muted-foreground">Group by</span>
-            <label className="flex items-center gap-1.5">
-              <Checkbox
-                checked={params.groupBy.team}
-                onCheckedChange={() =>
-                  setParams((d) => ({ ...d, groupBy: { ...d.groupBy, team: !d.groupBy.team } }))
+            {(["team", "season", "week"] as const).map((dim) => (
+              <Button
+                key={dim}
+                variant={params.groupBy[dim] ? "default" : "outline"}
+                size="sm"
+                onClick={() =>
+                  setParams((d) => ({ ...d, groupBy: { ...d.groupBy, [dim]: !d.groupBy[dim] } }))
                 }
-              />
-              Team
-            </label>
-            <label className="flex items-center gap-1.5">
-              <Checkbox
-                checked={params.groupBy.season}
-                onCheckedChange={() =>
-                  setParams((d) => ({
-                    ...d,
-                    groupBy: { ...d.groupBy, season: !d.groupBy.season },
-                  }))
-                }
-              />
-              Season
-            </label>
-            <label className="flex items-center gap-1.5">
-              <Checkbox
-                checked={params.groupBy.week}
-                onCheckedChange={() =>
-                  setParams((d) => ({ ...d, groupBy: { ...d.groupBy, week: !d.groupBy.week } }))
-                }
-              />
-              Week
-            </label>
+              >
+                {dim[0].toUpperCase() + dim.slice(1)}
+              </Button>
+            ))}
           </div>
           {onRemove && (
             <Button
@@ -245,6 +267,8 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
                 <YAxis
                   name={yField.label}
                   width={56}
+                  ticks={lineYTicks}
+                  domain={lineYTicks ? [lineYTicks[0], lineYTicks[lineYTicks.length - 1]] : undefined}
                   tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
                   stroke="var(--border)"
                   label={{
@@ -329,7 +353,12 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
                   dataKey="x"
                   name={xField.label}
                   type="number"
-                  domain={["dataMin", "dataMax"]}
+                  ticks={scatterXTicks}
+                  domain={
+                    scatterXTicks
+                      ? [scatterXTicks[0], scatterXTicks[scatterXTicks.length - 1]]
+                      : ["dataMin", "dataMax"]
+                  }
                   tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
                   stroke="var(--border)"
                   label={{
@@ -344,6 +373,12 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
                   dataKey="y"
                   name={yField.label}
                   width={56}
+                  ticks={scatterYTicks}
+                  domain={
+                    scatterYTicks
+                      ? [scatterYTicks[0], scatterYTicks[scatterYTicks.length - 1]]
+                      : ["dataMin", "dataMax"]
+                  }
                   tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
                   stroke="var(--border)"
                   label={{
@@ -354,6 +389,21 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
                     fontSize: 12,
                   }}
                 />
+                {showScatterTooltip && (
+                  <Tooltip
+                    isAnimationActive={false}
+                    cursor={{ stroke: "var(--border)" }}
+                    content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null;
+                      const label = (payload[0].payload as { label?: string }).label;
+                      return (
+                        <div className="rounded-sm border border-border bg-card px-2 py-1 text-xs shadow-md">
+                          {label}
+                        </div>
+                      );
+                    }}
+                  />
+                )}
                 {scatterSeries.map((s, i) => (
                   <Scatter
                     key={s.key}

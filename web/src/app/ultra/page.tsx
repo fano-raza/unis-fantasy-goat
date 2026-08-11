@@ -10,7 +10,9 @@ import {
 } from "@/components/ui/card";
 import { StatTable } from "@/components/stat-table";
 import { ChecklistGroup } from "@/components/filter-panel";
+import { GenericFilterDrawer } from "@/components/generic-filter-drawer";
 import { LabeledSelect, NO_FOCUS_TEAM } from "@/components/labeled-select";
+import { SteppableSelect } from "@/components/steppable-select";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { getAverages, getLeagueMeta, type AggregateRow, type LeagueMeta } from "@/lib/api";
 
@@ -29,9 +31,11 @@ export default function UltraPage() {
     });
   }, []);
 
+  // total_matchup_count (not rs_week_count) so playoff weeks are included
+  // among the selectable filters.
   const allWeeks = useMemo(() => {
     if (!meta || year == null) return [];
-    const maxWeek = meta.rs_week_count[String(year)] ?? 1;
+    const maxWeek = meta.total_matchup_count[String(year)] ?? 1;
     return Array.from({ length: maxWeek }, (_, i) => i + 1);
   }, [meta, year]);
 
@@ -91,12 +95,7 @@ export default function UltraPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap items-center gap-6">
-            <LabeledSelect
-              label="Season"
-              value={String(year)}
-              onValueChange={(v) => setYear(Number(v))}
-              options={meta.years.map((y) => ({ value: String(y), label: String(y) }))}
-            />
+            <SteppableSelect label="Season" value={year} onValueChange={setYear} options={meta.years} />
             <LabeledSelect
               label="Focus team"
               value={focusTeam}
@@ -107,12 +106,12 @@ export default function UltraPage() {
               ]}
             />
             <div className="sm:hidden">
-              <ChecklistGroup
-                label="Week"
-                options={allWeeks}
-                selected={weeks}
+              <GenericFilterDrawer
+                value={weeks}
                 onChange={setWeeks}
-                scrollable
+                renderContent={(draft, setDraft) => (
+                  <ChecklistGroup label="Week" options={allWeeks} selected={draft} onChange={setDraft} scrollable />
+                )}
               />
             </div>
           </CardContent>
@@ -131,6 +130,7 @@ export default function UltraPage() {
                 focusTeam={focusTeam === NO_FOCUS_TEAM ? undefined : focusTeam}
                 showFocusScore
                 pinFocusRow
+                stickyHeaderOffset={0}
               />
             )}
           </CardContent>

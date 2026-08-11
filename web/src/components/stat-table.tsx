@@ -42,6 +42,12 @@ interface StatTableProps {
   // page's StatTable usage (which sorts the focus row like any other row)
   // is unaffected.
   pinFocusRow?: boolean;
+  // Ultra page only -- when set (a pixel offset, typically the height of
+  // the page's own sticky filter bar, measured via useElementHeight rather
+  // than hardcoded -- see that hook's comment for why), the header row
+  // becomes sticky at that offset so it stays visible while scrolling the
+  // table body vertically. Undefined disables it, unaffected elsewhere.
+  stickyHeaderOffset?: number;
 }
 
 function allPlayRecord(
@@ -128,7 +134,17 @@ function SortableHead({
   );
 }
 
-export function StatTable({ rows, mode, focusTeam, showFocusScore, pinFocusRow }: StatTableProps) {
+export function StatTable({
+  rows,
+  mode,
+  focusTeam,
+  showFocusScore,
+  pinFocusRow,
+  stickyHeaderOffset,
+}: StatTableProps) {
+  const headerSticky = stickyHeaderOffset !== undefined;
+  const headerStickyClass = headerSticky ? "sticky z-20 bg-card" : undefined;
+  const headerStickyStyle: CSSProperties | undefined = headerSticky ? { top: stickyHeaderOffset } : undefined;
   const [sort, setSort] = useState<SortState | null>(null);
   const baseline = focusTeam ? rows.find((r) => r.team === focusTeam) : undefined;
 
@@ -209,7 +225,8 @@ export function StatTable({ rows, mode, focusTeam, showFocusScore, pinFocusRow }
             sortKey="team"
             sort={sort}
             onToggle={toggleSort}
-            className={cn(TEAM_COL_WIDTH, "sticky left-0 z-10 bg-card")}
+            className={cn(TEAM_COL_WIDTH, "sticky left-0 bg-card", headerSticky ? "z-30" : "z-10")}
+            style={headerStickyStyle}
           >
             Team
           </SortableHead>
@@ -218,21 +235,34 @@ export function StatTable({ rows, mode, focusTeam, showFocusScore, pinFocusRow }
               sortKey="score"
               sort={sort}
               onToggle={toggleSort}
-              className={cn("text-right", "sticky z-10 bg-card")}
-              style={{ left: scoreLeft }}
+              className={cn("text-right sticky bg-card", headerSticky ? "z-30" : "z-10")}
+              style={{ left: scoreLeft, ...headerStickyStyle }}
             >
               Score
             </SortableHead>
           )}
-          <SortableHead sortKey="rank" sort={sort} onToggle={toggleSort}>
+          <SortableHead sortKey="rank" sort={sort} onToggle={toggleSort} className={headerStickyClass} style={headerStickyStyle}>
             Rank
           </SortableHead>
           {MAIN_CATS.map((cat) => (
-            <SortableHead key={cat} sortKey={cat} sort={sort} onToggle={toggleSort} className="text-right">
+            <SortableHead
+              key={cat}
+              sortKey={cat}
+              sort={sort}
+              onToggle={toggleSort}
+              className={cn("text-right", headerStickyClass)}
+              style={headerStickyStyle}
+            >
               {cat}
             </SortableHead>
           ))}
-          <SortableHead sortKey="rating" sort={sort} onToggle={toggleSort} className="text-right">
+          <SortableHead
+            sortKey="rating"
+            sort={sort}
+            onToggle={toggleSort}
+            className={cn("text-right", headerStickyClass)}
+            style={headerStickyStyle}
+          >
             Rating
           </SortableHead>
         </TableRow>

@@ -16,9 +16,18 @@ export interface PivotResult {
   seriesKeys: string[];
 }
 
+export interface ScatterPoint {
+  x: number;
+  y: number;
+  // What this point represents, for the low-density tooltip (analysis-graph.tsx)
+  // -- the underlying row's identity when ungrouped, or the group key itself
+  // when grouped (since a grouped point already collapses many rows into one).
+  label: string;
+}
+
 export interface ScatterSeries {
   key: string;
-  points: { x: number; y: number }[];
+  points: ScatterPoint[];
 }
 
 function groupKeyFor(row: AnalysisRow, groupBy: GroupBy): string {
@@ -97,14 +106,14 @@ export function pivotScatter(
   groupBy: GroupBy,
 ): ScatterSeries[] {
   const isGrouped = groupBy.team || groupBy.season || groupBy.week;
-  const buckets = new Map<string, { x: number; y: number }[]>();
+  const buckets = new Map<string, ScatterPoint[]>();
   for (const row of rows) {
     const x = xField.get(row);
     const y = yField.get(row);
     if (x === undefined || y === undefined) continue;
     const key = groupKeyFor(row, groupBy);
     if (!buckets.has(key)) buckets.set(key, []);
-    buckets.get(key)!.push({ x, y });
+    buckets.get(key)!.push({ x, y, label: `${row.team} · ${row.year} Wk${row.week}` });
   }
 
   return Array.from(buckets.keys())
@@ -114,6 +123,6 @@ export function pivotScatter(
       if (!isGrouped) return { key, points };
       const avgX = points.reduce((a, p) => a + p.x, 0) / points.length;
       const avgY = points.reduce((a, p) => a + p.y, 0) / points.length;
-      return { key, points: [{ x: avgX, y: avgY }] };
+      return { key, points: [{ x: avgX, y: avgY, label: key }] };
     });
 }

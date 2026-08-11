@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, X } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ChecklistGroup } from "@/components/filter-panel";
+import { GenericFilterDrawer } from "@/components/generic-filter-drawer";
 import { ArrowToggle } from "@/components/arrow-toggle";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { getDraftPicks, getLeagueMeta, MAIN_CATS, type Category, type DraftPick, type LeagueMeta } from "@/lib/api";
@@ -38,8 +39,8 @@ import { cn } from "@/lib/utils";
 
 type View = "draft" | "trade";
 const VIEW_OPTIONS = [
-  { value: "draft", label: "Draft Box" },
-  { value: "trade", label: "Trade Box" },
+  { value: "draft", label: "Draft Hub" },
+  { value: "trade", label: "Trade Hub" },
 ];
 
 export default function PlayersPage() {
@@ -57,81 +58,302 @@ export default function PlayersPage() {
       <div className="sticky top-0 z-30 flex items-center gap-3 rounded-sm border border-border bg-card px-3 py-2 shadow-sm">
         <ArrowToggle options={VIEW_OPTIONS} value={view} onChange={(v) => setView(v as View)} />
       </div>
-      {view === "draft" ? <DraftBox meta={meta} /> : <TradeBox />}
+      {view === "draft" ? <DraftHub meta={meta} /> : <TradeHub />}
     </div>
   );
 }
 
-type GroupBy = "none" | "team" | "player" | "year";
+// Unselecting every dimension IS "None" -- no separate None button/state
+// (per the user's explicit ask). Player is mutually exclusive with Team/
+// Year (not spec'd as combinable -- toggling one clears the other, see
+// toggleGroupBy below) since a single player's identity already implies
+// one row; combining it with Team/Year grouping has no defined column
+// behavior in the spec this was built from.
+interface DraftGroupBy {
+  team: boolean;
+  player: boolean;
+  year: boolean;
+}
+const DEFAULT_GROUP_BY: DraftGroupBy = { team: false, player: false, year: false };
+
+interface DraftFilters {
+  years: number[];
+  teams: string[];
+}
+
+interface DraftDisplayRow {
+  key: string;
+  year: number | null;
+  player: string | null;
+  team: string | null;
+  round: number | null;
+  roundPick: number | null;
+  overallPick: number | null;
+  draftScore: number;
+  rank: number | null;
+}
+
+function parseRank(rank: string): number | null {
+  const n = Number(rank);
+  return Number.isFinite(n) ? n : null;
+}
+
+function average(values: number[]): number | null {
+  return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
+}
+
+// Real aggregation, not visual grouping -- one row per group value, with
+// each column's meaning redefined per the user's exact spec:
+// - Ungrouped: every pick is its own row, real values throughout.
+// - Player group: Player = the player; Team/Round Pick/Year = N/A; Round
+//   and Overall Pick = averaged (a player drafted more than once can have a
+//   meaningful "typically picked around here"); Draft Score = total/average
+//   (toggle); Rank = average.
+// - Team and/or Year group: Team = team if Team selected else N/A; Year =
+//   year if Year selected else N/A; Player/Round/Round Pick/Overall Pick =
+//   N/A (no single coherent value across many different picks); Draft
+//   Score = total/average; Rank = average.
+function aggregateDraftPicks(
+  picks: DraftPick[],
+  groupBy: DraftGroupBy,
+  statMode: "totals" | "averages",
+): DraftDisplayRow[] {
+  const isGrouped = groupBy.team || groupBy.player || groupBy.year;
+
+  if (!isGrouped) {
+    return picks.map((p) => ({
+      key: `${p.Year}-${p.Overall}-${p.Team}`,
+      year: p.Year,
+      player: p.Player,
+      team: p.Team,
+      round: p.Round,
+      roundPick: p.Pick,
+      overallPick: p.Overall,
+      draftScore: p.Score,
+      rank: parseRank(p.Rank),
+    }));
+  }
+
+  const groups = new Map<string, DraftPick[]>();
+  for (const p of picks) {
+    const key = groupBy.player ? `player:${p.Player}` : `team:${groupBy.team ? p.Team : ""}|year:${groupBy.year ? p.Year : ""}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(p);
+  }
+
+  const rows: DraftDisplayRow[] = [];
+  for (const [key, groupPicks] of groups) {
+    const scores = groupPicks.map((p) => p.Score);
+    const scoreSum = scores.reduce((a, b) => a + b, 0);
+    const draftScore = statMode === "totals" ? scoreSum : scoreSum / scores.length;
+    const rank = average(groupPicks.map((p) => parseRank(p.Rank)).filter((r): r is number => r !== null));
+
+    if (groupBy.player) {
+      rows.push({
+        key,
+        year: null,
+        player: groupPicks[0].Player,
+        team: null,
+        round: average(groupPicks.map((p) => p.Round)),
+        roundPick: null,
+        overallPick: average(groupPicks.map((p) => p.Overall)),
+        draftScore,
+        rank,
+      });
+    } else {
+      rows.push({
+        key,
+        year: groupBy.year ? groupPicks[0].Year : null,
+        player: null,
+        team: groupBy.team ? groupPicks[0].Team : null,
+        round: null,
+        roundPick: null,
+        overallPick: null,
+        draftScore,
+        rank,
+      });
+    }
+  }
+  return rows;
+}
+
+function formatNum(value: number | null): string {
+  if (value === null) return "—";
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+type SortKey = "year" | "player" | "team" | "round" | "roundPick" | "overallPick" | "draftScore" | "rank";
+type SortDir = "desc" | "asc";
+interface SortState {
+  key: SortKey;
+  dir: SortDir;
+}
+
+function DraftSortHead({
+  sortKey,
+  sort,
+  onToggle,
+  className,
+  children,
+}: {
+  sortKey: SortKey;
+  sort: SortState;
+  onToggle: (key: SortKey) => void;
+  className?: string;
+  children: ReactNode;
+}) {
+  const active = sort.key === sortKey;
+  return (
+    <TableHead className={className}>
+      <button
+        type="button"
+        onClick={() => onToggle(sortKey)}
+        className={cn("inline-flex items-center gap-0.5 hover:text-foreground", active && "text-foreground")}
+      >
+        {children}
+        {active && (sort.dir === "desc" ? <ArrowDown className="size-3" /> : <ArrowUp className="size-3" />)}
+      </button>
+    </TableHead>
+  );
+}
+
 const PAGE_SIZE = 25;
 
-function DraftBox({ meta }: { meta: LeagueMeta }) {
-  const [years, setYears] = useState<number[]>(meta.years);
-  const [teams, setTeams] = useState<string[]>(meta.members);
-  const [groupBy, setGroupBy] = useState<GroupBy>("none");
-  const [rows, setRows] = useState<DraftPick[]>([]);
+function DraftHub({ meta }: { meta: LeagueMeta }) {
+  const [filters, setFilters] = useState<DraftFilters>({ years: meta.years, teams: meta.members });
+  const [groupBy, setGroupBy] = useState<DraftGroupBy>(DEFAULT_GROUP_BY);
+  const [statMode, setStatMode] = useState<"totals" | "averages">("totals");
+  const [picks, setPicks] = useState<DraftPick[]>([]);
+  const [sort, setSort] = useState<SortState>({ key: "draftScore", dir: "desc" });
   const [page, setPage] = useState(0);
 
   useEffect(() => {
-    getDraftPicks({ years, teams }).then(setRows);
-  }, [years, teams]);
+    getDraftPicks({ years: filters.years, teams: filters.teams }).then(setPicks);
+  }, [filters]);
 
   useEffect(() => {
     setPage(0);
-  }, [years, teams, groupBy]);
+  }, [filters, groupBy, statMode]);
 
-  const groups = useMemo(() => {
-    if (groupBy === "none") return [{ header: null as string | null, picks: rows }];
-    const map = new Map<string, DraftPick[]>();
-    for (const pick of rows) {
-      const key = groupBy === "team" ? pick.Team : groupBy === "player" ? pick.Player : String(pick.Year);
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(pick);
+  const isGrouped = groupBy.team || groupBy.player || groupBy.year;
+
+  function toggleGroupBy(dim: keyof DraftGroupBy) {
+    setGroupBy((g) => {
+      if (dim === "player") return g.player ? DEFAULT_GROUP_BY : { team: false, player: true, year: false };
+      return { ...g, player: false, [dim]: !g[dim] };
+    });
+  }
+
+  function toggleSort(key: SortKey) {
+    setSort((prev) => (prev.key === key ? { key, dir: prev.dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" }));
+  }
+
+  const rows = useMemo(() => aggregateDraftPicks(picks, groupBy, statMode), [picks, groupBy, statMode]);
+
+  const sortedRows = useMemo(() => {
+    const { key, dir } = sort;
+    function value(row: DraftDisplayRow): number | string | null {
+      if (key === "player") return row.player;
+      if (key === "team") return row.team;
+      return row[key];
     }
-    const keys = [...map.keys()].sort((a, b) =>
-      groupBy === "year" ? Number(b) - Number(a) : a.localeCompare(b),
-    );
-    return keys.map((key) => ({ header: key, picks: map.get(key)! }));
-  }, [rows, groupBy]);
+    return [...rows].sort((a, b) => {
+      const av = value(a);
+      const bv = value(b);
+      if (av === null && bv === null) return 0;
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      if (typeof av === "string" || typeof bv === "string") {
+        const cmp = String(av).localeCompare(String(bv));
+        return dir === "asc" ? cmp : -cmp;
+      }
+      return dir === "asc" ? av - bv : bv - av;
+    });
+  }, [rows, sort]);
 
-  type FlatItem = { type: "header"; label: string } | { type: "pick"; pick: DraftPick };
-  const flat = useMemo(() => {
-    const items: FlatItem[] = [];
-    for (const g of groups) {
-      if (g.header) items.push({ type: "header", label: g.header });
-      for (const p of g.picks) items.push({ type: "pick", pick: p });
-    }
-    return items;
-  }, [groups]);
-
-  const pageCount = Math.max(1, Math.ceil(flat.length / PAGE_SIZE));
-  const pageItems = flat.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const pageCount = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE));
+  const pageRows = sortedRows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   return (
     <div className="flex flex-col gap-4 sm:flex-row">
-      <div className="flex flex-col gap-3 sm:w-64 sm:shrink-0">
-        <ChecklistGroup label="Season" options={meta.years} selected={years} onChange={setYears} scrollable />
-        <ChecklistGroup label="Team" options={meta.members} selected={teams} onChange={setTeams} scrollable />
+      <div className="hidden sm:flex sm:w-64 sm:shrink-0 sm:flex-col sm:gap-3">
+        <ChecklistGroup
+          label="Season"
+          options={meta.years}
+          selected={filters.years}
+          onChange={(years) => setFilters((f) => ({ ...f, years }))}
+          scrollable
+        />
+        <ChecklistGroup
+          label="Team"
+          options={meta.members}
+          selected={filters.teams}
+          onChange={(teams) => setFilters((f) => ({ ...f, teams }))}
+          scrollable
+        />
       </div>
 
       <div className="flex flex-1 flex-col gap-4">
+        <div className="sm:hidden">
+          <GenericFilterDrawer
+            value={filters}
+            onChange={setFilters}
+            renderContent={(draft, setDraft) => (
+              <div className="flex flex-col gap-3">
+                <ChecklistGroup
+                  label="Season"
+                  options={meta.years}
+                  selected={draft.years}
+                  onChange={(years) => setDraft({ ...draft, years })}
+                  scrollable
+                />
+                <ChecklistGroup
+                  label="Team"
+                  options={meta.members}
+                  selected={draft.teams}
+                  onChange={(teams) => setDraft({ ...draft, teams })}
+                  scrollable
+                />
+              </div>
+            )}
+          />
+        </div>
+
         <Card>
           <CardHeader>
-            <CardTitle>Draft Box</CardTitle>
-            <CardDescription>Every draft pick across the selected seasons and teams, best draft score first</CardDescription>
+            <CardTitle>Draft Hub</CardTitle>
+            <CardDescription>
+              Every draft pick across the selected seasons and teams -- group by to aggregate, click any column to sort
+            </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-wrap items-center gap-3 text-[11px] font-bold tracking-wider uppercase">
-            <span className="text-muted-foreground">Group by</span>
-            {(["none", "team", "player", "year"] as GroupBy[]).map((g) => (
-              <Button
-                key={g}
-                variant={groupBy === g ? "default" : "outline"}
-                size="sm"
-                onClick={() => setGroupBy(g)}
-              >
-                {g === "none" ? "None" : g[0].toUpperCase() + g.slice(1)}
-              </Button>
-            ))}
+          <CardContent className="flex flex-wrap items-center gap-6">
+            <div className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
+              <span className="text-muted-foreground">Group by</span>
+              {(["team", "player", "year"] as const).map((dim) => (
+                <Button
+                  key={dim}
+                  variant={groupBy[dim] ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => toggleGroupBy(dim)}
+                >
+                  {dim[0].toUpperCase() + dim.slice(1)}
+                </Button>
+              ))}
+            </div>
+            <label
+              className={cn(
+                "flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase",
+                !isGrouped && "opacity-50",
+              )}
+            >
+              <span className="text-muted-foreground">Total</span>
+              <Switch
+                disabled={!isGrouped}
+                checked={statMode === "averages"}
+                onCheckedChange={(checked) => setStatMode(checked ? "averages" : "totals")}
+              />
+              <span className="text-muted-foreground">Average</span>
+            </label>
           </CardContent>
         </Card>
 
@@ -144,42 +366,49 @@ function DraftBox({ meta }: { meta: LeagueMeta }) {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Player</TableHead>
-                      <TableHead>Team</TableHead>
-                      <TableHead className="text-right">Round</TableHead>
-                      <TableHead className="text-right">Round Pick</TableHead>
-                      <TableHead className="text-right">Overall Pick</TableHead>
-                      <TableHead className="text-right">Draft Score</TableHead>
-                      <TableHead className="text-right">Rank</TableHead>
+                      <DraftSortHead sortKey="year" sort={sort} onToggle={toggleSort}>
+                        Year
+                      </DraftSortHead>
+                      <DraftSortHead sortKey="player" sort={sort} onToggle={toggleSort}>
+                        Player
+                      </DraftSortHead>
+                      <DraftSortHead sortKey="team" sort={sort} onToggle={toggleSort}>
+                        Team
+                      </DraftSortHead>
+                      <DraftSortHead sortKey="round" sort={sort} onToggle={toggleSort} className="text-right">
+                        Round
+                      </DraftSortHead>
+                      <DraftSortHead sortKey="roundPick" sort={sort} onToggle={toggleSort} className="text-right">
+                        Round Pick
+                      </DraftSortHead>
+                      <DraftSortHead sortKey="overallPick" sort={sort} onToggle={toggleSort} className="text-right">
+                        Overall Pick
+                      </DraftSortHead>
+                      <DraftSortHead sortKey="draftScore" sort={sort} onToggle={toggleSort} className="text-right">
+                        Draft Score
+                      </DraftSortHead>
+                      <DraftSortHead sortKey="rank" sort={sort} onToggle={toggleSort} className="text-right">
+                        Rank
+                      </DraftSortHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {pageItems.map((item, i) =>
-                      item.type === "header" ? (
-                        <TableRow key={`h-${item.label}-${i}`} className="bg-muted/40 hover:bg-muted/40">
-                          <TableCell
-                            colSpan={7}
-                            className="font-sans text-[11px] font-bold tracking-wider text-muted-foreground uppercase"
-                          >
-                            {item.label}
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        <TableRow key={`${item.pick.Year}-${item.pick.Overall}-${item.pick.Team}`}>
-                          <TableCell className="font-sans font-semibold">{item.pick.Player}</TableCell>
-                          <TableCell className="font-sans font-extrabold tracking-wide uppercase">
-                            {item.pick.Team}
-                          </TableCell>
-                          <TableCell className="text-right">{item.pick.Round}</TableCell>
-                          <TableCell className="text-right">{item.pick.Pick}</TableCell>
-                          <TableCell className="text-right">{item.pick.Overall}</TableCell>
-                          <TableCell className="text-right font-extrabold text-primary">
-                            {item.pick.Score}
-                          </TableCell>
-                          <TableCell className="text-right text-muted-foreground">{item.pick.Rank}</TableCell>
-                        </TableRow>
-                      ),
-                    )}
+                    {pageRows.map((row) => (
+                      <TableRow key={row.key}>
+                        <TableCell className="text-muted-foreground">{row.year ?? "—"}</TableCell>
+                        <TableCell className="font-sans font-semibold">{row.player ?? "—"}</TableCell>
+                        <TableCell className="font-sans font-extrabold tracking-wide uppercase">
+                          {row.team ?? "—"}
+                        </TableCell>
+                        <TableCell className="text-right">{formatNum(row.round)}</TableCell>
+                        <TableCell className="text-right">{formatNum(row.roundPick)}</TableCell>
+                        <TableCell className="text-right">{formatNum(row.overallPick)}</TableCell>
+                        <TableCell className="text-right font-extrabold text-primary">
+                          {formatNum(row.draftScore)}
+                        </TableCell>
+                        <TableCell className="text-right text-muted-foreground">{formatNum(row.rank)}</TableCell>
+                      </TableRow>
+                    ))}
                   </TableBody>
                 </Table>
 
@@ -305,7 +534,7 @@ function PlayerPicker({
   );
 }
 
-function TradeBox() {
+function TradeHub() {
   const [teamA, setTeamA] = useState<string[]>([]);
   const [teamB, setTeamB] = useState<string[]>([]);
   const [dataset, setDataset] = useState<"past" | "predicted">("past");
@@ -320,7 +549,7 @@ function TradeBox() {
     <div className="flex flex-col gap-4">
       <Card>
         <CardHeader>
-          <CardTitle>Trade Box</CardTitle>
+          <CardTitle>Trade Hub</CardTitle>
           <CardDescription>
             Placeholder data -- this repo has no real player-stats source yet. Shape only, not real numbers.
           </CardDescription>
