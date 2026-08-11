@@ -81,6 +81,7 @@ def run_bot() -> None:
     by_user_id, by_team = _load_user_team_maps()
 
     intents = disnake.Intents.default()
+    intents.message_content = True
     connector = build_ssl_connector()
     # No prefix commands here, only slash commands -- when_mentioned avoids
     # disnake's warning about a "!" prefix needing Message Content intent
@@ -99,6 +100,24 @@ def run_bot() -> None:
     @bot.event
     async def on_ready():
         print(f"StatBot logged in as {bot.user} (id={bot.user.id})")
+
+    @bot.event
+    async def on_message(message: disnake.Message):
+        if message.author.bot or not bot.user:
+            return
+        if bot.user not in message.mentions:
+            return
+        await message.channel.send(
+            "🤖 **StatBot commands:**\n"
+            "`/standings-check [year]` — league standings for a season\n"
+            "`/champ-check [user]` — has this team ever won a title?\n"
+            "`/mvp-check [user]` — has this team ever won MVP?\n"
+            "`/l-check [user]` — has this team ever finished dead last?\n"
+            "`/score-check` — your current matchup score\n"
+            "`/rival-check <user>` — career head-to-head record\n"
+            "`/trophy-case [user]` — career trophy summary\n"
+            "`/goat-check` — who's the league GOAT?"
+        )
 
     @bot.slash_command(name="standings-check", description="Show league standings for a season.", **slash_kwargs)
     async def standings_check(
