@@ -29,6 +29,9 @@ from GDoc.GDoc_AllTime import (
     updateCarTotals, updateRSTotals, updatePOTotals,
     updateCarAVGs, updateRSAVGs, updatePOAVGs, updateSummarySheet
 )
+from scripts.export_real_matchup_flags import main as export_real_matchup_flags
+from scripts.export_team_summary import main as export_team_summary
+from scripts.export_player_stats import main as export_player_stats
 
 year = int("${YEAR}")
 week = int("${WEEK}")
@@ -47,6 +50,18 @@ updateRSAVGs(league)
 updatePOAVGs(league)
 updateSummarySheet(league)
 print("All-time tables + summary updated.")
+
+print("Refreshing dashboard_site real_matchup lookup...")
+export_real_matchup_flags()
+print("real_matchup_flags.csv refreshed.")
+
+print("Refreshing dashboard_site team summary...")
+export_team_summary()
+print("team_summary.csv refreshed.")
+
+print("Refreshing real NBA player stats...")
+export_player_stats()
+print("player_stats.csv refreshed.")
 PY
 
 echo "[refresh] done"

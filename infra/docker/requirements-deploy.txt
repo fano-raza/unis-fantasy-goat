@@ -9,3 +9,4 @@ openai
 aiohttp
 stringcase
 yahoo_oauth
+nba_api

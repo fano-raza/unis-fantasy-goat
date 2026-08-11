@@ -32,9 +32,18 @@ import { ChecklistGroup } from "@/components/filter-panel";
 import { GenericFilterDrawer } from "@/components/generic-filter-drawer";
 import { ArrowToggle } from "@/components/arrow-toggle";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
-import { getDraftPicks, getLeagueMeta, MAIN_CATS, type Category, type DraftPick, type LeagueMeta } from "@/lib/api";
+import {
+  getDraftPicks,
+  getLeagueMeta,
+  getPlayerStats,
+  MAIN_CATS,
+  type Category,
+  type DraftPick,
+  type LeagueMeta,
+  type PlayerStat,
+  type StatWindow,
+} from "@/lib/api";
 import { compareCell, comparisonClass } from "@/lib/highlight";
-import { PLACEHOLDER_PLAYERS, toTotal, type PlaceholderPlayer } from "@/lib/placeholder-players";
 import { cn } from "@/lib/utils";
 
 type View = "draft" | "trade";
@@ -531,25 +540,59 @@ function DraftHub({ meta }: { meta: LeagueMeta }) {
 
 const TRADE_TEAM_CAP = 5;
 
-function aggregate(
-  players: PlaceholderPlayer[],
-  mode: "totals" | "averages",
-  dataset: "past" | "predicted",
-): Record<Category, number> {
-  const result = {} as Record<Category, number>;
+const WINDOW_OPTIONS: { value: StatWindow; label: string }[] = [
+  { value: "season", label: "Season" },
+  { value: "d7", label: "7d" },
+  { value: "d14", label: "14d" },
+  { value: "d30", label: "30d" },
+  { value: "d90", label: "90d" },
+];
+
+// Builds the {window}_{cat}_{total|avg} (or {window}_{cat} for FG%/FT%,
+// which have no total/avg split -- see export_player_stats.py) key into a
+// PlayerStat row. Returns null when that player has no games in the
+// selected window (real during the NBA off-season, not a bug -- see the
+// plan doc).
+function getPlayerCatValue(player: PlayerStat, statWindow: StatWindow, cat: Category, mode: "totals" | "averages"): number | null {
+  const key = cat === "FG%" || cat === "FT%" ? `${statWindow}_${cat}` : `${statWindow}_${cat}_${mode === "totals" ? "total" : "avg"}`;
+  const value = player[key];
+  return typeof value === "number" ? value : null;
+}
+
+function getPctComponents(player: PlayerStat, statWindow: StatWindow, cat: "FG%" | "FT%"): { made: number; att: number } | null {
+  const made = player[`${statWindow}_${cat}_made`];
+  const att = player[`${statWindow}_${cat}_att`];
+  return typeof made === "number" && typeof att === "number" ? { made, att } : null;
+}
+
+// Aggregates a group of up to 5 players for one stat category. Counting
+// categories sum or average normally; FG%/FT% use the real weighted ratio
+// (sum of makes / sum of attempts across the group) rather than a naive
+// average of each player's individual percentage, which would misweight
+// players with very different attempt volumes -- same reasoning as
+// StatTable's Score column elsewhere in this app.
+function aggregate(players: PlayerStat[], statWindow: StatWindow, mode: "totals" | "averages"): Record<Category, number | null> {
+  const result = {} as Record<Category, number | null>;
   for (const cat of MAIN_CATS) {
-    const values = players.map((p) => {
-      const avg = dataset === "past" ? p.pastAvg : p.predictedAvg;
-      const games = dataset === "past" ? p.pastGames : p.predictedGames;
-      return mode === "totals" ? (toTotal(avg, games)[cat] ?? 0) : (avg[cat] ?? 0);
-    });
+    if (cat === "FG%" || cat === "FT%") {
+      const components = players.map((p) => getPctComponents(p, statWindow, cat)).filter((c): c is { made: number; att: number } => c !== null);
+      const totalAtt = components.reduce((a, c) => a + c.att, 0);
+      result[cat] = totalAtt > 0 ? components.reduce((a, c) => a + c.made, 0) / totalAtt : null;
+      continue;
+    }
+    const values = players.map((p) => getPlayerCatValue(p, statWindow, cat, mode)).filter((v): v is number => v !== null);
+    if (values.length === 0) {
+      result[cat] = null;
+      continue;
+    }
     const sum = values.reduce((a, b) => a + b, 0);
-    result[cat] = mode === "totals" || values.length === 0 ? sum : sum / values.length;
+    result[cat] = mode === "totals" ? sum : sum / values.length;
   }
   return result;
 }
 
-function formatStat(cat: Category, value: number): string {
+function formatStat(cat: Category, value: number | null): string {
+  if (value === null) return "—";
   if (cat === "FG%" || cat === "FT%") return value.toFixed(3);
   return value.toFixed(1);
 }
@@ -563,10 +606,10 @@ function PlayerPicker({
   label: string;
   selected: string[];
   onChange: (next: string[]) => void;
-  available: PlaceholderPlayer[];
+  available: PlayerStat[];
 }) {
   const [open, setOpen] = useState(false);
-  const remaining = available.filter((p) => !selected.includes(p.name));
+  const remaining = available.filter((p) => !selected.includes(p.Player));
   return (
     <div className="flex flex-1 flex-col gap-2">
       <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">{label}</span>
@@ -599,13 +642,13 @@ function PlayerPicker({
                   <CommandGroup>
                     {remaining.map((p) => (
                       <CommandItem
-                        key={p.name}
+                        key={p.PlayerId}
                         onSelect={() => {
-                          onChange([...selected, p.name]);
+                          onChange([...selected, p.Player]);
                           setOpen(false);
                         }}
                       >
-                        {p.name}
+                        {p.Player} <span className="ml-1 text-muted-foreground">({p.Team})</span>
                       </CommandItem>
                     ))}
                   </CommandGroup>
@@ -620,15 +663,23 @@ function PlayerPicker({
 }
 
 function TradeHub() {
+  const [players, setPlayers] = useState<PlayerStat[]>([]);
   const [teamA, setTeamA] = useState<string[]>([]);
   const [teamB, setTeamB] = useState<string[]>([]);
-  const [dataset, setDataset] = useState<"past" | "predicted">("past");
+  // Defaults to "season" -- during the NBA off-season the rolling windows
+  // have no data at all (verified against the real export), so a rolling
+  // statWindow default would open on an empty table.
+  const [statWindow, setWindow] = useState<StatWindow>("season");
   const [mode, setMode] = useState<"totals" | "averages">("averages");
 
-  const playersA = PLACEHOLDER_PLAYERS.filter((p) => teamA.includes(p.name));
-  const playersB = PLACEHOLDER_PLAYERS.filter((p) => teamB.includes(p.name));
-  const aggA = aggregate(playersA, mode, dataset);
-  const aggB = aggregate(playersB, mode, dataset);
+  useEffect(() => {
+    getPlayerStats().then(setPlayers);
+  }, []);
+
+  const playersA = players.filter((p) => teamA.includes(p.Player));
+  const playersB = players.filter((p) => teamB.includes(p.Player));
+  const aggA = aggregate(playersA, statWindow, mode);
+  const aggB = aggregate(playersB, statWindow, mode);
 
   return (
     <div className="flex flex-col gap-4">
@@ -636,20 +687,28 @@ function TradeHub() {
         <CardHeader>
           <CardTitle>Trade Hub</CardTitle>
           <CardDescription>
-            Placeholder data -- this repo has no real player-stats source yet. Shape only, not real numbers.
+            Real NBA player stats (nba_api/stats.nba.com) -- compare up to 5 players a side
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-wrap gap-6">
-            <PlayerPicker label="Team A (up to 5)" selected={teamA} onChange={setTeamA} available={PLACEHOLDER_PLAYERS} />
-            <PlayerPicker label="Team B (up to 5)" selected={teamB} onChange={setTeamB} available={PLACEHOLDER_PLAYERS} />
+            <PlayerPicker label="Team A (up to 5)" selected={teamA} onChange={setTeamA} available={players} />
+            <PlayerPicker label="Team B (up to 5)" selected={teamB} onChange={setTeamB} available={players} />
           </div>
           <div className="flex flex-wrap items-center gap-6">
-            <label className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
-              <span className="text-muted-foreground">Past</span>
-              <Switch checked={dataset === "predicted"} onCheckedChange={(c) => setDataset(c ? "predicted" : "past")} />
-              <span className="text-muted-foreground">Predicted</span>
-            </label>
+            <div className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
+              <span className="text-muted-foreground">Window</span>
+              {WINDOW_OPTIONS.map((opt) => (
+                <Button
+                  key={opt.value}
+                  variant={statWindow === opt.value ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setWindow(opt.value)}
+                >
+                  {opt.label}
+                </Button>
+              ))}
+            </div>
             <label className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
               <span className="text-muted-foreground">Totals</span>
               <Switch checked={mode === "averages"} onCheckedChange={(c) => setMode(c ? "averages" : "totals")} />
@@ -675,8 +734,8 @@ function TradeHub() {
                 {MAIN_CATS.map((cat) => {
                   const a = aggA[cat];
                   const b = aggB[cat];
-                  const diff = a - b;
-                  const comparison = compareCell(a, b, cat);
+                  const diff = a !== null && b !== null ? a - b : null;
+                  const comparison = a !== null && b !== null ? compareCell(a, b, cat) : "neutral";
                   return (
                     <TableRow key={cat}>
                       <TableCell className="font-sans font-medium text-muted-foreground">{cat}</TableCell>
@@ -685,7 +744,7 @@ function TradeHub() {
                       <TableCell
                         className={cn("text-right font-mono font-extrabold tabular-nums", comparisonClass[comparison])}
                       >
-                        {diff >= 0 ? "+" : ""}
+                        {diff !== null && diff >= 0 ? "+" : ""}
                         {formatStat(cat, diff)}
                       </TableCell>
                     </TableRow>

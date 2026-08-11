@@ -202,6 +202,14 @@ def league_playoff_brackets() -> dict:
     return league_store.playoff_brackets()
 
 
+@app.get("/league/player_stats")
+def league_player_stats() -> list[dict]:
+    try:
+        return league_store.player_stats()
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @app.post("/league/weekly_team")
 def league_weekly_team(req: WeeklyTeamRequest) -> dict:
     try:

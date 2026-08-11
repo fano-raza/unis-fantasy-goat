@@ -56,6 +56,7 @@ class LeagueStore:
         self._rated_df: pd.DataFrame | None = None
         self._weekly_df: pd.DataFrame | None = None
         self._team_summary_df: pd.DataFrame | None = None
+        self._player_stats_df: pd.DataFrame | None = None
         self._category_history: dict | None = None
         self._rs_finish_history: dict | None = None
         self._po_lookup = self._load_po_real_matchup_lookup()
@@ -437,6 +438,29 @@ class LeagueStore:
         dtype = {col: str for col in self._TEAM_SUMMARY_YEAR_LIST_COLS}
         self._team_summary_df = pd.read_csv(path, dtype=dtype)
         return self._team_summary_df
+
+    def player_stats(self) -> list[dict]:
+        """Real NBA player stats (season + 7/14/30/90-day rolling windows)
+        for the Players page's Trade Hub. Reads scripts/export_player_stats.py's
+        precomputed Ref/player_stats.csv directly -- a pure network call to
+        stats.nba.com via nba_api, unrelated to this league's own data, so it's
+        computed offline same as team_summary rather than live here. No
+        filters -- ~400-600 rows, small enough to ship unfiltered."""
+        df = self._ensure_player_stats_df()
+        df = df.where(pd.notnull(df), None)
+        return df.to_dict(orient="records")
+
+    def _ensure_player_stats_df(self) -> pd.DataFrame:
+        if self._player_stats_df is not None:
+            return self._player_stats_df
+        ref_dir = getattr(self.store, "ref_dir", None)
+        path = Path(ref_dir) / "player_stats.csv" if ref_dir else None
+        if path is None or not path.exists():
+            raise ValueError(
+                "player_stats.csv not found -- run scripts/export_player_stats.py first"
+            )
+        self._player_stats_df = pd.read_csv(path)
+        return self._player_stats_df
 
     def playoff_brackets(self) -> dict:
         """Per-year playoff bracket structure (rounds, matchups, seeding,

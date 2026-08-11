@@ -11,10 +11,14 @@ if REPO_ROOT not in sys.path:
 from flask import Flask, jsonify
 from GDoc.GDoc_Week import *
 from GDoc.GDoc_AllTime import *
+from Models.Draft import Draft
 from datetime import timedelta
 from discord.discord_messages import notify_milestones
 from shared.runtime_config import calendar_csv_path
+from scripts.export_real_matchup_flags import main as export_real_matchup_flags
+from scripts.export_team_summary import main as export_team_summary
 from scripts.export_playoff_brackets import main as export_playoff_brackets
+from scripts.export_player_stats import main as export_player_stats
 
 app = Flask(__name__)
 EASTERN_TZ = ZoneInfo("America/New_York")
@@ -72,8 +76,43 @@ def run_updater():
 
         else:
             try:
+                # Refresh draft results/scores once per daytime update cycle so sheets stay current.
+                try:
+                    print(f"Refreshing draft scores for {year}...")
+                    d = Draft(year)
+                    d.updateDraft()
+                    print("Draft scores refreshed.")
+                except Exception as draft_exc:
+                    # Keep updater alive even if draft provider/auth has a transient issue.
+                    print(f"Draft refresh warning: {draft_exc}")
+
                 updateStatCSV(year)
                 updateStandings(year)
+
+                # dashboard_site's lightweight venv can't derive playoff-bracket
+                # membership itself (no Models import) -- refresh its precomputed
+                # lookup whenever the raw stat CSVs change, same cadence as above.
+                try:
+                    export_real_matchup_flags()
+                except Exception as flags_exc:
+                    print(f"real_matchup_flags export warning: {flags_exc}")
+
+                # Same idea for the Career Comparison page's precomputed profile
+                # stats (chips/finals/streaks/draft scores) -- also needs Models.
+                try:
+                    export_team_summary()
+                except Exception as summary_exc:
+                    print(f"team_summary export warning: {summary_exc}")
+
+                # Real NBA player stats (season + 7/14/30/90-day rolling
+                # windows) for the Players page's Trade Hub -- pure network
+                # call to stats.nba.com via nba_api, no Models dependency,
+                # but wrapped the same way since stats.nba.com is unofficial
+                # and known to occasionally block/rate-limit.
+                try:
+                    export_player_stats()
+                except Exception as player_stats_exc:
+                    print(f"player_stats export warning: {player_stats_exc}")
 
                 # Playoff bracket data (Standings page's playoff tree toggle) only
                 # changes during the actual playoff window: from the first day of
@@ -134,7 +173,7 @@ def run_updater():
                 target_dt = now.replace(hour=18, minute=0, second=0, microsecond=0)
                 delta = target_dt - now
                 seconds_until_target = max(0, delta.total_seconds())
-                sleep_seconds = min(60 * 60, seconds_until_target)
+                sleep_seconds = min(60 * 601, seconds_until_target)
                 print(f"waiting {int(sleep_seconds)}s before next time check (toward 6PM EST)...")
                 time.sleep(sleep_seconds)
             except gspread.exceptions.APIError:

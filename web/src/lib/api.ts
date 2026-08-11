@@ -358,6 +358,22 @@ export const getStandingsHistory = (req: StandingsRequest) =>
 export const getPlayoffBrackets = () =>
   apiFetch<PlayoffBracketsResponse>("/league/playoff_brackets");
 
+export type StatWindow = "season" | "d7" | "d14" | "d30" | "d90";
+
+// Real NBA player stats (scripts/export_player_stats.py, via nba_api) for
+// the Players page's Trade Hub. Loosely typed rather than one field per of
+// the ~100 {window}_{cat}_{total|avg|made|att} columns -- see
+// web/src/app/players/page.tsx's getPlayerCatValue for the accessor that
+// builds the right key.
+export interface PlayerStat {
+  PlayerId: number;
+  Player: string;
+  Team: string;
+  [field: string]: number | string | null;
+}
+
+export const getPlayerStats = () => apiFetch<PlayerStat[]>("/league/player_stats");
+
 export const getDraftPicks = (req: DraftPicksRequest = {}) =>
   post<DraftPick[]>("/league/draft_picks", req);
 
