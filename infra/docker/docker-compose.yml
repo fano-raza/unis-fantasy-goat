@@ -29,6 +29,7 @@ services:
       - ./env/stat-updater.env
     volumes:
       - /srv/unisfantasy/data:/srv/unisfantasy/data
+      - /srv/unisfantasy/secrets:/srv/unisfantasy/secrets:ro
     restart: unless-stopped
     ports:
       - "5001:5001"
