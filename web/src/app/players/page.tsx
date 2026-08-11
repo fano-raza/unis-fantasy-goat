@@ -615,14 +615,20 @@ const netClass: Record<Comparison, string> = {
 };
 
 // FGM/FGA and FTM/FTA -- informational volume rows (made/attempted for the
-// group), not a win/loss comparison, so no red/green highlight and no "Net"
-// value (a combined made/attempted pair has no single meaningful difference
-// the way a plain stat total does). Rendered directly after their matching
-// percentage row (FG% / FT%), not grouped separately.
+// group). Rendered directly after their matching percentage row (FG% / FT%),
+// not grouped separately. They do get a Net value (the made/attempted diff,
+// same "X/Y" shape as the value cells), just never colored red/green --
+// a made/attempted pair isn't a single win/loss comparison the way a plain
+// stat total is, so there's no "better" direction to highlight.
 const MADE_ATTEMPTED_BY_CAT: Partial<Record<Category, { label: string }>> = {
   "FG%": { label: "FGM/FGA" },
   "FT%": { label: "FTM/FTA" },
 };
+
+interface MadeAttempted {
+  made: number;
+  att: number;
+}
 
 // Totals: real summed made/attempted across the group. Averages: each
 // player's own per-game made/attempted, averaged across the group -- same
@@ -630,7 +636,12 @@ const MADE_ATTEMPTED_BY_CAT: Partial<Record<Category, { label: string }>> = {
 // Averages mode already uses for the 7 counting categories (see aggregate()
 // above), kept consistent rather than switching to a team-wide made/games
 // rate just for these two rows.
-function madeAttempted(players: PlayerStat[], statWindow: StatWindow, cat: "FG%" | "FT%", mode: "totals" | "averages"): string {
+function madeAttemptedValue(
+  players: PlayerStat[],
+  statWindow: StatWindow,
+  cat: "FG%" | "FT%",
+  mode: "totals" | "averages",
+): MadeAttempted | null {
   if (mode === "totals") {
     let made = 0;
     let att = 0;
@@ -644,7 +655,7 @@ function madeAttempted(players: PlayerStat[], statWindow: StatWindow, cat: "FG%"
         any = true;
       }
     }
-    return any ? `${made}/${att}` : "—";
+    return any ? { made, att } : null;
   }
 
   const madeRates: number[] = [];
@@ -658,10 +669,26 @@ function madeAttempted(players: PlayerStat[], statWindow: StatWindow, cat: "FG%"
       attRates.push(a / gp);
     }
   }
-  if (madeRates.length === 0) return "—";
-  const avgMade = madeRates.reduce((sum, v) => sum + v, 0) / madeRates.length;
-  const avgAtt = attRates.reduce((sum, v) => sum + v, 0) / attRates.length;
-  return `${avgMade.toFixed(1)}/${avgAtt.toFixed(1)}`;
+  if (madeRates.length === 0) return null;
+  return {
+    made: madeRates.reduce((sum, v) => sum + v, 0) / madeRates.length,
+    att: attRates.reduce((sum, v) => sum + v, 0) / attRates.length,
+  };
+}
+
+function formatMadeAttempted(value: MadeAttempted | null, mode: "totals" | "averages"): string {
+  if (!value) return "—";
+  const fmt = (n: number) => (mode === "totals" ? String(n) : n.toFixed(1));
+  return `${fmt(value.made)}/${fmt(value.att)}`;
+}
+
+function formatMadeAttemptedNet(a: MadeAttempted | null, b: MadeAttempted | null, mode: "totals" | "averages"): string {
+  if (!a || !b) return "—";
+  const fmt = (n: number) => {
+    const s = mode === "totals" ? String(n) : n.toFixed(1);
+    return n >= 0 ? `+${s}` : s;
+  };
+  return `${fmt(a.made - b.made)}/${fmt(a.att - b.att)}`;
 }
 
 function PlayerPicker({
@@ -823,18 +850,26 @@ function TradeHub() {
                   // -- not grouped separately at the end.
                   const madeAttRow = MADE_ATTEMPTED_BY_CAT[cat];
                   if (madeAttRow) {
+                    const maCat = cat as "FG%" | "FT%";
+                    const aVal = madeAttemptedValue(playersA, statWindow, maCat, mode);
+                    const bVal = madeAttemptedValue(playersB, statWindow, maCat, mode);
                     rows.push(
                       <TableRow key={madeAttRow.label}>
                         <TableCell className="font-sans font-medium text-muted-foreground">
                           {madeAttRow.label}
                         </TableCell>
                         <TableCell className="text-right font-mono tabular-nums">
-                          {madeAttempted(playersA, statWindow, cat as "FG%" | "FT%", mode)}
+                          {formatMadeAttempted(aVal, mode)}
                         </TableCell>
                         <TableCell className="text-right font-mono tabular-nums">
-                          {madeAttempted(playersB, statWindow, cat as "FG%" | "FT%", mode)}
+                          {formatMadeAttempted(bVal, mode)}
                         </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums text-muted-foreground">—</TableCell>
+                        {/* No red/green here (unlike the other Net cells) -- a
+                            made/attempted pair has no single "better"
+                            direction to highlight. */}
+                        <TableCell className="text-right font-mono font-extrabold tabular-nums">
+                          {formatMadeAttemptedNet(aVal, bVal, mode)}
+                        </TableCell>
                       </TableRow>,
                     );
                   }
