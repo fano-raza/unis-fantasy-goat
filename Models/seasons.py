@@ -1060,16 +1060,42 @@ class poSeason(regSeason):
                 if matchup_obj.is_BYE:
                     remover.append(matchup_obj)
 
-            for matchup_obj in self.PO_matchups_by_week[week]:
+            # Iterate a snapshot (list(...)), not the live list -- the removal
+            # pass below mutates self.PO_matchups_by_week[week], and doing that
+            # while this same list was still being iterated (as it was before
+            # this fix) skips whichever matchup lands on the index a removal
+            # just shifted into place. That silently dropped a real round
+            # result whenever a BYE matchup object existed earlier in the same
+            # week's list -- years where bye teams have an explicit "Opp: BYE"
+            # CSV row (e.g. 2022/2023) create one; years where bye teams
+            # simply have no row at all (e.g. 2025/2026) never do, so never
+            # hit this. Confirmed via direct trace: 2022 week 19's Rohil-vs-
+            # Juan result was skipped this way, leaving Rohil (a real
+            # quarterfinal loser) untracked in elim_week and therefore
+            # incorrectly shown as having a semifinal bye down the line.
+            for matchup_obj in list(self.PO_matchups_by_week[week]):
                 # Resolve playoff ties using league tiebreak order so elimination
                 # and bracket advancement are deterministic.
                 if matchup_obj.is_tied and not matchup_obj.is_BYE:
                     self._resolve_playoff_tie(matchup_obj)
 
                 ## if past the first week, remove any matchups that include eliminated teams
+                ## -- and skip classifying them into Final/3rd Place/thirdPlace
+                ## entirely. Some years' raw schedules keep scheduling already-
+                ## eliminated teams against each other in later weeks (e.g. a
+                ## real parallel 5th/6th-place placement bracket) -- marking
+                ## the matchup for removal from this week's list alone didn't
+                ## stop it from ALSO being evaluated by the classification
+                ## logic below in this same pass, so a round-1-losers'
+                ## placement game could silently overwrite the real 3rd Place
+                ## game if it happened to be processed after it. Per this
+                ## league's rule, only the real 3rd place game (semifinal
+                ## losers) counts as a real matchup -- no other consolation
+                ## bracket counts.
                 if week > self.RSweekCount + 1:
                     if matchup_obj.team1 in elimTeams or matchup_obj.team2 in elimTeams:
                         remover.append(matchup_obj)
+                        continue
                     # print(f"past first week remover: {remover}")
 
                 ## teams that lost in quarterfinals or earlier are added to eliminated teams
@@ -1095,14 +1121,18 @@ class poSeason(regSeason):
                     else:
                         self.PO_matchups_by_week['Final'] = matchup_obj
 
-                for matchup_obj in remover:
-                    try:
-                        self.PO_matchups_by_week[week].remove(matchup_obj)
-                        self.statDF = self.statDF.loc[~((self.statDF['Week'] == week) & \
-                                                      (self.statDF['Team'].isin(matchup_obj.teams)))]
-                    except:
-                        pass
-                    # print(self.statDF.loc[self.statDF['Week']>self.RSweekCount][['Week','Team','Opp']])
+            # Deferred to after the classification loop above finishes (see
+            # the list(...) comment) -- was previously nested inside that loop
+            # and reused its `matchup_obj` name, both compounding the mutate-
+            # while-iterating bug described above.
+            for stale_matchup in remover:
+                try:
+                    self.PO_matchups_by_week[week].remove(stale_matchup)
+                    self.statDF = self.statDF.loc[~((self.statDF['Week'] == week) & \
+                                                  (self.statDF['Team'].isin(stale_matchup.teams)))]
+                except:
+                    pass
+                # print(self.statDF.loc[self.statDF['Week']>self.RSweekCount][['Week','Team','Opp']])
 
         if self.PO_currentWeek==self.PO_weeks:
             # if self.POmatchupsByWeek['Final']:

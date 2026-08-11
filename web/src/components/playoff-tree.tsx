@@ -88,6 +88,16 @@ export function PlayoffTree({ bracket, year }: { bracket: PlayoffBracket | undef
     );
   }
 
+  // Best seed first (top) so a bye box visually leads into that team's next
+  // matchup on the right, same reading order as the matchup boxes' own
+  // seed1/seed2 (better seed on top).
+  const seedByTeam: Record<string, number> = {};
+  for (const [seed, team] of Object.entries(bracket.seeding)) {
+    seedByTeam[team] = Number(seed);
+  }
+  const sortByeTeams = (teams: string[]) =>
+    [...teams].sort((a, b) => (seedByTeam[a] ?? Infinity) - (seedByTeam[b] ?? Infinity));
+
   return (
     <div className="flex flex-col gap-4">
       {bracket.champion && (
@@ -107,7 +117,7 @@ export function PlayoffTree({ bracket, year }: { bracket: PlayoffBracket | undef
               {round.matchups.map((m, i) => (
                 <MatchupBox key={`${round.week}-${i}`} matchup={m} muted={m.slot === "3rd Place"} />
               ))}
-              {round.byes.map((team) => (
+              {sortByeTeams(round.byes).map((team) => (
                 <ByeBox key={team} team={team} />
               ))}
             </div>
