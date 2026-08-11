@@ -89,6 +89,15 @@ class LeagueStore:
         if not path.exists():
             return {}
         lookup_df = pd.read_csv(path)
+        # A blank/NaN cell in any key column (e.g. a torn read racing the
+        # exporter's non-atomic CSV rewrite) is unusable as a lookup key --
+        # skip it rather than let it into the dict. Two rows both missing
+        # the same field would otherwise become distinct dict entries (NaN
+        # != NaN under Python's dict equality) that collapse into a single
+        # duplicate-valued pandas Index (NaN == NaN there), which crashes
+        # _real_matchup_mask's .reindex() with "cannot handle a non-unique
+        # multi-index!" -- confirmed by direct reproduction.
+        lookup_df = lookup_df.dropna(subset=["Year", "Week", "Season", "Team"])
         return {
             (int(r.Year), int(r.Week), r.Season, r.Team): bool(r.real_matchup)
             for r in lookup_df.itertuples()

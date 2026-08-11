@@ -328,12 +328,24 @@ function StandingsPageInner() {
 
       const ratingsReq = { years: [year], weeks: weeksInRange, RS: ratingsRs, PO: ratingsPo };
       const ratingsFetcher = ratingsStatMode === "totals" ? getTotals : getAverages;
+      // "Prior" ratings: the same week set with its single highest week
+      // dropped, so the Rank column can show a green/red movement arrow for
+      // one week's worth of change -- same pattern as Career Stats' own
+      // previousRank fetch. Skipped (no arrow) when only one week is
+      // selected -- there's no earlier state to compare against.
+      const ratingsMaxWeek = weeksInRange.length ? Math.max(...weeksInRange) : null;
+      const priorRatingsReq =
+        ratingsMaxWeek != null && weeksInRange.length > 1
+          ? { ...ratingsReq, weeks: weeksInRange.filter((w) => w !== ratingsMaxWeek) }
+          : null;
       Promise.all([
         ratingsFetcher(ratingsReq),
+        priorRatingsReq ? ratingsFetcher(priorRatingsReq).catch(() => null) : Promise.resolve(null),
         getSeasonLeaders({ ...ratingsReq, mode: ratingsStatMode }),
         getAnalysisRows(ratingsReq),
-      ]).then(([rows, leaders, analysisRows]) => {
-        setRatingsRows(rows);
+      ]).then(([rows, priorRows, leaders, analysisRows]) => {
+        const priorRanks = new Map((priorRows ?? []).map((r) => [r.team, r.rank]));
+        setRatingsRows(rows.map((r) => ({ ...r, previousRank: priorRanks.get(r.team) ?? null })));
         setRatingsLeaders(leaders);
         setRatingsHistory(analysisRows);
       });
@@ -719,6 +731,7 @@ function StandingsPageInner() {
                             }}
                             labelFormatter={(w) => `Week ${w}`}
                             formatter={(value) => (typeof value === "number" ? value.toFixed(1) : value)}
+                            itemSorter={(item) => (typeof item.value === "number" ? -item.value : 0)}
                           />
                           {ratingsTeams.map((team, i) => (
                             <Line
