@@ -100,10 +100,13 @@ def run_bot() -> None:
     async def on_ready():
         print(f"StatBot logged in as {bot.user} (id={bot.user.id})")
 
-    @bot.slash_command(name="standings-check", description="Show current league standings.", **slash_kwargs)
-    async def standings_check(inter: disnake.ApplicationCommandInteraction):
+    @bot.slash_command(name="standings-check", description="Show league standings for a season.", **slash_kwargs)
+    async def standings_check(
+        inter: disnake.ApplicationCommandInteraction,
+        year: Optional[int] = None,
+    ):
         meta = await _api_get("/league/meta")
-        year = meta["current_year"]
+        year = year if year in meta["years"] else meta["current_year"]
         # Cap at the regular season's own last week, not current_week -- once
         # playoffs start, current_week moves past the RS (e.g. 21 for a
         # season whose RS is only 18 weeks), which would wrongly blend
