@@ -1,5 +1,6 @@
 "use client";
 
+import { cn } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -15,14 +16,19 @@ export function LabeledSelect({
   value,
   onValueChange,
   options,
+  className,
 }: {
   label: string;
   value: string;
   onValueChange: (value: string) => void;
   options: { value: string; label: string }[];
+  // Applied to the outer tile -- lets a specific page call out this
+  // selector (e.g. a highlighted border) without changing every other
+  // page's LabeledSelect usage.
+  className?: string;
 }) {
   return (
-    <label className="flex items-center gap-2">
+    <label className={cn("flex items-center gap-2", className)}>
       <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
         {label}
       </span>

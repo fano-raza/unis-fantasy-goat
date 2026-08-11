@@ -137,6 +137,8 @@ export default function WeeklyStatsPage() {
   if (metaError) return <BackendUnreachable error={metaError} />;
   if (!meta || year == null || week == null) return <LoadingBasketballs label="Loading" />;
 
+  const isPlayoffWeek = week > (meta.rs_week_count[String(year)] ?? Infinity);
+
   return (
     <div className="flex flex-col gap-4">
       <Card>
@@ -173,7 +175,13 @@ export default function WeeklyStatsPage() {
               value={String(week)}
               onValueChange={(v) => setWeek(Number(v))}
               options={weekOptions.map((w) => ({ value: String(w), label: String(w) }))}
+              className="rounded-sm border-2 border-[#4169E1] px-2 py-1"
             />
+            {isPlayoffWeek && (
+              <span className="rounded-sm bg-[#4169E1]/15 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-[#4169E1] uppercase">
+                Playoff
+              </span>
+            )}
             <StepButton
               direction="prev"
               label="Previous week"
