@@ -104,7 +104,13 @@ def run_bot() -> None:
     async def standings_check(inter: disnake.ApplicationCommandInteraction):
         meta = await _api_get("/league/meta")
         year = meta["current_year"]
-        week = meta["current_week"]
+        # Cap at the regular season's own last week, not current_week -- once
+        # playoffs start, current_week moves past the RS (e.g. 21 for a
+        # season whose RS is only 18 weeks), which would wrongly blend
+        # playoff-week results into what's meant to be regular-season
+        # standings. Safe even mid-season: weeks that haven't been played
+        # yet simply have no rows, so this doesn't pull in phantom data.
+        week = meta["rs_week_count"].get(str(year), meta["current_week"])
         fmt = meta["season_format"].get(str(year), "wl")
         status, standings = await _api_post(
             "/league/standings", {"year": year, "min_week": 1, "max_week": week}
@@ -118,8 +124,17 @@ def run_bot() -> None:
         lines = [f"{r['rank']}. **{r['team']}** — {r['wins']}-{r['losses']}-{r['ties']}" for r in rows]
         label = "W/L" if fmt == "wl" else "Cats"
         await inter.response.send_message(
-            f"📊 **{year} Standings** (through Week {week}, {label})\n" + "\n".join(lines)
+            f"📊 **{year} Regular Season Standings** (through Week {week}, {label})\n" + "\n".join(lines)
         )
+
+    @bot.slash_command(name="goat-check", description="Who's the league GOAT?", **slash_kwargs)
+    async def goat_check(inter: disnake.ApplicationCommandInteraction):
+        meta = await _api_get("/league/meta")
+        goat = meta.get("goat")
+        if not goat:
+            await inter.response.send_message("No GOAT determined yet.", ephemeral=True)
+            return
+        await inter.response.send_message(f"🐐 The league GOAT is **{goat}**.")
 
     @bot.slash_command(name="champ-check", description="Has this user's team ever won a championship?", **slash_kwargs)
     async def champ_check(

@@ -479,6 +479,11 @@ Verified end-to-end: `tsc --noEmit` clean, `npm run build` clean, both persisted
 
 Verified end-to-end: `tsc --noEmit`/build not needed (backend-only change), both persisted Playwright regression suites (50 checks, zero regressions) run locally first, then live production verification (CPU/latency numbers above) after deploying scoped to just `dashboard-api` (confirmed via `docker ps` the bots and gdoc-updater were untouched). **Committed, pushed, and deployed** to the droplet.
 
+### Phase 3.32 — StatBot: goat-check + standings-check RS-only fix — DONE 2026-08-10 (session 13 continued)
+
+- [x] New `/goat-check` -- reads the same `meta.goat` field the web app's badge uses (Phase 3.29), so the bot and the app always agree on who the GOAT is (one source of truth, computed once server-side).
+- [x] **Fixed `standings-check`'s week upper bound**: was `current_week`, which moves past the regular season once playoffs start (e.g. 21 for a season whose RS is only 18 weeks) -- switched to `rs_week_count[year]`. Investigated whether this actually changed the standings numbers before assuming it mattered: it didn't, since `LeagueStore.standings()` already hard-filters `Season == "RS"` internally regardless of `max_week` -- but the command's own "**through Week 21**" label was still genuinely wrong/misleading before this fix (21 isn't part of the regular season), so the fix has real user-visible value even though the underlying data was already correct. Confirmed the format-per-season logic (`season_format[year]`) the user asked me to double-check was already correct, no change needed there.
+
 ### Deferred / not v1
 - Auth / per-member profiles
 - Postgres migration (revisit only if auth/profiles need per-user state)
