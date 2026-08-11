@@ -30,7 +30,7 @@ import { ANALYSIS_FIELDS, DEFAULT_X_FIELD, getField } from "@/lib/fields";
 import { categoricalPalette } from "@/lib/palette";
 import { pivot, pivotScatter, type GroupBy } from "@/lib/pivot";
 import { cn } from "@/lib/utils";
-import { X } from "lucide-react";
+import { ArrowLeftRight, X } from "lucide-react";
 
 interface AnalysisGraphProps {
   id: number;
@@ -164,6 +164,14 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
             value={params.yKey}
             onValueChange={(yKey) => setParams((d) => ({ ...d, yKey }))}
           />
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => setParams((d) => ({ ...d, xKey: d.yKey, yKey: d.xKey }))}
+            aria-label="Swap X and Y axes"
+          >
+            <ArrowLeftRight className="size-4" />
+          </Button>
           <div className="flex items-center gap-3 text-[11px] font-bold tracking-wider uppercase">
             <span className="text-muted-foreground">Group by</span>
             <label className="flex items-center gap-1.5">

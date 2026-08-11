@@ -19,6 +19,7 @@ from .schemas import (
     MetaResponse,
     QueryRequest,
     QueryResponse,
+    DraftPicksRequest,
     RecordsRequest,
     ScheduleSwapRequest,
     SeasonLeadersRequest,
@@ -276,6 +277,11 @@ def league_standings(req: StandingsRequest) -> dict:
 @app.post("/league/standings_history")
 def league_standings_history(req: StandingsRequest) -> dict:
     return league_store.standings_history(req.year, req.min_week, req.max_week)
+
+
+@app.post("/league/draft_picks")
+def league_draft_picks(req: DraftPicksRequest) -> list[dict]:
+    return league_store.draft_picks(years=req.years, teams=req.teams)
 
 
 web_dir = (Path(__file__).resolve().parents[1] / "web").resolve()

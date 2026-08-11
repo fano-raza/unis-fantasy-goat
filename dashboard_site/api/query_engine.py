@@ -164,6 +164,7 @@ class StatsStore:
         self.df = self._load_all_compstats(self.ref_dir)
         self._matchup_df: pd.DataFrame | None = None
         self._draft_df: pd.DataFrame | None = None
+        self._draft_picks_df: pd.DataFrame | None = None
 
     @staticmethod
     def _resolve_ref_dir(ref_dir: str | None) -> Path:
@@ -260,6 +261,59 @@ class StatsStore:
         if self._draft_df is None:
             self._draft_df = self._load_draft_scores()
         return self._draft_df
+
+    def _load_draft_picks(self) -> pd.DataFrame:
+        # Pick-level sibling of _load_draft_scores -- same file discovery,
+        # but keeps every column instead of collapsing to one row per
+        # Team/Year. Powers the Players page's Draft Box.
+        cols = ["Year", "Round", "Pick", "Overall", "Player", "Team", "Rank", "Score"]
+        rows: list[dict] = []
+        seen_files: set[Path] = set()
+        for root in self._resolve_draft_roots():
+            for csv_path in root.glob("*/**/*Draft Results.csv"):
+                csv_path = csv_path.resolve()
+                if csv_path in seen_files:
+                    continue
+                seen_files.add(csv_path)
+                try:
+                    df = pd.read_csv(csv_path)
+                except Exception:
+                    continue
+                required = {"Round", "Pick", "Overall", "Player", "Team", "Score"}
+                if not required.issubset(set(df.columns)):
+                    continue
+                year = self._extract_year_from_path(csv_path)
+                if year is None:
+                    continue
+                for _, r in df.iterrows():
+                    try:
+                        score = float(r["Score"])
+                    except Exception:
+                        continue
+                    rows.append(
+                        {
+                            "Year": year,
+                            "Round": int(r["Round"]),
+                            "Pick": int(r["Pick"]),
+                            "Overall": int(r["Overall"]),
+                            "Player": str(r["Player"]),
+                            "Team": str(r["Team"]),
+                            # "Rank" can be "N/A" for a still-in-progress
+                            # draft -- kept as a string passthrough rather
+                            # than coerced to a number.
+                            "Rank": str(r.get("Rank", "N/A")),
+                            "Score": score,
+                        }
+                    )
+
+        if not rows:
+            return pd.DataFrame(columns=cols)
+        return pd.DataFrame(rows)
+
+    def _ensure_draft_picks_df(self) -> pd.DataFrame:
+        if self._draft_picks_df is None:
+            self._draft_picks_df = self._load_draft_picks()
+        return self._draft_picks_df
 
     @staticmethod
     def _build_matchup_features(base_df: pd.DataFrame) -> pd.DataFrame:

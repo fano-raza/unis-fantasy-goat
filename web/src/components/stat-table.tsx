@@ -37,6 +37,11 @@ interface StatTableProps {
   // category W-L-T against each other row's raw stats. Off by default so
   // Career Stats/Profile's StatTable usages are unaffected.
   showFocusScore?: boolean;
+  // Ultra page only -- keeps the focus team's row pinned at index 0
+  // regardless of the active column sort. Off by default so every other
+  // page's StatTable usage (which sorts the focus row like any other row)
+  // is unaffected.
+  pinFocusRow?: boolean;
 }
 
 function allPlayRecord(
@@ -123,7 +128,7 @@ function SortableHead({
   );
 }
 
-export function StatTable({ rows, mode, focusTeam, showFocusScore }: StatTableProps) {
+export function StatTable({ rows, mode, focusTeam, showFocusScore, pinFocusRow }: StatTableProps) {
   const [sort, setSort] = useState<SortState | null>(null);
   const baseline = focusTeam ? rows.find((r) => r.team === focusTeam) : undefined;
 
@@ -183,6 +188,19 @@ export function StatTable({ rows, mode, focusTeam, showFocusScore }: StatTablePr
     });
   }, [rows, sort, mode, baseline]);
 
+  // Ultra's pinned focus row: pulled to index 0 after the normal sort runs,
+  // rather than baked into sortValue -- keeps the sort itself (and every
+  // other page's unpinned usage) exactly as before.
+  const displayRows = useMemo(() => {
+    if (!pinFocusRow || !focusTeam) return sortedRows;
+    const idx = sortedRows.findIndex((r) => r.team === focusTeam);
+    if (idx <= 0) return sortedRows;
+    const copy = [...sortedRows];
+    const [pinned] = copy.splice(idx, 1);
+    copy.unshift(pinned);
+    return copy;
+  }, [sortedRows, pinFocusRow, focusTeam]);
+
   return (
     <Table>
       <TableHeader>
@@ -220,7 +238,7 @@ export function StatTable({ rows, mode, focusTeam, showFocusScore }: StatTablePr
         </TableRow>
       </TableHeader>
       <TableBody>
-        {sortedRows.map((row, i) => {
+        {displayRows.map((row, i) => {
           const source = mode === "stat" ? row.stats : row.ratings;
           const baseSource = baseline ? (mode === "stat" ? baseline.stats : baseline.ratings) : undefined;
           const isFocus = row.team === focusTeam;

@@ -5,8 +5,12 @@
 // can separate them (confirmed empirically: identical overlap at every
 // value tried). Rendering the legend as a normal sibling below the chart
 // container sidesteps the whole class of bug.
+// Above this many series, a legend is just unreadable noise regardless of
+// which page it's on -- hidden instead of rendered.
+const MAX_LEGEND_ITEMS = 20;
+
 export function ChartLegend({ items }: { items: { key: string; color: string }[] }) {
-  if (items.length <= 1) return null;
+  if (items.length <= 1 || items.length > MAX_LEGEND_ITEMS) return null;
   return (
     <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 px-2 pt-1 text-xs text-muted-foreground">
       {items.map((item) => (

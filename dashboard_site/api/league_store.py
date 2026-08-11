@@ -383,6 +383,20 @@ class LeagueStore:
         self._rs_finish_history = out
         return out
 
+    def draft_picks(self, years: list[int] | None = None, teams: list[str] | None = None) -> list[dict]:
+        """Pick-level draft data (Round/Pick/Overall/Player/Team/Rank/Score)
+        for the Players page's Draft Box. Reads every {year} Draft Results.csv
+        directly (StatsStore._load_draft_picks) -- small enough (8 seasons x
+        ~11 teams x ~13 rounds) that no server-side pagination is needed;
+        the frontend paginates the filtered list client-side."""
+        df = self.store._ensure_draft_picks_df()
+        if years:
+            df = df[df["Year"].isin(years)]
+        if teams:
+            df = df[df["Team"].isin(teams)]
+        df = df.sort_values("Score", ascending=False)
+        return df.to_dict(orient="records")
+
     def team_summary(self, teams: list[str] | None = None) -> list[dict]:
         """Career profile stats (chips, finals, playoffs, streaks, draft scores)
         for the Career Comparison page. Reads scripts/export_team_summary.py's

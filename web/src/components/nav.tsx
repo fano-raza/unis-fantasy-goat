@@ -7,12 +7,12 @@ import { cn } from "@/lib/utils";
 
 export const NAV_LINKS = [
   { href: "/", label: "Weekly Stats" },
+  { href: "/ultra", label: "Ultra" },
   { href: "/career", label: "Career Stats" },
-  { href: "/season", label: "Season" },
   { href: "/standings", label: "Standings" },
   { href: "/profile", label: "Profile" },
-  { href: "/comparison", label: "Comparison" },
   { href: "/analysis", label: "Analysis" },
+  { href: "/players", label: "Players" },
   { href: "/champions-lounge", label: "Champions Lounge", locked: true },
 ];
 

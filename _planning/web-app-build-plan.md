@@ -2,7 +2,7 @@
 
 Living doc. Supersedes the tech-stack assumptions in `fantasy-league-app-plan.md` (that doc was written without repo access — this one reflects what's actually here). Update this file as decisions get made or work completes.
 
-Last updated: 2026-08-10
+Last updated: 2026-08-11
 
 ---
 
@@ -527,6 +527,51 @@ Verified end-to-end: `tsc --noEmit`/build not needed (backend-only change), both
 - [x] Week selector on Weekly Stats gets a royal blue border (`LabeledSelect` gained an optional `className` prop, backward-compatible with every other usage) plus a "Playoff" label when the selected week is beyond that year's regular season (`week > rs_week_count[year]`).
 - [x] Mobile nav: the hamburger menu trigger now has a visible border/tint instead of blending in as a bare ghost icon. New `PageArrowNav` (mobile-only, `sm:hidden`) lets users step to the previous/next page with wraparound at either end, without opening the menu -- desktop already has the full pill nav always visible so didn't need this.
 
+### Phase 3.39 — Ultra page (new) — DONE 2026-08-11 (session 14)
+
+- [x] New `/ultra` page (nav position right after Weekly Stats): Season select, Week multi-select (`ChecklistGroup`, extracted from `filter-panel.tsx` for reuse), Focus Team select, defaults to RS+PO both on and every week selected.
+- [x] Reuses `getAverages()` + `StatTable` almost entirely as-is -- sorting and the sticky Score column already existed and needed zero changes; `categoryScore` works unmodified against averaged stats.
+- [x] New `StatTable` prop `pinFocusRow` -- keeps the focus team's row pinned at index 0 regardless of the active column sort (every other page's `StatTable` usage is unaffected, opt-in only).
+
+Verified: focus team selection pins that row to the top; clicking any column header re-sorts the rest of the table while the pinned row stays first; sticky Score column reads correctly off averaged stats.
+
+### Phase 3.40 — Standings + Season merge (retired `/season`) — DONE 2026-08-11 (session 14)
+
+- [x] New shared `ArrowToggle` component (`web/src/components/arrow-toggle.tsx`) -- chevron-cycled view switcher, first use case in this app.
+- [x] Standings page restructured into 3 arrow-toggle views: **1v1**, **League Wins**, **Ratings** (absorbed from the retired Season page: Totals/Averages switch, RS/PO checkboxes, Focus Team select, all reusing the existing week-range slider rather than Season's old full-range-only fetch). Added a Table/Leaders-Losers switch to the Ratings view (new, wasn't on the old Season page).
+- [x] **Behavior change**: Playoff Tree toggle now replaces the **table** (not the graph, as it did before) -- the Position Over Time graph stays visible underneath regardless of the toggle.
+- [x] Ratings view graph ("Rating Over Time"): a cumulative running average -- at week X, each team's value is the average of its `week_rating` from the range's min week through X (the user's explicit spec). Computed entirely client-side from the existing `/league/analysis_rows` endpoint's per-(team,week) `week_rating` field -- **no backend change needed**.
+- [x] `?view=1v1|league_wins|ratings` URL param added alongside the existing `?year=`/`?tree=1`.
+- [x] `/season` route deleted, removed from `nav.tsx`; Profile's two stat-tile deep links (MVPs, Best RS Rating) repointed to `/standings?year=...&view=ratings`.
+
+Verified: all 3 arrow-toggle states render correctly with real data; playoff-tree-replaces-table confirmed (a Playwright text-match false negative during verification matched the graph's own "Place" axis label, not a leftover table -- diagnosed before concluding anything, not assumed to be a bug); ratings cumulative-average graph shape confirmed against the spec.
+
+### Phase 3.41 — Profile + Comparison merge (retired `/comparison`) — DONE 2026-08-11 (session 14)
+
+- [x] Profile page restructured behind the same `ArrowToggle` (`Profile | Comparison`). Comparison's chip-bar-with-Add-popover replaces Profile's single Select in the sticky header when that view is active.
+- [x] Toggling into Comparison seeds the list with whichever team Profile currently has selected, if nothing's already picked (user-confirmed behavior) -- existing localStorage persistence otherwise untouched.
+- [x] `/comparison` route deleted, removed from `nav.tsx`. Comparison's team-name column headers (previously linking out to `/profile?team=`) are now plain text, not links -- since both views live on the same route now, clicking wouldn't remount the page/re-read `?team=` (that effect only runs once at mount, same reasoning as the existing `?team=`/`?year=` deep-link comments elsewhere in this app) and would silently do nothing. Flagging this as a deliberate scope call, not an oversight.
+
+Verified: toggle + seeding confirmed via Playwright (comparison view shows, selected-team chip present immediately on first toggle); all pre-existing Profile and Comparison functionality (stat tiles, League Top 3, badges, best/worst highlighting) intact after the merge.
+
+### Phase 3.42 — Analysis page fixes — DONE 2026-08-11 (session 14)
+
+- [x] W/L + Category Win% fields: already fully built (`matchup_win`, `matchup_win_pct`, `cat_win_pct` in `fields.ts`, added in an earlier session's follow-up round) -- no code change needed, confirming here in case it wasn't obvious they already existed.
+- [x] Axis-swap button added next to the X/Y `FieldSelect`s in `analysis-graph.tsx`.
+- [x] **Real bug fixed**: `pivotScatter()` (`pivot.ts`) was recoloring every individual row by group instead of averaging -- "Overall Rating vs Pts Rating, group by Team" showed every week's raw point tinted by team rather than one point per team. Fixed to collapse each active group into a single averaged `(avg x, avg y)` point; ungrouped ("All") scatter is unchanged (averaging a single bucket would defeat the point of an ungrouped view).
+- [x] `ChartLegend` now hides above 20 series (`MAX_LEGEND_ITEMS`), applies everywhere the component is used (Analysis + the new Standings ratings graph).
+
+Verified: axis-swap button present and functional; group-by-team scatter now shows one point per team instead of per-week points.
+
+### Phase 3.43 — Players page (new): Draft Box + Trade Box scaffold — DONE 2026-08-11 (session 14)
+
+- [x] New `/players` page (nav position after Analysis), `ArrowToggle` between Draft Box and Trade Box.
+- [x] **New backend**: `StatsStore._load_draft_picks()` (`dashboard_site/api/query_engine.py`, sibling to the existing team/year-aggregated `_load_draft_scores()`) reads every `{year} Draft Results.csv` and keeps pick-level columns (`Year, Round, Pick, Overall, Player, Team, Rank, Score`) instead of aggregating. New `DraftPicksRequest` schema + `POST /league/draft_picks` route, no server-side pagination (988 picks across 8 seasons is a small payload -- confirmed via direct smoke test). `Rank` is a string passthrough (`"N/A"` for a still-in-progress draft).
+- [x] **Draft Box**: Year/Team `ChecklistGroup` filters, group-by (None/Team/Player/Year, section-header rows), 25-rows/page pagination with prev/next arrows, default sort by Draft Score descending (matches the backend's own sort).
+- [x] **Trade Box**: placeholder-data UI shell only, per user-confirmed scope -- this repo has **zero real player-level stats anywhere** (confirmed by repo-wide grep during planning; everything else here is team-vs-team box scores). New `web/src/lib/placeholder-players.ts` (explicitly commented as temporary), up-to-5-a-side player pickers, Past/Predicted and Totals/Averages toggles, a 9-category comparison table with a difference row colored by the same `compareCell` direction convention used elsewhere in this app. Real player-data integration deferred as a separate future project.
+
+Verified: backend smoke-tested directly (988 picks, all 8 years present, sorted correctly) before any frontend work; Draft Box confirmed loading real picks with working pagination; Trade Box picker + comparison table confirmed rendering.
+
 ### Deferred / not v1
 - Auth / per-member profiles
 - Postgres migration (revisit only if auth/profiles need per-user state)
@@ -620,3 +665,11 @@ Verified end-to-end: `tsc --noEmit`/build not needed (backend-only change), both
   - **Closed out #26 this entry**: `?year=` param support on Season and Standings, same Suspense-split pattern as `?team=`. Full detail in Phase 3.24 above.
   - **Closed out #27 this entry**: playoff tree toggle on Standings, backed by a new `scripts/export_playoff_brackets.py` heavy-venv export (caught and fixed a real bye-detection bug during verification, ground-truthed champions against `team_summary.csv`). Full detail in Phase 3.25 above -- including wiring the export into the live refresh pipeline after all (the user asked directly once told about the droplet's CPU usage during the one-off run), where a second real bug got caught: the obvious gate (`currentWeek`) is unreliable months after a season ends, since `bs_calList()` pins it at the calendar's last row forever -- fixed to check real calendar date proximity instead. Also diagnosed the droplet's swap-thrashing on this heavy script directly with the user mid-session.
   - **Closed out #28 this entry**: Profile's 6 stat tiles (Championships/MVPs/Best RS Rating/RS 1st Place/Best RS Finish/Best Playoff Finish) now link to their resolved-year Ratings/Standings/playoff-tree pages per the user's exact spec. Also handled two rounds of live design feedback on badge counter placement mid-implementation (StatTile boxes → desktop subtitle text + mobile-drawer-only). Full detail in Phase 3.26 above. This closes out the whole multi-part request from this session's most recent large ask.
+- **2026-08-11 (session 14)**: User handed the largest checklist yet -- a brand-new Ultra page, merging Standings+Season into one arrow-toggled page, merging Profile+Comparison the same way, 4 Analysis fixes, and a brand-new Players page (Draft Box + a deliberately-scoped Trade Box shell). Given the size, ran a full research-then-plan pass before any code: 4 parallel background research agents (Google Sheet's old "ULTRA" tab via Drive MCP, Standings/Season/Profile/Comparison page structure, Analysis page internals, Draft/player data availability) plus direct reads of the highest-risk files, then formal plan mode with 2 rounds of `AskUserQuestion` (5 questions total) to resolve real ambiguities before writing the plan -- not guessed:
+  - The old Google Sheet "ULTRA" tab turned out to be a dead end (an abandoned 1v1 matchup comparator with a completely blank output grid, structurally nothing like the per-team-averages leaderboard the checklist described) -- built fresh from the checklist instead, per the user's "reference it but confirm with me" answer. **Still needs a check-in with the user on the final Ultra shape** since there was no usable reference to build against.
+  - Standings ratings-view graph: user's own follow-up clarified the exact spec mid-session ("at week X do the average rating from min week to week X") -- a cumulative running average, not a flat per-range average as first scoped. Turned out to need zero new backend work either way, since `/league/analysis_rows` already exposes per-(team,week) `week_rating`.
+  - Trade Box: research surfaced a bigger gap than the user's original ask implied -- not just missing *predicted* player stats, but **zero player-level stats of any kind** anywhere in this repo (confirmed by a repo-wide grep; this app is entirely team-vs-team box scores). Flagged directly before building; user confirmed a placeholder-data-only shell for this round, real integration deferred.
+  - Full technical breakdown of what shipped is in Phases 3.39-3.43 above. Summarized here: `StatTable` gained an opt-in `pinFocusRow` prop (Ultra); a new reusable `ArrowToggle` component (first cycling-view-switcher pattern in this app, used by both merges); `/season` and `/comparison` routes retired and folded into `/standings` and `/profile` respectively; a real bug fixed in Analysis's `pivotScatter()` (grouped scatter was recoloring raw points instead of averaging them into one point per group); a new pick-level `/league/draft_picks` endpoint (`StatsStore._load_draft_picks()`, sibling to the existing team/year-aggregated loader) backing the new Players page's Draft Box.
+  - Verified end-to-end: `npm run build` clean after each of the 5 areas (not just once at the end), backend Python syntax-checked plus a direct smoke test of the new `/league/draft_picks` endpoint (988 real picks, all 8 seasons, correctly sorted) before any frontend work touched it, then a live Playwright pass against the real backend + `npm run dev` covering all 7 pages at both desktop and mobile viewports -- zero console errors, zero mobile horizontal overflow anywhere. One test-script false negative caught and diagnosed rather than assumed to be a real bug: a "table replaced by tree" check matched the Position-Over-Time graph's own "Place" axis-label text, not a leftover table -- the playoff-tree-replaces-table behavior is confirmed correct.
+  - Also caught and fixed a real path bug in my own verification tooling mid-session: `rm -rf "web/src/app/comparison"` silently no-op'd because the shell's cwd was still `web/` from an earlier command (so the path resolved to a nonexistent `web/web/...`), which the next `npm run build` didn't catch either since Next.js still built the stale route successfully -- caught by noticing `/comparison` still listed in the build's route table, not by the build failing.
+  - **Not yet deployed**: all of the above is local-only (verified via the dev servers, servers stopped afterward) -- git commit/push and the droplet/Vercel deploy steps still need explicit confirmation before proceeding, per this repo's standing shared-state rule. `_planning/web-app-build-plan.md` updated (this entry + Phases 3.39-3.43) as part of this session, per the repo's standing practice, but that update itself is also uncommitted pending the same confirmation.

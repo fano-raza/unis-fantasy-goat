@@ -13,3 +13,12 @@ This keeps the plan usable as a real reference across sessions instead of going 
 ## Local file permissions
 
 No need to ask for permission before creating, editing, overwriting, or deleting local files/folders in this repo, or before running tests/commands that only affect local files. Free rein on local file operations. This does not extend to git push, force-push, or other actions affecting shared/remote state — those still follow normal confirmation rules.
+
+## Web app deploy — pre-authorized
+
+For the web app track specifically (`dashboard_site/` backend, `web/` frontend), the user has pre-authorized automatic deploy after making changes — no need to ask before each one. After a web app change is built and verified (local build passes, live-checked against real data), proceed on your own to:
+- Commit the relevant files (scoped `git add` by explicit path, not `-A` — see past session logs for why: this repo tends to have unrelated uncommitted changes sitting in the tree, and `token.json` must never be committed) and push to `origin/main`.
+- Deploy the backend to the droplet (`deploy/scripts/server_pull_and_restart.sh` or equivalent — see `_planning/web-app-build-plan.md`'s Phase 5 for the exact commands/URLs).
+- Deploy the frontend via `vercel --prod`.
+
+This covers the web app deploy path only. It does not extend to other destructive/shared-state actions (force-push, deleting branches, etc.) or to other parts of this repo (Discord bot, GDoc pipeline) — those still follow normal confirmation rules.

@@ -165,6 +165,23 @@ export interface TeamSummaryRequest {
   teams?: string[];
 }
 
+export interface DraftPicksRequest {
+  years?: number[];
+  teams?: string[];
+}
+
+export interface DraftPick {
+  Year: number;
+  Round: number;
+  Pick: number;
+  Overall: number;
+  Player: string;
+  Team: string;
+  // "N/A" for a still-in-progress draft's picks.
+  Rank: string;
+  Score: number;
+}
+
 export interface StandingsRequest {
   year: number;
   min_week: number;
@@ -340,6 +357,9 @@ export const getStandingsHistory = (req: StandingsRequest) =>
 
 export const getPlayoffBrackets = () =>
   apiFetch<PlayoffBracketsResponse>("/league/playoff_brackets");
+
+export const getDraftPicks = (req: DraftPicksRequest = {}) =>
+  post<DraftPick[]>("/league/draft_picks", req);
 
 export interface RefreshStatus {
   // ISO 8601, or null if the backend hasn't found any ref-dir CSVs yet.

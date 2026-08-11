@@ -26,8 +26,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { buttonVariants } from "@/components/ui/button";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { StatTable } from "@/components/stat-table";
-import { Podium, Star, Trophy } from "lucide-react";
+import { ArrowToggle } from "@/components/arrow-toggle";
+import { Podium, Star, Trophy, X } from "lucide-react";
 import {
   getAverages,
   getCategoryHistory,
@@ -44,13 +55,29 @@ import {
   type TeamSummary,
 } from "@/lib/api";
 import { NEG_CATS } from "@/lib/highlight";
-import { comparableFields, formatValue, ordinal, rankFor } from "@/lib/team-summary-fields";
+import {
+  comparableFields,
+  COMPARISON_EXCLUDED_FIELDS,
+  DEEMPHASIZED_FIELDS,
+  directionFor,
+  EMPHASIZED_FIELDS,
+  formatValue,
+  ordinal,
+  rankFor,
+} from "@/lib/team-summary-fields";
 import { cn } from "@/lib/utils";
 import { ProfileHistoryChart } from "@/components/profile-history-chart";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { buildBadges, POSITIVE_BADGE_TYPES } from "@/lib/badges";
 import { TeamBadges } from "@/components/team-badges";
 import { BadgeDrawer } from "@/components/badge-drawer";
+import { useMediaQuery } from "@/lib/use-media-query";
+
+type View = "profile" | "comparison";
+const VIEW_OPTIONS = [
+  { value: "profile", label: "Profile" },
+  { value: "comparison", label: "Comparison" },
+];
 
 // Gold / silver / bronze for the League Top 3 table's 1st/2nd/3rd rank text
 // -- topFields is always filtered to rank <= 3, so no 4th-place case exists.
@@ -98,6 +125,39 @@ function rankForCategory(cat: Category, rows: AggregateRow[], team: string): num
 }
 
 const SELECTED_TEAM_KEY = "profile-selected-team";
+const SELECTED_TEAMS_KEY = "comparison-selected-teams";
+const MOBILE_TEAM_CAP = 2;
+const DESKTOP_TEAM_CAP = 4;
+
+type BestWorst = "best" | "worst" | "neutral";
+
+function highlightFor(field: string, rows: TeamSummary[]): Record<string, BestWorst> {
+  const result: Record<string, BestWorst> = {};
+  for (const row of rows) result[row.Team] = "neutral";
+
+  const direction = directionFor(field);
+  if (direction === "skip" || rows.length < 2) return result;
+
+  const numeric = rows
+    .map((row) => ({ team: row.Team, value: row[field] }))
+    .filter((r): r is { team: string; value: number } => typeof r.value === "number");
+  if (numeric.length < 2) return result;
+
+  const values = numeric.map((r) => r.value);
+  if (values.every((v) => v === values[0])) return result;
+
+  const best = direction === "higher" ? Math.max(...values) : Math.min(...values);
+  for (const { team, value } of numeric) {
+    result[team] = value === best ? "best" : "worst";
+  }
+  return result;
+}
+
+const highlightClass: Record<BestWorst, string> = {
+  best: "bg-win/15 text-win",
+  worst: "bg-loss/15 text-loss",
+  neutral: "",
+};
 
 // Win/loss career totals for the "League Top 3" table -- not present in
 // team_summary.csv (that has W-L-T strings, not individually rankable
@@ -174,6 +234,13 @@ function ProfilePageInner() {
   const [queryTotals, setQueryTotals] = useState<Record<string, QueryRow[]>>({});
   const [categoryHistory, setCategoryHistory] = useState<CategoryHistoryResponse | null>(null);
   const [team, setTeam] = useState<string | null>(null);
+  const [view, setView] = useState<View>("profile");
+
+  // Comparison view state -- ported from the retired /comparison page.
+  const [selected, setSelected] = useState<string[]>([]);
+  const [addOpen, setAddOpen] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+
   const searchParams = useSearchParams();
 
   useEffect(() => {
@@ -218,6 +285,62 @@ function ProfilePageInner() {
   useEffect(() => {
     if (team) localStorage.setItem(SELECTED_TEAM_KEY, team);
   }, [team]);
+
+  // Hydrate synchronously (no async dependency) so `hydrated` flips true in
+  // the same initial render pass, before the persist-effect below ever gets
+  // a chance to write. Gating on an async fetch here would leave a window
+  // where React's dev-mode double-effect-invocation re-reads localStorage
+  // AFTER the persist-effect has already clobbered it with the default `[]`
+  // -- the read and the "mark as hydrated" must be atomic and synchronous.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(SELECTED_TEAMS_KEY);
+      if (raw) setSelected(JSON.parse(raw) as string[]);
+    } catch {}
+    setHydrated(true);
+  }, []);
+
+  // Drop any persisted team names no longer present once the real team list
+  // loads (data changed, or a stale localStorage value from an old session).
+  useEffect(() => {
+    if (allTeams.length === 0) return;
+    setSelected((s) => s.filter((t) => allTeams.some((r) => r.Team === t)));
+  }, [allTeams]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    localStorage.setItem(SELECTED_TEAMS_KEY, JSON.stringify(selected));
+  }, [hydrated, selected]);
+
+  // Switching into Comparison seeds the list with whichever team Profile
+  // currently has selected, if nothing's already picked -- keeps the arrow
+  // toggle feeling continuous instead of dropping you on an empty table.
+  function handleViewChange(next: string) {
+    const nextView = next as View;
+    if (nextView === "comparison" && team && selected.length === 0) {
+      setSelected([team]);
+    }
+    setView(nextView);
+  }
+
+  const isMobile = useMediaQuery("(max-width: 639px)");
+  // Cap the *display* at MOBILE_TEAM_CAP on mobile / DESKTOP_TEAM_CAP on
+  // desktop without mutating `selected` itself, so a wider-viewport
+  // selection persisted from desktop still fits on mobile without
+  // horizontal scroll rather than being silently discarded.
+  const cap = isMobile ? MOBILE_TEAM_CAP : DESKTOP_TEAM_CAP;
+  const visibleSelected = selected.slice(0, cap);
+  const canAddMore = selected.length < cap;
+  const comparisonFields = comparableFields(allTeams).filter((f) => !COMPARISON_EXCLUDED_FIELDS.has(f));
+  const selectedRows = visibleSelected
+    .map((t) => allTeams.find((r) => r.Team === t))
+    .filter((r): r is TeamSummary => !!r);
+  const availableTeams = allTeams.filter((r) => !selected.includes(r.Team));
+  // Equal-width columns (Stat column + one per selected team) on every
+  // viewport -- computed as a percentage rather than a fixed Tailwind
+  // fraction class since the team count varies (1-4 on desktop, 1-2 on
+  // mobile).
+  const colWidthPct = `${100 / (selectedRows.length + 1)}%`;
 
   const profile = allTeams.find((r) => r.Team === team);
   const totalsRow = totals.find((r) => r.team === team);
@@ -282,159 +405,291 @@ function ProfilePageInner() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="sticky top-0 z-30 flex items-center gap-2 rounded-sm border border-border bg-card px-3 py-2 shadow-sm">
-        <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
-          Team
-        </span>
-        <Select value={team} onValueChange={(v) => v !== null && setTeam(v)}>
-          <SelectTrigger size="sm">
-            <SelectValue>{(v: string) => v}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {meta.members.map((m) => (
-              <SelectItem key={m} value={m}>
-                {m}
-              </SelectItem>
+      <div className="sticky top-0 z-30 flex flex-wrap items-center gap-3 rounded-sm border border-border bg-card px-3 py-2 shadow-sm">
+        <ArrowToggle options={VIEW_OPTIONS} value={view} onChange={handleViewChange} />
+
+        {view === "profile" ? (
+          <>
+            <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+              Team
+            </span>
+            <Select value={team} onValueChange={(v) => v !== null && setTeam(v)}>
+              <SelectTrigger size="sm">
+                <SelectValue>{(v: string) => v}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {meta.members.map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {m}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            {visibleSelected.map((t) => (
+              <span
+                key={t}
+                className="flex items-center gap-1.5 rounded-sm bg-secondary px-3 py-1 text-xs font-bold tracking-wide text-secondary-foreground uppercase"
+              >
+                {t}
+                <button
+                  type="button"
+                  onClick={() => setSelected((s) => s.filter((x) => x !== t))}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </span>
             ))}
-          </SelectContent>
-        </Select>
+            {canAddMore && (
+              <Popover open={addOpen} onOpenChange={setAddOpen}>
+                <PopoverTrigger className={buttonVariants({ variant: "outline", size: "sm" })}>
+                  + Add team
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-0">
+                  <Command>
+                    <CommandInput placeholder="Search teams..." />
+                    <CommandList>
+                      <CommandEmpty>No teams found.</CommandEmpty>
+                      <CommandGroup>
+                        {availableTeams.map((row) => (
+                          <CommandItem
+                            key={row.Team}
+                            onSelect={() => {
+                              setSelected((s) => [...s, row.Team]);
+                              setAddOpen(false);
+                            }}
+                          >
+                            {row.Team}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            )}
+          </div>
+        )}
       </div>
 
-      <Card>
-        <CardHeader>
-          {/* Grouped in one div so grid auto-placement can't split them into
-              separate cells -- CardAction is `hidden` (removed from the box
-              tree, not just visually hidden) below `sm`, and when it's gone
-              the header's grid-cols-[1fr_auto] auto-placement algorithm was
-              putting CardTitle in column 2 instead of stacking it under
-              CardDescription in column 1. */}
-          <div>
-            <CardDescription>Career Profile</CardDescription>
-            <CardTitle className="text-4xl sm:text-5xl">{team}</CardTitle>
-            <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
-              {badges.positive.length} total badges &middot; {uniquePositiveCount}/{POSITIVE_BADGE_TYPES.length} unique
-            </p>
-          </div>
-          <CardAction className="hidden max-w-md sm:block">
-            <TeamBadges positive={badges.positive} negative={badges.negative} />
-          </CardAction>
-        </CardHeader>
-        <CardContent className="sm:hidden">
-          <BadgeDrawer positive={badges.positive} negative={badges.negative} />
-        </CardContent>
-      </Card>
+      {view === "comparison" ? (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>Career Comparison</CardTitle>
+              <CardDescription>
+                Add teams to compare career profile stats side by side
+              </CardDescription>
+            </CardHeader>
+          </Card>
 
-      {profile && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <StatTile
-            label="Championships"
-            value={profile.Championships ?? 0}
-            sub={splitYears(profile["Championship Years"])}
-            icon={Trophy}
-            href={`/standings?year=${latestYear(profile["Championship Years"]) ?? meta.current_year}&tree=1`}
-          />
-          <StatTile
-            label="MVPs"
-            value={profile.MVPs ?? 0}
-            sub={splitYears(profile["MVP Years"])}
-            icon={Star}
-            href={`/season?year=${latestYear(profile["MVP Years"]) ?? meta.current_year}`}
-          />
-          <StatTile
-            label="Best RS Rating"
-            value={typeof profile["Best RS Rating"] === "number" ? profile["Best RS Rating"].toFixed(1) : "—"}
-            sub={splitYears(profile["Best RS Rating Years"])}
-            href={`/season?year=${latestYear(profile["Best RS Rating Years"]) ?? meta.current_year}`}
-          />
-          <StatTile
-            label="RS 1st Place"
-            value={profile["RS 1st Place"] ?? 0}
-            sub={splitYears(profile["RS 1st Years"])}
-            icon={Podium}
-            href={`/standings?year=${latestYear(profile["RS 1st Years"]) ?? meta.current_year}`}
-          />
-          <StatTile
-            label="Best RS Finish"
-            value={typeof profile["Best RS Finish"] === "number" ? ordinal(profile["Best RS Finish"]) : "—"}
-            sub={splitYears(profile["Best RS Finish Years"])}
-            href={`/standings?year=${latestYear(profile["Best RS Finish Years"]) ?? meta.current_year}`}
-          />
-          {playoffFinish && (
-            <StatTile
-              label="Best Playoff Finish"
-              value={playoffFinish.label}
-              sub={playoffFinish.years}
-              valueClassName={playoffFinish.label === "Champion" ? "text-amber-400" : undefined}
-              href={`/standings?year=${latestYear(playoffFinish.years) ?? meta.current_year}&tree=1`}
-            />
+          <Card>
+            <CardContent>
+              {selectedRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Add two or more teams to compare.
+                </p>
+              ) : (
+                <Table className="table-fixed">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead
+                        style={{ width: colWidthPct }}
+                        className="whitespace-normal sm:whitespace-nowrap"
+                      >
+                        Stat
+                      </TableHead>
+                      {selectedRows.map((row) => (
+                        <TableHead
+                          key={row.Team}
+                          style={{ width: colWidthPct }}
+                          className="whitespace-normal text-right text-primary sm:whitespace-nowrap"
+                        >
+                          {row.Team}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {comparisonFields.map((field) => {
+                      const highlight = highlightFor(field, selectedRows);
+                      const emphasized = EMPHASIZED_FIELDS.has(field);
+                      const deemphasized = DEEMPHASIZED_FIELDS.has(field);
+                      return (
+                        <TableRow key={field}>
+                          <TableCell
+                            className={cn(
+                              "whitespace-normal font-sans font-medium text-muted-foreground sm:whitespace-nowrap",
+                              emphasized && "font-bold text-base",
+                              deemphasized && "text-muted-foreground/60",
+                            )}
+                          >
+                            {field}
+                          </TableCell>
+                          {selectedRows.map((row) => (
+                            <TableCell
+                              key={row.Team}
+                              className={cn(
+                                "whitespace-normal text-right sm:whitespace-nowrap",
+                                highlightClass[highlight[row.Team]],
+                                emphasized && "font-bold text-base",
+                                deemphasized && "text-muted-foreground/60",
+                              )}
+                            >
+                              {formatValue(row[field])}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      ) : (
+        <>
+          <Card>
+            <CardHeader>
+              {/* Grouped in one div so grid auto-placement can't split them into
+                  separate cells -- CardAction is `hidden` (removed from the box
+                  tree, not just visually hidden) below `sm`, and when it's gone
+                  the header's grid-cols-[1fr_auto] auto-placement algorithm was
+                  putting CardTitle in column 2 instead of stacking it under
+                  CardDescription in column 1. */}
+              <div>
+                <CardDescription>Career Profile</CardDescription>
+                <CardTitle className="text-4xl sm:text-5xl">{team}</CardTitle>
+                <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
+                  {badges.positive.length} total badges &middot; {uniquePositiveCount}/{POSITIVE_BADGE_TYPES.length} unique
+                </p>
+              </div>
+              <CardAction className="hidden max-w-md sm:block">
+                <TeamBadges positive={badges.positive} negative={badges.negative} />
+              </CardAction>
+            </CardHeader>
+            <CardContent className="sm:hidden">
+              <BadgeDrawer positive={badges.positive} negative={badges.negative} />
+            </CardContent>
+          </Card>
+
+          {profile && (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <StatTile
+                label="Championships"
+                value={profile.Championships ?? 0}
+                sub={splitYears(profile["Championship Years"])}
+                icon={Trophy}
+                href={`/standings?year=${latestYear(profile["Championship Years"]) ?? meta.current_year}&tree=1`}
+              />
+              <StatTile
+                label="MVPs"
+                value={profile.MVPs ?? 0}
+                sub={splitYears(profile["MVP Years"])}
+                icon={Star}
+                href={`/standings?year=${latestYear(profile["MVP Years"]) ?? meta.current_year}&view=ratings`}
+              />
+              <StatTile
+                label="Best RS Rating"
+                value={typeof profile["Best RS Rating"] === "number" ? profile["Best RS Rating"].toFixed(1) : "—"}
+                sub={splitYears(profile["Best RS Rating Years"])}
+                href={`/standings?year=${latestYear(profile["Best RS Rating Years"]) ?? meta.current_year}&view=ratings`}
+              />
+              <StatTile
+                label="RS 1st Place"
+                value={profile["RS 1st Place"] ?? 0}
+                sub={splitYears(profile["RS 1st Years"])}
+                icon={Podium}
+                href={`/standings?year=${latestYear(profile["RS 1st Years"]) ?? meta.current_year}`}
+              />
+              <StatTile
+                label="Best RS Finish"
+                value={typeof profile["Best RS Finish"] === "number" ? ordinal(profile["Best RS Finish"]) : "—"}
+                sub={splitYears(profile["Best RS Finish Years"])}
+                href={`/standings?year=${latestYear(profile["Best RS Finish Years"]) ?? meta.current_year}`}
+              />
+              {playoffFinish && (
+                <StatTile
+                  label="Best Playoff Finish"
+                  value={playoffFinish.label}
+                  sub={playoffFinish.years}
+                  valueClassName={playoffFinish.label === "Champion" ? "text-amber-400" : undefined}
+                  href={`/standings?year=${latestYear(playoffFinish.years) ?? meta.current_year}&tree=1`}
+                />
+              )}
+            </div>
           )}
-        </div>
+
+          {topFields.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>League Top 3</CardTitle>
+                <CardDescription>
+                  Every career stat where {team} ranks in the top 3 league-wide
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Stat</TableHead>
+                      <TableHead className="text-right">Value</TableHead>
+                      <TableHead className="text-right">Rank</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {topFields.map((row) => (
+                      <TableRow key={row.field}>
+                        <TableCell className="font-sans font-medium text-muted-foreground">
+                          {row.field}
+                        </TableCell>
+                        <TableCell className="text-right">{formatValue(row.value)}</TableCell>
+                        <TableCell className={cn("text-right font-extrabold", rankColorClass(row.rank))}>
+                          {ordinal(row.rank)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Career Totals</CardTitle>
+              <CardDescription>League-wide rank included</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {totalsRow ? (
+                <StatTable rows={[totalsRow]} mode="stat" />
+              ) : (
+                <p className="text-sm text-muted-foreground">No data.</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Career Averages</CardTitle>
+              <CardDescription>League-wide rank included</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {averagesRow ? (
+                <StatTable rows={[averagesRow]} mode="stat" />
+              ) : (
+                <p className="text-sm text-muted-foreground">No data.</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <ProfileHistoryChart team={team} meta={meta} />
+        </>
       )}
-
-      {topFields.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>League Top 3</CardTitle>
-            <CardDescription>
-              Every career stat where {team} ranks in the top 3 league-wide
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Stat</TableHead>
-                  <TableHead className="text-right">Value</TableHead>
-                  <TableHead className="text-right">Rank</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {topFields.map((row) => (
-                  <TableRow key={row.field}>
-                    <TableCell className="font-sans font-medium text-muted-foreground">
-                      {row.field}
-                    </TableCell>
-                    <TableCell className="text-right">{formatValue(row.value)}</TableCell>
-                    <TableCell className={cn("text-right font-extrabold", rankColorClass(row.rank))}>
-                      {ordinal(row.rank)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Career Totals</CardTitle>
-          <CardDescription>League-wide rank included</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {totalsRow ? (
-            <StatTable rows={[totalsRow]} mode="stat" />
-          ) : (
-            <p className="text-sm text-muted-foreground">No data.</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Career Averages</CardTitle>
-          <CardDescription>League-wide rank included</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {averagesRow ? (
-            <StatTable rows={[averagesRow]} mode="stat" />
-          ) : (
-            <p className="text-sm text-muted-foreground">No data.</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <ProfileHistoryChart team={team} meta={meta} />
     </div>
   );
 }

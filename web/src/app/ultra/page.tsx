@@ -1,0 +1,141 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { StatTable } from "@/components/stat-table";
+import { ChecklistGroup } from "@/components/filter-panel";
+import { LabeledSelect, NO_FOCUS_TEAM } from "@/components/labeled-select";
+import { LoadingBasketballs } from "@/components/loading-basketballs";
+import { getAverages, getLeagueMeta, type AggregateRow, type LeagueMeta } from "@/lib/api";
+
+export default function UltraPage() {
+  const [meta, setMeta] = useState<LeagueMeta | null>(null);
+  const [year, setYear] = useState<number | null>(null);
+  const [weeks, setWeeks] = useState<number[]>([]);
+  const [focusTeam, setFocusTeam] = useState<string>(NO_FOCUS_TEAM);
+  const [rows, setRows] = useState<AggregateRow[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getLeagueMeta().then((m) => {
+      setMeta(m);
+      setYear(m.current_year);
+    });
+  }, []);
+
+  const allWeeks = useMemo(() => {
+    if (!meta || year == null) return [];
+    const maxWeek = meta.rs_week_count[String(year)] ?? 1;
+    return Array.from({ length: maxWeek }, (_, i) => i + 1);
+  }, [meta, year]);
+
+  // Reset to every week selected whenever the year changes (also covers the
+  // initial load, once meta/year are both set).
+  useEffect(() => {
+    if (allWeeks.length) setWeeks(allWeeks);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allWeeks.length, year]);
+
+  useEffect(() => {
+    if (year == null || weeks.length === 0) return;
+    getAverages({ years: [year], weeks, RS: true, PO: true })
+      .then((res) => {
+        setRows(res);
+        setError(null);
+      })
+      .catch((err) => {
+        setRows([]);
+        setError(err instanceof Error ? err.message : String(err));
+      });
+  }, [year, weeks]);
+
+  // Only teams actually shown in the current filtered rows, not the full
+  // league roster.
+  const focusOptions = useMemo(() => [...rows.map((r) => r.team)].sort(), [rows]);
+
+  // Default (and re-default, if the current focus team disappears from a
+  // new year/week selection) to whichever team ranks #1.
+  useEffect(() => {
+    const teamsShown = new Set(rows.map((r) => r.team));
+    if (focusTeam !== NO_FOCUS_TEAM && teamsShown.has(focusTeam)) return;
+    const topTeam = rows.find((r) => r.rank === 1);
+    setFocusTeam(topTeam?.team ?? NO_FOCUS_TEAM);
+  }, [rows, focusTeam]);
+
+  if (!meta || year == null) return <LoadingBasketballs label="Loading" />;
+
+  return (
+    <div className="flex flex-col gap-4 sm:flex-row">
+      <div className="hidden sm:block sm:w-64 sm:shrink-0">
+        <ChecklistGroup
+          label="Week"
+          options={allWeeks}
+          selected={weeks}
+          onChange={setWeeks}
+          scrollable
+        />
+      </div>
+
+      <div className="flex flex-1 flex-col gap-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Ultra</CardTitle>
+            <CardDescription>
+              Per-team averages across the selected season and weeks
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-center gap-6">
+            <LabeledSelect
+              label="Season"
+              value={String(year)}
+              onValueChange={(v) => setYear(Number(v))}
+              options={meta.years.map((y) => ({ value: String(y), label: String(y) }))}
+            />
+            <LabeledSelect
+              label="Focus team"
+              value={focusTeam}
+              onValueChange={setFocusTeam}
+              options={[
+                { value: NO_FOCUS_TEAM, label: "None" },
+                ...focusOptions.map((m) => ({ value: m, label: m })),
+              ]}
+            />
+            <div className="sm:hidden">
+              <ChecklistGroup
+                label="Week"
+                options={allWeeks}
+                selected={weeks}
+                onChange={setWeeks}
+                scrollable
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent>
+            {error ? (
+              <p className="text-sm text-muted-foreground">
+                No data for the current filters ({error}).
+              </p>
+            ) : (
+              <StatTable
+                rows={rows}
+                mode="stat"
+                focusTeam={focusTeam === NO_FOCUS_TEAM ? undefined : focusTeam}
+                showFocusScore
+                pinFocusRow
+              />
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}

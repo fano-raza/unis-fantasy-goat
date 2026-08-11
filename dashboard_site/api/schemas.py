@@ -111,6 +111,11 @@ class TeamSummaryRequest(BaseModel):
     teams: list[str] | None = None
 
 
+class DraftPicksRequest(BaseModel):
+    years: list[int] | None = None
+    teams: list[str] | None = None
+
+
 class StandingsRequest(BaseModel):
     year: int
     min_week: int

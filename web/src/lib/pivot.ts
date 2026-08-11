@@ -78,18 +78,25 @@ export function pivot(
 }
 
 // For continuous X fields (a stat/rating/rank, not Season/Week): no
-// bucketing or averaging -- every row is its own point. Grouping by exact
-// X match only makes sense for a handful of discrete values (real "same
-// year" grouping); for a per-week rating value it's just coincidental
-// float collisions, and connecting the resulting points with a line (as
-// `pivot`'s LineChart output does) draws a meaningless zigzag through
-// points sorted by a stat value rather than time.
+// bucketing by X match -- grouping by exact X match only makes sense for a
+// handful of discrete values (real "same year" grouping); for a per-week
+// rating value it's just coincidental float collisions, and connecting the
+// resulting points with a line (as `pivot`'s LineChart output does) draws a
+// meaningless zigzag through points sorted by a stat value rather than time.
+//
+// When a groupBy dimension IS active, each group collapses to a single
+// averaged (avg x, avg y) point -- e.g. "Overall Rating vs Pts Rating,
+// group by Team" should show one point per team, not every week's raw
+// point recolored by team. When ungrouped ("All"), every row stays its own
+// point -- averaging a single ungrouped bucket would destroy the point of
+// an ungrouped scatter entirely.
 export function pivotScatter(
   rows: AnalysisRow[],
   xField: AnalysisField,
   yField: AnalysisField,
   groupBy: GroupBy,
 ): ScatterSeries[] {
+  const isGrouped = groupBy.team || groupBy.season || groupBy.week;
   const buckets = new Map<string, { x: number; y: number }[]>();
   for (const row of rows) {
     const x = xField.get(row);
@@ -102,5 +109,11 @@ export function pivotScatter(
 
   return Array.from(buckets.keys())
     .sort()
-    .map((key) => ({ key, points: buckets.get(key)! }));
+    .map((key) => {
+      const points = buckets.get(key)!;
+      if (!isGrouped) return { key, points };
+      const avgX = points.reduce((a, p) => a + p.x, 0) / points.length;
+      const avgY = points.reduce((a, p) => a + p.y, 0) / points.length;
+      return { key, points: [{ x: avgX, y: avgY }] };
+    });
 }

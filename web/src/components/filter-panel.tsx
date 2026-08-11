@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 
-interface ChecklistGroupProps<T extends string | number> {
+export interface ChecklistGroupProps<T extends string | number> {
   label: string;
   options: T[];
   selected: T[];
@@ -13,7 +13,7 @@ interface ChecklistGroupProps<T extends string | number> {
   scrollable?: boolean;
 }
 
-function ChecklistGroup<T extends string | number>({
+export function ChecklistGroup<T extends string | number>({
   label,
   options,
   selected,
