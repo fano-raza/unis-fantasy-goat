@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -13,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { StatTable } from "@/components/stat-table";
 import { LabeledSelect, NO_FOCUS_TEAM } from "@/components/labeled-select";
 import { SteppableSelect } from "@/components/steppable-select";
+import { SourceLastUpdated } from "@/components/source-last-updated";
 import {
   API_BASE_URL,
   getLeagueMeta,
@@ -114,6 +116,9 @@ export default function WeeklyStatsPage() {
           <CardDescription>
             League table for a given season and week
           </CardDescription>
+          <CardAction>
+            <SourceLastUpdated source="live" />
+          </CardAction>
         </CardHeader>
         <CardContent
           className={cn(

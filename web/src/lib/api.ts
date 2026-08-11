@@ -377,9 +377,17 @@ export const getPlayerStats = () => apiFetch<PlayerStat[]>("/league/player_stats
 export const getDraftPicks = (req: DraftPicksRequest = {}) =>
   post<DraftPick[]>("/league/draft_picks", req);
 
+export type RefreshSource = "live" | "draft" | "player_stats" | "team_summary";
+
 export interface RefreshStatus {
-  // ISO 8601, or null if the backend hasn't found any ref-dir CSVs yet.
+  // ISO 8601, or null if the backend hasn't found any ref-dir CSVs yet --
+  // kept for back-compat, equal to sources.live.
   last_updated: string | null;
+  // Per-source freshness -- different ref-dir files refresh on genuinely
+  // different cadences (live *_CompStats.csv every ~2min during game hours
+  // vs. draft/player_stats/team_summary once daily-ish), so a single global
+  // timestamp was misleading. See SourceLastUpdated for the per-page display.
+  sources: Record<RefreshSource, string | null>;
 }
 
 export const getRefreshStatus = () =>

@@ -38,6 +38,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { StatTable } from "@/components/stat-table";
 import { ArrowToggle } from "@/components/arrow-toggle";
+import { SourceLastUpdated } from "@/components/source-last-updated";
 import { Podium, Star, Trophy, X } from "lucide-react";
 import {
   getAverages,
@@ -489,6 +490,10 @@ function ProfilePageInner() {
             )}
           </div>
         )}
+
+        <div className="ml-auto">
+          <SourceLastUpdated source="team_summary" />
+        </div>
       </div>
 
       {view === "comparison" ? (

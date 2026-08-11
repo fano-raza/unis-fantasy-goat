@@ -1,27 +1,38 @@
 """Exports real NBA player stats (season totals/averages + 7/14/30/90-day
-rolling windows) for the Players page's Trade Hub, via nba_api's
-LeagueDashPlayerStats endpoint (stats.nba.com, unofficial but free/no key).
+rolling windows) for the Players page's Trade Hub, via `espn_fr` (already
+vendored in this repo) rather than stats.nba.com.
 
-Unlike scripts/export_team_summary.py and export_real_matchup_flags.py, this
-does NOT need Models/gspread/yahoo_oauth -- it's a standalone network call +
-pandas reshape. It still runs from the gdoc-updater container (nba_api added
-to infra/docker/requirements-deploy.txt) purely to share that container's
-refresh cadence, not because it needs the heavy dependency chain.
+nba_api's LeagueDashPlayerStats was the first approach (see git history) but
+got dropped: stats.nba.com is behind an Akamai WAF that returns a hard 403 to
+the droplet's datacenter IP (confirmed live -- a raw `requests.get` with
+browser-like headers got "Access Denied" from failover-waf.nba.com), while it
+works fine from a residential IP. ESPN's endpoint was investigated as a
+replacement and verified live, not assumed: reachable from the droplet, gives
+real per-game granularity (not just pre-aggregated windows) via the
+`kona_playercard` endpoint's `filterStatsForTopScoringPeriodIds` filter --
+a player's *entire season* of individual game-level stat splits in one call,
+batchable across the whole ~1,100-player universe in a single request (~3s).
+Since every game is its own row, all 5 windows below are derived from one
+pull per player instead of nba_api's 5 separate window-scoped calls.
 
-Yahoo's API (yfpy_fr, used elsewhere in this repo) was investigated first and
-ruled out: it only supports week/single-day/season stat coverage, no
-date-range query, and live testing hit a sustained rate limit. nba_api's
-LeagueDashPlayerStats, by contrast, returns every player's aggregated stats
-for an arbitrary date range in one call (~1-2s), with correctly-weighted
-FG%/FT% (real makes/attempts ratios, not naive per-game averaging) and GP
-included -- verified against known real player stat lines before building
-this script.
+`league.player_map` (built from ESPN's sport-wide `/players` endpoint, not
+scoped to any one fantasy roster) already gives the full active-player
+name<->id universe, so no separate player-identity source is needed.
 
-Run this whenever the other precomputed exports run (same cadence). Requires
-network access to stats.nba.com -- known to sometimes block/rate-limit
-datacenter IPs, unlike the residential IP this was prototyped from. If this
-starts failing specifically in the droplet's environment, that's the
-suspect, not the code.
+Despite not needing `Models`, this is no longer a "lightweight" export: it
+needs `espn_leagueID`/`espn_s2`/`espn_swid` from `constants.py`, which builds
+a live `gspread` service-account client at import time. That's a non-issue in
+practice since this already runs inside the `gdoc-updater` container, which
+has the full heavy dependency chain (valid Google credentials included)
+regardless -- just noting it's no longer avoiding that chain the way the
+nba_api version's docstring used to claim.
+
+Uses the same `espn_leagueID` this league used before migrating to Yahoo in
+2024 -- verified live that ESPN's player-card data isn't gated by whether
+this specific fantasy league is still active there; both the 2025 and 2026
+seasons resolved fine through the old league ID.
+
+Run this whenever the other precomputed exports run (same cadence).
 """
 
 from __future__ import annotations
@@ -36,107 +47,113 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from constants import currentYear, espn_leagueID, espn_s2, espn_swid  # noqa: E402
+from espn_fr.basketball.league import League  # noqa: E402
 from shared.runtime_config import REF_DIR  # noqa: E402
 
 OUTPUT_PATH = REF_DIR / "player_stats.csv"
 
-# nba_api's raw stat column -> this app's existing category naming
-# convention (matches web/src/lib/api.ts's MAIN_CATS exactly, so the
-# frontend needs no translation layer).
-COUNTING_CATS = {
-    "FG3M": "3PTM",
-    "REB": "REB",
-    "AST": "AST",
-    "STL": "STL",
-    "BLK": "BLK",
-    "TOV": "TO",
-    "PTS": "PTS",
-}
-PCT_CATS = {"FG_PCT": "FG%", "FT_PCT": "FT%"}
-# Raw makes/attempts per percentage category, carried through alongside the
-# ratio itself -- lets a consumer combining multiple players (Trade Hub's
-# up-to-5-a-side groups) compute a real weighted group FG%/FT%
+# ESPN's raw stat labels (see espn_fr/basketball/constant.py::STATS_MAP) ->
+# this app's existing category naming convention (matches
+# web/src/lib/api.ts's MAIN_CATS exactly, so the frontend needs no
+# translation layer). ESPN already uses "TO"/"3PTM", unlike nba_api's
+# "TOV"/"FG3M", so this mapping is mostly identity.
+COUNTING_CATS = {"3PTM": "3PTM", "REB": "REB", "AST": "AST", "STL": "STL", "BLK": "BLK", "TO": "TO", "PTS": "PTS"}
+# Raw makes/attempts per percentage category, carried through so a *group*
+# of players (Trade Hub's up-to-5-a-side) gets a real weighted FG%/FT%
 # (sum(makes)/sum(attempts)) instead of a naive average of individual
-# players' ratios, which misweights players with very different attempt
-# volumes.
+# players' ratios -- same reasoning as the nba_api version had.
 PCT_COMPONENTS = {"FG%": ("FGM", "FGA"), "FT%": ("FTM", "FTA")}
 
-
-def _current_nba_season() -> str:
-    """NBA season string nba_api expects (e.g. "2025-26") -- season flips
-    over in October, not January 1st."""
-    today = datetime.date.today()
-    start_year = today.year if today.month >= 10 else today.year - 1
-    return f"{start_year}-{str(start_year + 1)[2:]}"
+# ESPN batches the whole ~1,100-player universe in one call fine (verified:
+# 3.1s for all of them), but chunking keeps one bad/oversized request from
+# losing the whole export -- a failed chunk is skipped, not fatal.
+CHUNK_SIZE = 400
 
 
-def _fetch_window(season: str, date_from: str | None, date_to: str | None) -> pd.DataFrame:
-    from nba_api.stats.endpoints import leaguedashplayerstats
+def _player_game_rows(stats: dict) -> list[dict]:
+    """Filters a Player.stats dict down to real single-game entries (numeric
+    scoring-period keys with GP=1 in that entry's totals) -- excludes the
+    '{year}_total'/'{year}_projected' season-summary entries and any
+    scoring period the player didn't actually play in."""
+    rows = []
+    for key, entry in stats.items():
+        if not key.isdigit():
+            continue
+        totals = entry.get("total") or {}
+        if totals.get("GP", 0) != 1 or entry.get("date") is None:
+            continue
+        rows.append({"date": entry["date"], "totals": totals})
+    return rows
 
-    kwargs = {"season": season, "per_mode_detailed": "Totals", "timeout": 30}
-    if date_from and date_to:
-        kwargs["date_from_nullable"] = date_from
-        kwargs["date_to_nullable"] = date_to
-    resp = leaguedashplayerstats.LeagueDashPlayerStats(**kwargs)
-    return resp.get_data_frames()[0]
 
-
-def _windowed_columns(df: pd.DataFrame, window: str) -> pd.DataFrame:
-    """Reshapes one window's raw Totals-mode response into this app's
-    {window}_{cat}_total / {window}_{cat}_avg columns, deriving per-game
-    averages by dividing by GP -- valid for counting stats; FG%/FT% are
-    already the correct weighted ratio regardless of Totals vs PerGame mode,
-    so they're carried through unchanged (no _total/_avg split needed)."""
-    out = pd.DataFrame({"PLAYER_ID": df["PLAYER_ID"], f"{window}_GP": df["GP"]})
-    gp_safe = df["GP"].replace(0, pd.NA)
-    for raw_col, cat in COUNTING_CATS.items():
-        out[f"{window}_{cat}_total"] = df[raw_col]
-        out[f"{window}_{cat}_avg"] = (df[raw_col] / gp_safe).round(3)
-    for raw_col, cat in PCT_CATS.items():
-        out[f"{window}_{cat}"] = df[raw_col]
-    for cat, (made_col, att_col) in PCT_COMPONENTS.items():
-        out[f"{window}_{cat}_made"] = df[made_col]
-        out[f"{window}_{cat}_att"] = df[att_col]
+def _aggregate_window(game_rows: list[dict]) -> dict:
+    """One window's worth of derived stats from a list of that player's real
+    game rows -- same makes/attempts-weighted percentage math as the
+    nba_api version, just computed from real per-game data instead of an
+    API-side date-range aggregate."""
+    gp = len(game_rows)
+    out: dict[str, float | None] = {"GP": gp}
+    for raw_cat, cat in COUNTING_CATS.items():
+        total = sum(r["totals"].get(raw_cat, 0) or 0 for r in game_rows)
+        out[f"{cat}_total"] = total
+        out[f"{cat}_avg"] = round(total / gp, 3) if gp else None
+    for cat, (made_key, att_key) in PCT_COMPONENTS.items():
+        made = sum(r["totals"].get(made_key, 0) or 0 for r in game_rows)
+        att = sum(r["totals"].get(att_key, 0) or 0 for r in game_rows)
+        out[f"{cat}"] = round(made / att, 3) if att else None
+        out[f"{cat}_made"] = made
+        out[f"{cat}_att"] = att
     return out
 
 
 def main() -> None:
-    season = _current_nba_season()
+    year = currentYear
     today = datetime.date.today()
+    windows = {
+        "d7": today - datetime.timedelta(days=7),
+        "d14": today - datetime.timedelta(days=14),
+        "d30": today - datetime.timedelta(days=30),
+        "d90": today - datetime.timedelta(days=90),
+    }
 
-    windows = [
-        ("season", None, None),
-        ("d7", today - datetime.timedelta(days=7), today),
-        ("d14", today - datetime.timedelta(days=14), today),
-        ("d30", today - datetime.timedelta(days=30), today),
-        ("d90", today - datetime.timedelta(days=90), today),
-    ]
+    league = League(espn_leagueID, year, espn_s2, espn_swid)
+    name_to_id = {k: v for k, v in league.player_map.items() if isinstance(k, str)}
+    all_ids = list(name_to_id.values())
+    id_to_name = {v: k for k, v in name_to_id.items()}
 
-    identity_df: pd.DataFrame | None = None
-    windowed_frames: list[pd.DataFrame] = []
+    rows: list[dict] = []
+    for i in range(0, len(all_ids), CHUNK_SIZE):
+        chunk = all_ids[i : i + CHUNK_SIZE]
+        try:
+            result = league.player_info(playerId=chunk)
+        except Exception as exc:
+            print(f"Skipping player chunk {i}-{i + len(chunk)}: {exc}")
+            continue
+        players = result if isinstance(result, list) else ([result] if result else [])
 
-    for window, date_from, date_to in windows:
-        raw = _fetch_window(
-            season,
-            date_from.strftime("%m/%d/%Y") if date_from else None,
-            date_to.strftime("%m/%d/%Y") if date_to else None,
-        )
-        if identity_df is None:
-            identity_df = raw[["PLAYER_ID", "PLAYER_NAME", "TEAM_ABBREVIATION"]].rename(
-                columns={"PLAYER_NAME": "Player", "TEAM_ABBREVIATION": "Team"}
-            )
-        windowed_frames.append(_windowed_columns(raw, window))
+        for player in players:
+            game_rows = _player_game_rows(player.stats)
+            row: dict = {
+                "PlayerId": player.playerId,
+                "Player": player.name or id_to_name.get(player.playerId, ""),
+                "Team": player.proTeam,
+            }
+            season_agg = _aggregate_window(game_rows)
+            for key, value in season_agg.items():
+                row[f"season_{key}"] = value
+            for window, cutoff in windows.items():
+                window_rows = [r for r in game_rows if r["date"].date() >= cutoff]
+                window_agg = _aggregate_window(window_rows)
+                for key, value in window_agg.items():
+                    row[f"{window}_{key}"] = value
+            rows.append(row)
 
-    assert identity_df is not None
-    merged = identity_df
-    for frame in windowed_frames:
-        merged = merged.merge(frame, on="PLAYER_ID", how="outer")
-
-    merged = merged.rename(columns={"PLAYER_ID": "PlayerId"})
+    df = pd.DataFrame(rows)
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    merged.to_csv(OUTPUT_PATH, index=False)
+    df.to_csv(OUTPUT_PATH, index=False)
 
-    print(f"Wrote {len(merged)} player stat rows to {OUTPUT_PATH}")
+    print(f"Wrote {len(df)} player stat rows to {OUTPUT_PATH}")
 
 
 if __name__ == "__main__":

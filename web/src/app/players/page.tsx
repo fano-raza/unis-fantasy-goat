@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, X } from "lucide-react";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -31,6 +32,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ChecklistGroup } from "@/components/filter-panel";
 import { GenericFilterDrawer } from "@/components/generic-filter-drawer";
 import { ArrowToggle } from "@/components/arrow-toggle";
+import { SourceLastUpdated } from "@/components/source-last-updated";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
 import {
   getDraftPicks,
@@ -431,6 +433,9 @@ function DraftHub({ meta }: { meta: LeagueMeta }) {
             <CardDescription>
               Every draft pick across the selected seasons and teams -- group by to aggregate, click any column to sort
             </CardDescription>
+            <CardAction>
+              <SourceLastUpdated source="draft" />
+            </CardAction>
           </CardHeader>
           <CardContent className="flex flex-wrap items-center gap-6">
             <div className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
@@ -687,8 +692,11 @@ function TradeHub() {
         <CardHeader>
           <CardTitle>Trade Hub</CardTitle>
           <CardDescription>
-            Real NBA player stats (nba_api/stats.nba.com) -- compare up to 5 players a side
+            Real NBA player stats (ESPN) -- compare up to 5 players a side
           </CardDescription>
+          <CardAction>
+            <SourceLastUpdated source="player_stats" />
+          </CardAction>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-wrap gap-6">

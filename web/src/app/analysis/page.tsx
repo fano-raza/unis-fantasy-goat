@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -13,6 +14,7 @@ import { AnalysisGraph } from "@/components/analysis-graph";
 import { FilterPanel, type FilterPanelValue } from "@/components/filter-panel";
 import { FilterDrawer } from "@/components/filter-drawer";
 import { getAnalysisRows, getLeagueMeta, type AnalysisRow, type LeagueMeta } from "@/lib/api";
+import { SourceLastUpdated } from "@/components/source-last-updated";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
 
 const MAX_GRAPHS = 3;
@@ -138,6 +140,9 @@ export default function AnalysisPage() {
               Build your own line graph(s) — all graphs share the filters but
               have their own axes and grouping
             </CardDescription>
+            <CardAction>
+              <SourceLastUpdated source="live" />
+            </CardAction>
           </CardHeader>
         </Card>
 

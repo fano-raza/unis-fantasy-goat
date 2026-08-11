@@ -44,35 +44,55 @@ store = StatsStore()
 league_store = get_league_store(store)
 
 # gdoc-updater (a separate container) recomputes the CSVs under FANTASY_REF_DIR
-# on its own schedule (roughly daily, plus live-week polling during game
-# hours) -- see GDoc/GDoc_updater.py. dashboard-api only reads those CSVs into
-# memory once at boot, so without this it would keep serving a stale snapshot
-# indefinitely. Reload from disk on a timer instead.
+# on its own schedule -- but NOT all on the same schedule: *_CompStats.csv
+# updates every ~2 minutes during game hours (a separate, more frequent loop
+# in GDoc_updater.py), while draft results / player_stats.csv / team_summary.csv
+# only refresh once during the once-daily(-ish) branch. A single global
+# "newest file" timestamp was misleading -- it almost always reflected the
+# fast-moving CompStats files, so a page showing yesterday's draft data could
+# still claim "Updated 2 minutes ago." Track per-source mtimes instead.
+# dashboard-api only reads these CSVs into memory once at boot, so without a
+# periodic reload it would keep serving a stale snapshot indefinitely.
 REFRESH_INTERVAL_SECONDS = 5 * 60
 
 _state_lock = threading.Lock()
-_data_last_updated: datetime | None = None
+_source_mtimes: dict[str, datetime | None] = {}
 
 
-def _scan_data_mtime(ref_dir: Path) -> datetime | None:
-    """Newest mtime among the ref-dir CSVs -- reflects when gdoc-updater
-    actually last wrote new data, not merely when this process polled disk."""
-    mtimes = [f.stat().st_mtime for f in ref_dir.glob("*.csv") if f.is_file()]
+def _newest_mtime(paths: list[Path]) -> datetime | None:
+    mtimes = [p.stat().st_mtime for p in paths if p.is_file()]
     if not mtimes:
         return None
     return datetime.fromtimestamp(max(mtimes), tz=timezone.utc)
 
 
+def _scan_source_mtimes(ref_dir: Path, data_store: StatsStore) -> dict[str, datetime | None]:
+    """Per-source freshness, one entry per distinct refresh cadence -- see
+    the "sources" docstring above `_source_mtimes` for why this replaced a
+    single global max. "draft" reuses StatsStore._resolve_draft_roots()'s
+    exact glob (not reinvented) so this stays in sync with wherever
+    _load_draft_picks actually looks."""
+    draft_paths: list[Path] = []
+    for root in data_store._resolve_draft_roots():
+        draft_paths.extend(root.glob("*/**/*Draft Results.csv"))
+    return {
+        "live": _newest_mtime(list(ref_dir.glob("*_CompStats.csv"))),
+        "draft": _newest_mtime(draft_paths),
+        "player_stats": _newest_mtime([ref_dir / "player_stats.csv"]),
+        "team_summary": _newest_mtime([ref_dir / "team_summary.csv"]),
+    }
+
+
 def _refresh_data() -> None:
-    global store, league_store, _data_last_updated
+    global store, league_store, _source_mtimes
     new_store = StatsStore()
     reset_league_store()
     new_league_store = get_league_store(new_store)
-    data_mtime = _scan_data_mtime(new_store.ref_dir)
+    mtimes = _scan_source_mtimes(new_store.ref_dir, new_store)
     with _state_lock:
         store = new_store
         league_store = new_league_store
-        _data_last_updated = data_mtime
+        _source_mtimes = mtimes
 
 
 def _refresh_loop() -> None:
@@ -84,7 +104,7 @@ def _refresh_loop() -> None:
             print(f"dashboard data refresh failed: {exc}")
 
 
-_data_last_updated = _scan_data_mtime(store.ref_dir)
+_source_mtimes = _scan_source_mtimes(store.ref_dir, store)
 threading.Thread(target=_refresh_loop, daemon=True).start()
 
 
@@ -94,10 +114,13 @@ def health() -> dict[str, str]:
 
 
 @app.get("/refresh_status")
-def refresh_status() -> dict[str, str | None]:
+def refresh_status() -> dict[str, str | dict[str, str | None] | None]:
     with _state_lock:
+        sources = {k: v.isoformat() if v else None for k, v in _source_mtimes.items()}
         return {
-            "last_updated": _data_last_updated.isoformat() if _data_last_updated else None,
+            # Kept for any existing consumer of the old flat shape.
+            "last_updated": sources.get("live"),
+            "sources": sources,
         }
 
 

@@ -1,11 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getRefreshStatus } from "@/lib/api";
+import { getRefreshStatus, type RefreshSource } from "@/lib/api";
 
 const POLL_INTERVAL_MS = 60_000;
 
-export function LastUpdated() {
+// Per-page freshness indicator -- replaced a single global header timestamp
+// that was misleading (it always showed the fast-moving "live" CompStats
+// cadence, even on pages backed by once-daily data like Draft Hub or Trade
+// Hub). Each page passes the one `source` it actually depends on.
+export function SourceLastUpdated({ source }: { source: RefreshSource }) {
   const [label, setLabel] = useState<string | null>(null);
 
   useEffect(() => {
@@ -13,10 +17,11 @@ export function LastUpdated() {
 
     async function poll() {
       try {
-        const { last_updated } = await getRefreshStatus();
-        if (cancelled || !last_updated) return;
+        const { sources } = await getRefreshStatus();
+        const value = sources[source];
+        if (cancelled || !value) return;
         setLabel(
-          new Date(last_updated).toLocaleString(undefined, {
+          new Date(value).toLocaleString(undefined, {
             dateStyle: "medium",
             timeStyle: "short",
           }),
@@ -32,7 +37,7 @@ export function LastUpdated() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, []);
+  }, [source]);
 
   if (!label) return null;
 

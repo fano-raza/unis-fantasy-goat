@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -13,6 +14,7 @@ import { ChecklistGroup } from "@/components/filter-panel";
 import { GenericFilterDrawer } from "@/components/generic-filter-drawer";
 import { LabeledSelect, NO_FOCUS_TEAM } from "@/components/labeled-select";
 import { SteppableSelect } from "@/components/steppable-select";
+import { SourceLastUpdated } from "@/components/source-last-updated";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { getAverages, getLeagueMeta, type AggregateRow, type LeagueMeta } from "@/lib/api";
 
@@ -93,6 +95,9 @@ export default function UltraPage() {
             <CardDescription>
               Per-team averages across the selected season and weeks
             </CardDescription>
+            <CardAction>
+              <SourceLastUpdated source="live" />
+            </CardAction>
           </CardHeader>
           <CardContent className="flex flex-wrap items-center gap-6">
             <SteppableSelect label="Season" value={year} onValueChange={setYear} options={meta.years} />

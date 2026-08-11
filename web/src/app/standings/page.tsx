@@ -37,6 +37,7 @@ import {
 import { LabeledSelect, NO_FOCUS_TEAM } from "@/components/labeled-select";
 import { SteppableSelect } from "@/components/steppable-select";
 import { ArrowToggle } from "@/components/arrow-toggle";
+import { SourceLastUpdated } from "@/components/source-last-updated";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { categoricalPalette } from "@/lib/palette";
 import {
@@ -392,6 +393,9 @@ function StandingsPageInner() {
           <CardDescription>
             Regular-season standings for any week range
           </CardDescription>
+          <CardAction>
+            <SourceLastUpdated source="live" />
+          </CardAction>
         </CardHeader>
         <CardContent className="flex flex-col gap-6">
           <div className="flex flex-col gap-3">
