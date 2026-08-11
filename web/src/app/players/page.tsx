@@ -45,7 +45,7 @@ import {
   type PlayerStat,
   type StatWindow,
 } from "@/lib/api";
-import { compareCell, comparisonClass } from "@/lib/highlight";
+import { compareCell, type Comparison } from "@/lib/highlight";
 import { cn } from "@/lib/utils";
 
 type View = "draft" | "trade";
@@ -602,6 +602,18 @@ function formatStat(cat: Category, value: number | null): string {
   return value.toFixed(1);
 }
 
+// Direct (not inverted) coloring: the Net column is Team A's own value
+// relative to Team B, so Team A being "better" should read green here.
+// `highlight.ts`'s `comparisonClass` is deliberately inverted for
+// StatTable's different use case (a row colored relative to a separate
+// focus-team baseline, not the row's own comparison) -- reusing it here
+// was backwards, per the user's report.
+const netClass: Record<Comparison, string> = {
+  better: "bg-win/15 text-win",
+  worse: "bg-loss/15 text-loss",
+  neutral: "",
+};
+
 // FGM/FGA and FTM/FTA -- informational volume rows (made/attempted for the
 // group), not a win/loss comparison, so no red/green highlight and no "Net"
 // value (a combined made/attempted pair has no single meaningful difference
@@ -800,7 +812,7 @@ function TradeHub() {
                       <TableCell className="text-right font-mono tabular-nums">{formatStat(cat, a)}</TableCell>
                       <TableCell className="text-right font-mono tabular-nums">{formatStat(cat, b)}</TableCell>
                       <TableCell
-                        className={cn("text-right font-mono font-extrabold tabular-nums", comparisonClass[comparison])}
+                        className={cn("text-right font-mono font-extrabold tabular-nums", netClass[comparison])}
                       >
                         {diff !== null && diff >= 0 ? "+" : ""}
                         {formatStat(cat, diff)}
