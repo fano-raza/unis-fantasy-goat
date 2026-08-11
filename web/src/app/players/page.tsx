@@ -602,6 +602,31 @@ function formatStat(cat: Category, value: number | null): string {
   return value.toFixed(1);
 }
 
+// FGM/FGA and FTM/FTA -- informational volume rows (made/attempted for the
+// group, summed across up to 5 players), not a win/loss comparison, so no
+// red/green highlight and no "Net" value (a combined made/attempted ratio
+// has no single meaningful difference the way a plain stat total does).
+const MADE_ATTEMPTED_ROWS = [
+  { label: "FGM/FGA", cat: "FG%" as const },
+  { label: "FTM/FTA", cat: "FT%" as const },
+];
+
+function madeAttempted(players: PlayerStat[], statWindow: StatWindow, cat: "FG%" | "FT%"): string {
+  let made = 0;
+  let att = 0;
+  let any = false;
+  for (const p of players) {
+    const m = p[`${statWindow}_${cat}_made`];
+    const a = p[`${statWindow}_${cat}_att`];
+    if (typeof m === "number" && typeof a === "number") {
+      made += m;
+      att += a;
+      any = true;
+    }
+  }
+  return any ? `${made}/${att}` : "—";
+}
+
 function PlayerPicker({
   label,
   selected,
@@ -735,7 +760,7 @@ function TradeHub() {
                   <TableHead>Category</TableHead>
                   <TableHead className="text-right">Team A</TableHead>
                   <TableHead className="text-right">Team B</TableHead>
-                  <TableHead className="text-right">Difference (A &minus; B)</TableHead>
+                  <TableHead className="text-right">Team A Net</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -758,6 +783,18 @@ function TradeHub() {
                     </TableRow>
                   );
                 })}
+                {MADE_ATTEMPTED_ROWS.map(({ label, cat }) => (
+                  <TableRow key={label}>
+                    <TableCell className="font-sans font-medium text-muted-foreground">{label}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">
+                      {madeAttempted(playersA, statWindow, cat)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">
+                      {madeAttempted(playersB, statWindow, cat)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums text-muted-foreground">—</TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           </CardContent>
