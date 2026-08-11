@@ -21,6 +21,7 @@ import {
 } from "@/lib/api";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
+import { cn } from "@/lib/utils";
 
 // Steps to the previous/next value in an ordered option list, clamped at
 // either end (no wraparound -- season and week each step independently).
@@ -148,7 +149,12 @@ export default function WeeklyStatsPage() {
             League table for a given season and week
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-wrap items-center gap-4">
+        <CardContent
+          className={cn(
+            "flex flex-wrap items-center gap-4",
+            isPlayoffWeek && "rounded-sm border-2 border-[#4169E1] p-3",
+          )}
+        >
           <div className="flex items-center gap-1">
             <LabeledSelect
               label="Season"
@@ -175,11 +181,10 @@ export default function WeeklyStatsPage() {
               value={String(week)}
               onValueChange={(v) => setWeek(Number(v))}
               options={weekOptions.map((w) => ({ value: String(w), label: String(w) }))}
-              className="rounded-sm border-2 border-[#4169E1] px-2 py-1"
             />
             {isPlayoffWeek && (
               <span className="rounded-sm bg-[#4169E1]/15 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-[#4169E1] uppercase">
-                Playoff
+                PLAYOFFS
               </span>
             )}
             <StepButton
