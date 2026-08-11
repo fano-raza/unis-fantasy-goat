@@ -76,14 +76,33 @@ def run_updater():
                 updateStandings(year)
 
                 # Playoff bracket data (Standings page's playoff tree toggle) only
-                # changes when there's a new playoff result. currentWeek can't
+                # changes during the actual playoff window: from the first day of
+                # the first playoff week through 10 days after the last playoff
+                # week starts (buffer for late corrections). currentWeek can't
                 # gate this: bs_calList() pins it at the calendar's last row
                 # forever once today is past the season's final date, so months
                 # after the season ends this would otherwise look identical to
-                # being mid-playoffs. Check real calendar proximity to the
-                # season's actual final week (calList's last row) instead.
-                last_week_start = calList[-1][1]
-                if playoffTeamCount.get(year, 0) > 0 and abs((today - last_week_start).days) <= 10:
+                # being mid-playoffs.
+                # Look up the real first/last playoff week numbers rather than
+                # assuming calList's last row is the season's last real week --
+                # this calendar file has trailing rows (week 24) well past the
+                # actual final playoff week (21 for a standard 6-team, 3-round
+                # bracket), so calList[-1] alone would be wrong here.
+                first_po_week = RS_weekCountDict.get(year, 0) + 1
+                last_po_week = RS_weekCountDict.get(year, 0) + playoffRounds.get(year, 0)
+                first_po_week_start = next(
+                    (start for wk, start, end in calList if wk == first_po_week), None
+                )
+                last_po_week_start = next(
+                    (start for wk, start, end in calList if wk == last_po_week), None
+                )
+                po_window_active = (
+                    playoffTeamCount.get(year, 0) > 0
+                    and first_po_week_start is not None
+                    and last_po_week_start is not None
+                    and first_po_week_start <= today <= last_po_week_start + timedelta(days=10)
+                )
+                if po_window_active:
                     try:
                         export_playoff_brackets()
                     except Exception as bracket_exc:
