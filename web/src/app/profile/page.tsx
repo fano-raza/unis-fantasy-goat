@@ -352,6 +352,13 @@ function ProfilePageInner() {
   const totalsRow = totals.find((r) => r.team === team);
   const averagesRow = averages.find((r) => r.team === team);
 
+  // Distinct from "badges is empty" -- profile/categoryHistory arrive from
+  // separate, sometimes-slower fetches than the meta/team that gate the
+  // page's own loading screen (line ~410 below), so without this the page
+  // used to render past that guard and show a real "0 total badges" flash
+  // before the actual count popped in a moment later.
+  const badgesLoading = !profile || !categoryHistory;
+
   const badges = useMemo(() => {
     if (!team || !profile || !categoryHistory) return { positive: [], negative: [] };
     return buildBadges(team, profile, categoryHistory, meta?.goat);
@@ -574,15 +581,25 @@ function ProfilePageInner() {
                 <CardDescription>Career Profile</CardDescription>
                 <CardTitle className="text-4xl sm:text-5xl">{team}</CardTitle>
                 <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
-                  {badges.positive.length} total badges &middot; {uniquePositiveCount}/{POSITIVE_BADGE_TYPES.length} unique
+                  {badgesLoading
+                    ? "Loading badges…"
+                    : `${badges.positive.length} total badges · ${uniquePositiveCount}/${POSITIVE_BADGE_TYPES.length} unique`}
                 </p>
               </div>
               <CardAction className="hidden max-w-md sm:block">
-                <TeamBadges positive={badges.positive} negative={badges.negative} />
+                {badgesLoading ? (
+                  <span className="text-sm text-muted-foreground">Loading badges…</span>
+                ) : (
+                  <TeamBadges positive={badges.positive} negative={badges.negative} />
+                )}
               </CardAction>
             </CardHeader>
             <CardContent className="sm:hidden">
-              <BadgeDrawer positive={badges.positive} negative={badges.negative} />
+              {badgesLoading ? (
+                <span className="text-sm text-muted-foreground">Loading badges…</span>
+              ) : (
+                <BadgeDrawer positive={badges.positive} negative={badges.negative} />
+              )}
             </CardContent>
           </Card>
 
