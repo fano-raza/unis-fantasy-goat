@@ -15,6 +15,24 @@ services:
     ports:
       - "5000:5000"
 
+  # Stat-refresh loop decoupled from Google Sheets output -- gdoc-updater
+  # above still does both (fetch stats + push to Sheets); this service does
+  # only the fetch-and-precompute half, now that the web app has replaced
+  # Sheets as the live presentation layer. See stat_updater.py.
+  stat-updater:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+    container_name: unisfantasy-stat-updater
+    command: ["python", "-m", "services.stat_updater.entrypoint"]
+    env_file:
+      - ./env/stat-updater.env
+    volumes:
+      - /srv/unisfantasy/data:/srv/unisfantasy/data
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+
   discord-bot:
     build:
       context: ../..
