@@ -32,8 +32,14 @@ class teamManager():
 
         self.get_career_draft_score()
         self.total_career_matchups = self.get_career_matchups_played()
-        self.total_RS_matchups = self.get_career_matchups_played(0,0,'RS')
-        self.total_PO_matchups = self.get_career_matchups_played(0,0,'PO')
+        # Previously passed the string 'RS'/'PO' as the positional RS
+        # argument -- any non-empty string is truthy, so both calls left PO
+        # at its True default and silently computed the same combined
+        # RS+PO total as total_career_matchups above, instead of the
+        # RS-only/PO-only breakdown their names promise. Use keyword args
+        # for both flags so this can't happen again by accident.
+        self.total_RS_matchups = self.get_career_matchups_played(RS=True, PO=False)
+        self.total_PO_matchups = self.get_career_matchups_played(RS=False, PO=True)
 
         self.career_RS_totals = self.get_career_RS_totals()
         self.career_PO_totals = self.get_career_PO_totals()
@@ -102,6 +108,10 @@ class teamManager():
             return PO_matchups_played
         elif PO and weeks:
             return PO_weeks_played
+
+        # RS=False, PO=False: nothing was asked for, so nothing was played.
+        # Previously fell through with no return (an implicit None) here.
+        return 0
 
     def get_career_RS_totals_df(self, years=[], weeks=[], opps=[]):
         df = self.get_filtered_df(years=years, weeks=weeks, PO=False, opps=opps)[mainCats]
@@ -193,21 +203,28 @@ class teamManager():
         statCats = ['FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK',
                     'TO', 'PTS', 'FGM', 'FGA', 'FTM', 'FTA', '3PTA', '3PT%']
 
+        # Years actually present in self.playoffs, not the raw range -- a team
+        # with a gap in yearsPlayed (left the league and later rejoined) has
+        # no entry for the missing year(s) at all, so both this and the three
+        # lists below need to skip them consistently to stay positionally
+        # aligned with each other. The previous try/except around the
+        # yearTotals loop only caught AttributeError, but a missing dict key
+        # actually raises KeyError -- so it never really protected against
+        # this case, it just happened to never be exercised (this league's
+        # current teams all have contiguous yearsPlayed).
+        actual_years = [year for year in range(startYear, endYear + 1) if year in self.playoffs]
+
         yearTotals = {}
-        for year in range(startYear, endYear + 1):
-            # print(f"year: {year}")
-            try:
-                yearTotals[year] = list(self.playoffs[year].get_team_PO_totals().values())
-            except AttributeError:
-                pass
+        for year in actual_years:
+            yearTotals[year] = list(self.playoffs[year].get_team_PO_totals().values())
 
         statsByCat = list(zip(*yearTotals.values()))
         # print(statsByCat)
 
         self.career_PO_totals = {}
         self.career_PO_averages = {}
-        rounds_played_in_year = [self.playoffs.get(year).get_team_rounds_played() for year in range(startYear, endYear + 1)]
-        weeks_played_per_matchup = [playoffRoundLength[year] for year in range(startYear, endYear+1)]
+        rounds_played_in_year = [self.playoffs[year].get_team_rounds_played() for year in actual_years]
+        weeks_played_per_matchup = [playoffRoundLength[year] for year in actual_years]
         weeks_played_in_year = [rounds_played_in_year[i]*weeks_played_per_matchup[i] for i in range(len(rounds_played_in_year))]
 
         for category in statCats:
@@ -536,7 +553,7 @@ class teamManager():
         for year in range(startYear, endYear+1):
             try:
                 if self.regSeasons[year].is_WL:
-                    seasons[year] = self.regSeasons[year].get_team_position_Cats()
+                    seasons[year] = self.regSeasons[year].get_team_position_WL()
                 else:
                     seasons[year] = self.regSeasons[year].get_team_position_Cats()
             except KeyError:
@@ -796,7 +813,7 @@ class team_reg_season(regSeason):
                              or matchup_obj.team2 == self.name]
 
         self.recordWL = self.get_team_record_WL()
-        self.positionWL = self.get_team_position_Cats()
+        self.positionWL = self.get_team_position_WL()
 
         self.recordCats = self.get_team_record_Cats()
         self.positionCats = self.get_team_position_Cats()
@@ -804,7 +821,7 @@ class team_reg_season(regSeason):
     def __repr__(self):
         if self.is_WL:
             record = self.get_team_record_WL()
-            return (f"{self.name}({self.year}, Pos: {self.get_team_position_Cats()}, "
+            return (f"{self.name}({self.year}, Pos: {self.get_team_position_WL()}, "
                     f"{record["wins"]}W-{record["losses"]}L-{record["ties"]}D)")
         else:
             record = self.get_team_record_Cats()

@@ -1,7 +1,81 @@
 import Link from "next/link";
 import { Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { PlayoffBracket, PlayoffMatchup } from "@/lib/api";
+import type { PlayoffBracket, PlayoffMatchup, PlayoffRound } from "@/lib/api";
+
+type RoundItem =
+  | { type: "matchup"; matchup: PlayoffMatchup }
+  | { type: "bye"; team: string };
+
+// Orders a round's boxes so a bye visually funnels into the next round's
+// matchup it feeds into -- e.g. a 6-team bracket's Quarterfinals column
+// should read (top to bottom): #1 seed's bye, the #4v#5 matchup (whichever
+// of the two feeds #1's semifinal), the #3v#6 matchup, #2 seed's bye.
+// Falls back to byes-then-matchups (in seed order) when there's no
+// decided next round to group against yet (an in-progress bracket) or the
+// bye/matchup counts don't line up 1:1 (never happens with this league's
+// real data -- always 0 or 2 byes -- but shouldn't crash if it ever did).
+function orderRoundItems(
+  round: PlayoffRound,
+  nextRound: PlayoffRound | undefined,
+  seedByTeam: Record<string, number>,
+): RoundItem[] {
+  const byeItems: RoundItem[] = [...round.byes]
+    .sort((a, b) => (seedByTeam[a] ?? Infinity) - (seedByTeam[b] ?? Infinity))
+    .map((team) => ({ type: "bye", team }));
+  const matchupItems: RoundItem[] = round.matchups.map((matchup) => ({ type: "matchup", matchup }));
+
+  if (byeItems.length === 0) return matchupItems;
+  if (!nextRound || nextRound.matchups.length === 0 || byeItems.length !== matchupItems.length) {
+    return [...byeItems, ...matchupItems];
+  }
+
+  const nextSlotForTeam: Record<string, number> = {};
+  nextRound.matchups.forEach((m, i) => {
+    nextSlotForTeam[m.team1] = i;
+    nextSlotForTeam[m.team2] = i;
+  });
+
+  const groups: Record<number, { bye?: string; matchup?: PlayoffMatchup }> = {};
+  let ok = true;
+  for (const item of byeItems) {
+    const team = (item as { type: "bye"; team: string }).team;
+    const slot = nextSlotForTeam[team];
+    if (slot === undefined) { ok = false; break; }
+    groups[slot] = { ...groups[slot], bye: team };
+  }
+  if (ok) {
+    for (const item of matchupItems) {
+      const m = (item as { type: "matchup"; matchup: PlayoffMatchup }).matchup;
+      const slot = m.winner != null ? nextSlotForTeam[m.winner] : undefined;
+      if (slot === undefined) { ok = false; break; }
+      groups[slot] = { ...groups[slot], matchup: m };
+    }
+  }
+  const slotIndices = Object.keys(groups).map(Number);
+  if (!ok || slotIndices.length !== byeItems.length) {
+    return [...byeItems, ...matchupItems];
+  }
+
+  slotIndices.sort((a, b) => {
+    const seedA = groups[a].bye ? (seedByTeam[groups[a].bye!] ?? Infinity) : Infinity;
+    const seedB = groups[b].bye ? (seedByTeam[groups[b].bye!] ?? Infinity) : Infinity;
+    return seedA - seedB;
+  });
+
+  const result: RoundItem[] = [];
+  slotIndices.forEach((slot, i) => {
+    const g = groups[slot];
+    const items: RoundItem[] = [];
+    if (g.bye) items.push({ type: "bye", team: g.bye });
+    if (g.matchup) items.push({ type: "matchup", matchup: g.matchup });
+    // First-half groups: bye leads, funneling down into its matchup.
+    // Second-half groups: matchup leads, funneling up into its bye.
+    const isFirstHalf = i < slotIndices.length / 2;
+    result.push(...(isFirstHalf ? items : [...items].reverse()));
+  });
+  return result;
+}
 
 function TeamLink({
   team,
@@ -88,15 +162,10 @@ export function PlayoffTree({ bracket, year }: { bracket: PlayoffBracket | undef
     );
   }
 
-  // Best seed first (top) so a bye box visually leads into that team's next
-  // matchup on the right, same reading order as the matchup boxes' own
-  // seed1/seed2 (better seed on top).
   const seedByTeam: Record<string, number> = {};
   for (const [seed, team] of Object.entries(bracket.seeding)) {
     seedByTeam[team] = Number(seed);
   }
-  const sortByeTeams = (teams: string[]) =>
-    [...teams].sort((a, b) => (seedByTeam[a] ?? Infinity) - (seedByTeam[b] ?? Infinity));
 
   return (
     <div className="flex flex-col gap-4">
@@ -108,21 +177,29 @@ export function PlayoffTree({ bracket, year }: { bracket: PlayoffBracket | undef
         </div>
       )}
       <div className="flex gap-6 overflow-x-auto pb-2">
-        {bracket.rounds.map((round) => (
-          <div key={round.week} className="flex min-w-[220px] flex-1 flex-col gap-3">
-            <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
-              {round.label}
-            </span>
-            <div className="flex h-full flex-col justify-around gap-3">
-              {round.matchups.map((m, i) => (
-                <MatchupBox key={`${round.week}-${i}`} matchup={m} muted={m.slot === "3rd Place"} />
-              ))}
-              {sortByeTeams(round.byes).map((team) => (
-                <ByeBox key={team} team={team} />
-              ))}
+        {bracket.rounds.map((round, roundIdx) => {
+          const items = orderRoundItems(round, bracket.rounds[roundIdx + 1], seedByTeam);
+          return (
+            <div key={round.week} className="flex min-w-[220px] flex-1 flex-col gap-3">
+              <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+                {round.label}
+              </span>
+              <div className="flex h-full flex-col justify-around gap-3">
+                {items.map((item, i) =>
+                  item.type === "matchup" ? (
+                    <MatchupBox
+                      key={`${round.week}-m-${i}`}
+                      matchup={item.matchup}
+                      muted={item.matchup.slot === "3rd Place"}
+                    />
+                  ) : (
+                    <ByeBox key={`${round.week}-b-${item.team}`} team={item.team} />
+                  ),
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
