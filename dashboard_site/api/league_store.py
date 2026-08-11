@@ -62,6 +62,13 @@ class LeagueStore:
         self._playoff_brackets: dict | None = None
         self._goat_computed = False
         self._goat: str | None = None
+        self._meta: dict | None = None
+        # A MultiIndex Series version of _po_lookup, built once, so
+        # _real_matchup_mask can resolve every PO row's flag with one
+        # vectorized .reindex() instead of a Python loop over each row --
+        # see that method's docstring for why this mattered in practice.
+        self._po_lookup_series = pd.Series(self._po_lookup, dtype=bool) if self._po_lookup else None
+        self._weekly_leaderboard_cache: dict[tuple[int, int], list[dict]] = {}
 
     def _load_po_real_matchup_lookup(self) -> dict[tuple[int, int, str, str], bool]:
         """Count==True is a reliable "real matchup" proxy for regular-season
@@ -87,8 +94,15 @@ class LeagueStore:
         }
 
     def _real_matchup_mask(self, df: pd.DataFrame) -> pd.Series:
+        """Was a per-row Python loop with a `.loc[idx]` lookup for every
+        playoff row -- called from meta()/totals()/averages()/
+        weekly_leaderboard()/records() on every single request, with no
+        caching, so it re-ran from scratch under concurrent load. Rewritten
+        to a single vectorized .reindex() against a MultiIndex Series built
+        once at __init__ -- verified byte-identical against the original
+        row-by-row output before this replaced it (see plan doc)."""
         mask = (df["Count"] == True) if "Count" in df.columns else pd.Series(True, index=df.index)  # noqa: E712
-        if not self._po_lookup:
+        if self._po_lookup_series is None:
             return mask
         # The lookup only has entries for teams Models.League's own PO_teams
         # seeding actually kept (it strips non-bracket teams internally
@@ -96,14 +110,33 @@ class LeagueStore:
         # and only flip to True when the lookup explicitly confirms it.
         # Defaulting to the raw Count flag instead would silently let
         # consolation-bracket teams (absent from the lookup entirely) count.
-        po_idx = df.index[df["Season"] == "PO"]
-        for idx in po_idx:
-            row = df.loc[idx]
-            key = (int(row["Year"]), int(row["Week"]), row["Season"], row["Team"])
-            mask.loc[idx] = self._po_lookup.get(key, False)
+        po_mask = df["Season"] == "PO"
+        if not po_mask.any():
+            return mask
+        keys = pd.MultiIndex.from_arrays(
+            [
+                df.loc[po_mask, "Year"].astype(int),
+                df.loc[po_mask, "Week"].astype(int),
+                df.loc[po_mask, "Season"],
+                df.loc[po_mask, "Team"],
+            ]
+        )
+        resolved = self._po_lookup_series.reindex(keys, fill_value=False).to_numpy()
+        mask.loc[po_mask] = resolved
         return mask
 
     def meta(self) -> dict:
+        # Called on essentially every page load with no arguments -- was
+        # recomputed from scratch (including a full groupby over the whole
+        # dataframe) every single time. Purely a function of self.store.df,
+        # which only changes on the next background reload (a fresh
+        # LeagueStore instance), so caching it here is safe.
+        if self._meta is not None:
+            return self._meta
+        self._meta = self._compute_meta()
+        return self._meta
+
+    def _compute_meta(self) -> dict:
         df = self.store.df
         years = sorted(df["Year"].dropna().astype(int).unique().tolist())
         count_df = df[self._real_matchup_mask(df)]
@@ -201,11 +234,23 @@ class LeagueStore:
         return self._week_row_to_dict(row.iloc[0])
 
     def weekly_leaderboard(self, year: int, week: int) -> list[dict]:
+        # Every visitor landing on Weekly Stats with default filters hits
+        # the exact same (year, week) -- under concurrent traffic this was
+        # the single most-repeated call seen in production logs, recomputed
+        # from scratch (a filter + sort + per-row dict-build) every time.
+        # Bounded cache: at most a few hundred distinct (year, week) pairs
+        # will ever exist for this league.
+        cache_key = (year, week)
+        cached = self._weekly_leaderboard_cache.get(cache_key)
+        if cached is not None:
+            return cached
         df = self._ensure_weekly_df()
         df = df[(df["Year"] == year) & (df["Week"] == week)].sort_values("week_rank")
         if df.empty:
             raise ValueError(f"No data for year={year}, week={week}")
-        return [self._week_row_to_dict(row) for _, row in df.iterrows()]
+        result = [self._week_row_to_dict(row) for _, row in df.iterrows()]
+        self._weekly_leaderboard_cache[cache_key] = result
+        return result
 
     def totals(
         self,
