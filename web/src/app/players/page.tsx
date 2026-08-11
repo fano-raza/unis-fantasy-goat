@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, X } from "lucide-react";
 import {
   Card,
@@ -189,22 +189,74 @@ interface SortState {
   dir: SortDir;
 }
 
+const COLUMN_LABELS: Record<SortKey, string> = {
+  year: "Year",
+  player: "Player",
+  team: "Team",
+  round: "Round",
+  roundPick: "Round Pick",
+  overallPick: "Overall Pick",
+  draftScore: "Draft Score",
+  rank: "Rank",
+};
+
+const RIGHT_ALIGNED = new Set<SortKey>(["round", "roundPick", "overallPick", "draftScore", "rank"]);
+
+function cellClassName(key: SortKey): string {
+  if (key === "player") return "font-sans font-semibold";
+  if (key === "team") return "font-sans font-extrabold tracking-wide uppercase";
+  if (key === "draftScore") return "text-right font-extrabold text-primary";
+  if (key === "rank") return "text-right text-muted-foreground";
+  if (key === "year") return "text-muted-foreground";
+  return "text-right";
+}
+
+function cellValue(row: DraftDisplayRow, key: SortKey): ReactNode {
+  if (key === "year") return row.year ?? "—";
+  if (key === "player") return row.player ?? "—";
+  if (key === "team") return row.team ?? "—";
+  return formatNum(row[key]);
+}
+
+// Whichever identity dimensions (Team/Player/Year) are the active group-by
+// become the leftmost, frozen columns, immediately followed by Draft Score
+// (per the user's exact spec) -- Team/Year keep their button order (Team
+// before Year) when both are active, Player is always alone (see the
+// mutual-exclusivity comment on toggleGroupBy). Ungrouped: no frozen
+// columns, Year/Player/Team stay in their natural order up front, and
+// Draft Score simply moves to right after them.
+function getColumnLayout(groupBy: DraftGroupBy): { order: SortKey[]; frozen: SortKey[] } {
+  if (!groupBy.team && !groupBy.player && !groupBy.year) {
+    return { order: ["year", "player", "team", "draftScore", "round", "roundPick", "overallPick", "rank"], frozen: [] };
+  }
+  const frozen: SortKey[] = groupBy.player ? ["player"] : (["team", "year"] as const).filter((k) => groupBy[k]);
+  const remainingIdentity = (["year", "player", "team"] as SortKey[]).filter((k) => !frozen.includes(k));
+  return {
+    order: [...frozen, "draftScore", ...remainingIdentity, "round", "roundPick", "overallPick", "rank"],
+    frozen,
+  };
+}
+
 function DraftSortHead({
   sortKey,
   sort,
   onToggle,
   className,
+  style,
+  headerRef,
   children,
 }: {
   sortKey: SortKey;
   sort: SortState;
   onToggle: (key: SortKey) => void;
   className?: string;
+  style?: CSSProperties;
+  headerRef?: (el: HTMLTableCellElement | null) => void;
   children: ReactNode;
 }) {
   const active = sort.key === sortKey;
   return (
-    <TableHead className={className}>
+    <TableHead ref={headerRef} className={className} style={style}>
       <button
         type="button"
         onClick={() => onToggle(sortKey)}
@@ -273,6 +325,51 @@ function DraftHub({ meta }: { meta: LeagueMeta }) {
 
   const pageCount = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE));
   const pageRows = sortedRows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  const { order: columnOrder, frozen: frozenColumns } = useMemo(() => getColumnLayout(groupBy), [groupBy]);
+
+  // Cumulative left offsets for the frozen (group-by) columns, measured off
+  // the header cells' real rendered widths -- same reasoning as StatTable's
+  // sticky Score column (a hardcoded offset drifts out of sync with actual
+  // content width, e.g. "Chirayu" vs "Sai"). At most 2 frozen columns here
+  // (Team+Year, or Player alone), so a plain ref map is simpler than a
+  // generic N-column sticky-offset abstraction.
+  const frozenHeaderRefs = useRef<Partial<Record<SortKey, HTMLTableCellElement | null>>>({});
+  const [frozenOffsets, setFrozenOffsets] = useState<Partial<Record<SortKey, number>>>({});
+  const frozenKey = frozenColumns.join("|");
+  useEffect(() => {
+    function recompute() {
+      let sum = 0;
+      const next: Partial<Record<SortKey, number>> = {};
+      for (const key of frozenColumns) {
+        next[key] = sum;
+        sum += frozenHeaderRefs.current[key]?.getBoundingClientRect().width ?? 0;
+      }
+      setFrozenOffsets(next);
+    }
+    recompute();
+    const observers = frozenColumns
+      .map((key) => frozenHeaderRefs.current[key])
+      .filter((el): el is HTMLTableCellElement => !!el)
+      .map((el) => {
+        const observer = new ResizeObserver(recompute);
+        observer.observe(el);
+        return observer;
+      });
+    return () => observers.forEach((o) => o.disconnect());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [frozenKey, pageRows.length]);
+
+  function stickyProps(key: SortKey): { className: string; style?: CSSProperties; ref?: (el: HTMLTableCellElement | null) => void } {
+    if (!frozenColumns.includes(key)) return { className: "" };
+    return {
+      className: "sticky z-10 bg-card",
+      style: { left: frozenOffsets[key] ?? 0 },
+      ref: (el) => {
+        frozenHeaderRefs.current[key] = el;
+      },
+    };
+  }
 
   return (
     <div className="flex flex-col gap-4 sm:flex-row">
@@ -366,47 +463,35 @@ function DraftHub({ meta }: { meta: LeagueMeta }) {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <DraftSortHead sortKey="year" sort={sort} onToggle={toggleSort}>
-                        Year
-                      </DraftSortHead>
-                      <DraftSortHead sortKey="player" sort={sort} onToggle={toggleSort}>
-                        Player
-                      </DraftSortHead>
-                      <DraftSortHead sortKey="team" sort={sort} onToggle={toggleSort}>
-                        Team
-                      </DraftSortHead>
-                      <DraftSortHead sortKey="round" sort={sort} onToggle={toggleSort} className="text-right">
-                        Round
-                      </DraftSortHead>
-                      <DraftSortHead sortKey="roundPick" sort={sort} onToggle={toggleSort} className="text-right">
-                        Round Pick
-                      </DraftSortHead>
-                      <DraftSortHead sortKey="overallPick" sort={sort} onToggle={toggleSort} className="text-right">
-                        Overall Pick
-                      </DraftSortHead>
-                      <DraftSortHead sortKey="draftScore" sort={sort} onToggle={toggleSort} className="text-right">
-                        Draft Score
-                      </DraftSortHead>
-                      <DraftSortHead sortKey="rank" sort={sort} onToggle={toggleSort} className="text-right">
-                        Rank
-                      </DraftSortHead>
+                      {columnOrder.map((key) => {
+                        const sticky = stickyProps(key);
+                        return (
+                          <DraftSortHead
+                            key={key}
+                            sortKey={key}
+                            sort={sort}
+                            onToggle={toggleSort}
+                            className={cn(RIGHT_ALIGNED.has(key) && "text-right", sticky.className)}
+                            style={sticky.style}
+                            headerRef={sticky.ref}
+                          >
+                            {COLUMN_LABELS[key]}
+                          </DraftSortHead>
+                        );
+                      })}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {pageRows.map((row) => (
                       <TableRow key={row.key}>
-                        <TableCell className="text-muted-foreground">{row.year ?? "—"}</TableCell>
-                        <TableCell className="font-sans font-semibold">{row.player ?? "—"}</TableCell>
-                        <TableCell className="font-sans font-extrabold tracking-wide uppercase">
-                          {row.team ?? "—"}
-                        </TableCell>
-                        <TableCell className="text-right">{formatNum(row.round)}</TableCell>
-                        <TableCell className="text-right">{formatNum(row.roundPick)}</TableCell>
-                        <TableCell className="text-right">{formatNum(row.overallPick)}</TableCell>
-                        <TableCell className="text-right font-extrabold text-primary">
-                          {formatNum(row.draftScore)}
-                        </TableCell>
-                        <TableCell className="text-right text-muted-foreground">{formatNum(row.rank)}</TableCell>
+                        {columnOrder.map((key) => {
+                          const sticky = stickyProps(key);
+                          return (
+                            <TableCell key={key} className={cn(cellClassName(key), sticky.className)} style={sticky.style}>
+                              {cellValue(row, key)}
+                            </TableCell>
+                          );
+                        })}
                       </TableRow>
                     ))}
                   </TableBody>
