@@ -21,9 +21,16 @@ export function MobileNav() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        render={<Button variant="ghost" size="icon-sm" aria-label="Open menu" />}
+        render={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Open menu"
+            className="rounded-sm border-2 border-primary bg-primary/10"
+          />
+        }
       >
-        <Menu className="size-5" />
+        <Menu className="size-5 text-primary" />
       </DialogTrigger>
       <DialogPortal>
         <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-black/40 duration-150 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0" />

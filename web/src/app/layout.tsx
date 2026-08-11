@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Nav } from "@/components/nav";
 import { MobileNav } from "@/components/mobile-nav";
+import { PageArrowNav } from "@/components/page-arrow-nav";
 import { LastUpdated } from "@/components/last-updated";
 import "./globals.css";
 
@@ -43,6 +44,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             <div className="hidden sm:block">
               <Nav />
             </div>
+            <PageArrowNav />
           </div>
         </header>
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6">
