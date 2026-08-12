@@ -17,7 +17,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { LabeledSelect } from "@/components/labeled-select";
 import { SteppableSelect } from "@/components/steppable-select";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
@@ -32,8 +41,14 @@ import {
   type WeekCalendarRow,
 } from "@/lib/api";
 import { useSelectedTeam } from "@/lib/use-selected-team";
+import { TriangleAlert, X } from "lucide-react";
 
 const EASTERN_TZ = "America/New_York";
+// This league starts 10 players -- a day where more than 10 of a team's
+// rostered players have real games is a real scheduling conflict (someone
+// with a game is forced to sit), worth flagging.
+const MAX_STARTERS = 10;
+const NO_SWAP = "__none__";
 
 // The America/New_York calendar date a game falls on -- NOT the raw UTC
 // date. A 10PM ET tip-off is already "tomorrow" in UTC (e.g.
@@ -103,6 +118,21 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
   const [scheduleGames, setScheduleGames] = useState<NBAScheduleGame[]>([]);
   const [scheduleLoading, setScheduleLoading] = useState(true);
 
+  // Hypothetical 1-for-1 swap: bench `simRemove` (a player actually on this
+  // roster) and simulate having `simAdd` (any other rostered player in the
+  // league that year) instead. One-sided -- only this team's roster/rank
+  // changes, the added player's real team is untouched, since this is a
+  // "what if I had them" simulation, not a real trade.
+  const [simRemove, setSimRemove] = useState<string | null>(null);
+  const [simAdd, setSimAdd] = useState<string | null>(null);
+  const [addPickerOpen, setAddPickerOpen] = useState(false);
+
+  // Changing team/year invalidates whatever swap was being simulated.
+  useEffect(() => {
+    setSimRemove(null);
+    setSimAdd(null);
+  }, [team, year]);
+
   useEffect(() => {
     setRosterLoading(true);
     getRosterRanks({ year })
@@ -150,7 +180,22 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
     () => rosterRows.filter((r) => r.FantasyTeam === team).sort((a, b) => a.Rank - b.Rank),
     [rosterRows, team],
   );
-  const teamAvgRank = useMemo(() => average(teamRoster.map((r) => r.Rank)), [teamRoster]);
+
+  const addCandidates = useMemo(
+    () => rosterRows.filter((r) => r.FantasyTeam !== team).sort((a, b) => a.Rank - b.Rank),
+    [rosterRows, team],
+  );
+  const simAddRow = useMemo(() => addCandidates.find((r) => r.Player === simAdd) ?? null, [addCandidates, simAdd]);
+  const simulating = simRemove != null && simAddRow != null;
+
+  // The roster actually displayed/used everywhere below -- the real
+  // roster, or the real roster with one hypothetical swap applied.
+  const displayedRoster = useMemo(() => {
+    if (!simulating) return teamRoster;
+    return [...teamRoster.filter((r) => r.Player !== simRemove), simAddRow!].sort((a, b) => a.Rank - b.Rank);
+  }, [teamRoster, simulating, simRemove, simAddRow]);
+
+  const displayedAvgRank = useMemo(() => average(displayedRoster.map((r) => r.Rank)), [displayedRoster]);
 
   const teamAverages = useMemo(() => {
     const byTeam = new Map<string, number[]>();
@@ -158,10 +203,17 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
       if (!byTeam.has(row.FantasyTeam)) byTeam.set(row.FantasyTeam, []);
       byTeam.get(row.FantasyTeam)!.push(row.Rank);
     }
-    return [...byTeam.entries()]
-      .map(([t, ranks]) => ({ team: t, avgRank: average(ranks) ?? Infinity }))
-      .sort((a, b) => a.avgRank - b.avgRank);
-  }, [rosterRows]);
+    const rows = [...byTeam.entries()].map(([t, ranks]) => ({ team: t, avgRank: average(ranks) ?? Infinity }));
+    // Swap in the simulated average for this team only -- every other
+    // team's real roster/rank is unaffected by a one-sided hypothetical.
+    if (simulating) {
+      const simAvg = average(displayedRoster.map((r) => r.Rank)) ?? Infinity;
+      for (const row of rows) {
+        if (row.team === team) row.avgRank = simAvg;
+      }
+    }
+    return rows.sort((a, b) => a.avgRank - b.avgRank);
+  }, [rosterRows, simulating, displayedRoster, team]);
 
   // NBA team abbreviation -> that week's games, pre-grouped so per-player
   // lookups below are O(1) instead of re-scanning every game per player.
@@ -175,6 +227,21 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
     }
     return map;
   }, [scheduleGames]);
+
+  // Per-day count of how many of the displayed roster's players have a
+  // real game that day -- more than MAX_STARTERS means someone with a
+  // game is forced to sit.
+  const playersPerDay = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const row of displayedRoster) {
+      const games = gamesByNBATeam.get(row.NBATeam) ?? [];
+      const daysPlaying = new Set(games.map((g) => easternDateKey(g.Date)));
+      for (const day of daysPlaying) {
+        if (weekDays.includes(day)) counts.set(day, (counts.get(day) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [displayedRoster, gamesByNBATeam, weekDays]);
 
   const now = Date.now();
   const today = todayKey();
@@ -219,7 +286,68 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
         </CardContent>
       </Card>
 
+      {teamRoster.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Simulate a Swap</CardTitle>
+            <CardDescription>Hypothetically bench one player on this roster for another, and see the roster rank change</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-center gap-6">
+            <LabeledSelect
+              label="Remove"
+              value={simRemove ?? NO_SWAP}
+              onValueChange={(v) => setSimRemove(v === NO_SWAP ? null : v)}
+              options={[
+                { value: NO_SWAP, label: "None" },
+                ...teamRoster.map((r) => ({ value: r.Player, label: r.Player })),
+              ]}
+            />
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">Add</span>
+              <Popover open={addPickerOpen} onOpenChange={setAddPickerOpen}>
+                <PopoverTrigger className={buttonVariants({ variant: "outline", size: "sm" })}>
+                  {simAddRow ? `${simAddRow.Player} (${simAddRow.NBATeam})` : "Choose a player..."}
+                </PopoverTrigger>
+                <PopoverContent className="w-64 p-0">
+                  <Command>
+                    <CommandInput placeholder="Search players..." />
+                    <CommandList>
+                      <CommandEmpty>No players found.</CommandEmpty>
+                      <CommandGroup>
+                        {addCandidates.map((r) => (
+                          <CommandItem
+                            key={r.Player}
+                            onSelect={() => {
+                              setSimAdd(r.Player);
+                              setAddPickerOpen(false);
+                            }}
+                          >
+                            {r.Player} <span className="ml-1 text-muted-foreground">({r.NBATeam}, rank {r.Rank})</span>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+            {(simRemove || simAdd) && (
+              <Button type="button" variant="outline" size="sm" onClick={() => { setSimRemove(null); setSimAdd(null); }}>
+                <X className="size-3.5" /> Reset
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
+        {simulating && (
+          <CardHeader>
+            <CardDescription className="font-bold tracking-wide text-primary uppercase">
+              Simulated roster
+            </CardDescription>
+          </CardHeader>
+        )}
         <CardContent>
           {rosterLoading ? (
             <LoadingBasketballs label="Loading roster" />
@@ -235,11 +363,21 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                   <TableHead>NBA Team</TableHead>
                   <TableHead className="text-right">Rank</TableHead>
                   {showFullWeek
-                    ? weekDays.map((d) => (
-                        <TableHead key={d} className={cn("text-center", d < today && "text-muted-foreground/50")}>
-                          {dayLabel(d)}
-                        </TableHead>
-                      ))
+                    ? weekDays.map((d) => {
+                        const count = playersPerDay.get(d) ?? 0;
+                        const overStarters = count > MAX_STARTERS;
+                        return (
+                          <TableHead key={d} className={cn("text-center", d < today && "text-muted-foreground/50")}>
+                            <span
+                              className="inline-flex items-center justify-center gap-1"
+                              title={overStarters ? `${count} players have games -- only ${MAX_STARTERS} starting spots` : undefined}
+                            >
+                              {dayLabel(d)}
+                              {overStarters && <TriangleAlert className="size-3.5 text-loss" />}
+                            </span>
+                          </TableHead>
+                        );
+                      })
                     : <TableHead className="text-right">Games Left</TableHead>}
                 </TableRow>
               </TableHeader>
@@ -249,18 +387,26 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                     Average Rank
                   </TableCell>
                   <TableCell className="text-right font-mono font-extrabold tabular-nums text-primary">
-                    {teamAvgRank !== null ? teamAvgRank.toFixed(1) : "—"}
+                    {displayedAvgRank !== null ? displayedAvgRank.toFixed(1) : "—"}
                   </TableCell>
                   <TableCell colSpan={colSpan} />
                 </TableRow>
-                {teamRoster.map((row) => {
+                {displayedRoster.map((row) => {
                   const games = gamesByNBATeam.get(row.NBATeam) ?? [];
                   const totalThisWeek = games.length;
                   const remaining = games.filter((g) => new Date(g.Date).getTime() > now).length;
                   const gameDaysThisWeek = new Set(games.map((g) => easternDateKey(g.Date)));
+                  const isSwappedIn = simulating && row.Player === simAdd;
                   return (
-                    <TableRow key={row.Player}>
-                      <TableCell className="font-sans font-semibold">{row.Player}</TableCell>
+                    <TableRow key={row.Player} className={cn(isSwappedIn && "bg-focus-row/50")}>
+                      <TableCell className="font-sans font-semibold">
+                        {row.Player}
+                        {isSwappedIn && (
+                          <span className="ml-2 rounded-sm bg-primary px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-primary-foreground uppercase">
+                            New
+                          </span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-muted-foreground">{row.NBATeam}</TableCell>
                       <TableCell className="text-right font-mono tabular-nums">{row.Rank}</TableCell>
                       {scheduleLoading ? (
