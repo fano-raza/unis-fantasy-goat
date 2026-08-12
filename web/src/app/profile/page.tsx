@@ -69,6 +69,7 @@ import {
 } from "@/lib/team-summary-fields";
 import { cn } from "@/lib/utils";
 import { ProfileHistoryChart } from "@/components/profile-history-chart";
+import { RosterView } from "@/components/roster-view";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { buildBadges, POSITIVE_BADGE_TYPES } from "@/lib/badges";
 import { TeamBadges } from "@/components/team-badges";
@@ -76,10 +77,11 @@ import { BadgeDrawer } from "@/components/badge-drawer";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { useElementHeight } from "@/lib/use-element-height";
 
-type View = "profile" | "comparison";
+type View = "profile" | "comparison" | "roster";
 const VIEW_OPTIONS = [
   { value: "profile", label: "Profile" },
   { value: "comparison", label: "Comparison" },
+  { value: "roster", label: "Roster" },
 ];
 
 // Gold / silver / bronze for the League Top 3 table's 1st/2nd/3rd rank text
@@ -660,7 +662,9 @@ function ProfilePageInner() {
         </div>
       </div>
 
-      {view === "comparison" ? (
+      {view === "roster" ? (
+        <RosterView meta={meta} />
+      ) : view === "comparison" ? (
         <>
           <Card>
             <CardHeader>

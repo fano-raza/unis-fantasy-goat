@@ -165,6 +165,29 @@ export interface TeamSummaryRequest {
   teams?: string[];
 }
 
+export interface RosterRankRow {
+  Year: number;
+  FantasyTeam: string;
+  Player: string;
+  NBATeam: string;
+  Rank: number;
+}
+
+export interface RosterRanksRequest {
+  year: number;
+}
+
+export interface NBAScheduleGame {
+  Date: string;
+  HomeTeam: string;
+  AwayTeam: string;
+}
+
+export interface NBAScheduleRequest {
+  start_date: string;
+  end_date: string;
+}
+
 export interface DraftPicksRequest {
   years?: number[];
   teams?: string[];
@@ -348,6 +371,12 @@ export const getAnalysisRows = (req: AggregateRequest = {}) =>
 
 export const getTeamSummary = (req: TeamSummaryRequest = {}) =>
   post<TeamSummary[]>("/league/team_summary", req);
+
+export const getRosterRanks = (req: RosterRanksRequest) =>
+  post<RosterRankRow[]>("/league/roster_ranks", req);
+
+export const getNBASchedule = (req: NBAScheduleRequest) =>
+  post<NBAScheduleGame[]>("/league/nba_schedule", req);
 
 export const getStandings = (req: StandingsRequest) =>
   post<StandingsResponse>("/league/standings", req);
