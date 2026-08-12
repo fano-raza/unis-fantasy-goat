@@ -32,6 +32,8 @@ from GDoc.GDoc_AllTime import (
 from scripts.export_real_matchup_flags import main as export_real_matchup_flags
 from scripts.export_team_summary import main as export_team_summary
 from scripts.export_player_stats import main as export_player_stats
+from scripts.export_roster_ranks import main as export_roster_ranks
+from scripts.export_nba_schedule import main as export_nba_schedule
 
 year = int("${YEAR}")
 week = int("${WEEK}")
@@ -62,6 +64,14 @@ print("team_summary.csv refreshed.")
 print("Refreshing real NBA player stats...")
 export_player_stats()
 print("player_stats.csv refreshed.")
+
+print("Refreshing roster/rank snapshot...")
+export_roster_ranks([year])
+print("roster_ranks.csv refreshed.")
+
+print("Refreshing NBA schedule...")
+export_nba_schedule()
+print("nba_schedule.csv refreshed.")
 PY
 
 echo "[refresh] done"
