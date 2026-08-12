@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -41,14 +42,13 @@ import {
   type WeekCalendarRow,
 } from "@/lib/api";
 import { useSelectedTeam } from "@/lib/use-selected-team";
-import { TriangleAlert, X } from "lucide-react";
+import { ArrowLeftRight, TriangleAlert } from "lucide-react";
 
 const EASTERN_TZ = "America/New_York";
 // This league starts 10 players -- a day where more than 10 of a team's
 // rostered players have real games is a real scheduling conflict (someone
 // with a game is forced to sit), worth flagging.
 const MAX_STARTERS = 10;
-const NO_SWAP = "__none__";
 
 // The America/New_York calendar date a game falls on -- NOT the raw UTC
 // date. A 10PM ET tip-off is already "tomorrow" in UTC (e.g.
@@ -118,19 +118,20 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
   const [scheduleGames, setScheduleGames] = useState<NBAScheduleGame[]>([]);
   const [scheduleLoading, setScheduleLoading] = useState(true);
 
-  // Hypothetical 1-for-1 swap: bench `simRemove` (a player actually on this
-  // roster) and simulate having `simAdd` (any other rostered player in the
-  // league that year) instead. One-sided -- only this team's roster/rank
-  // changes, the added player's real team is untouched, since this is a
-  // "what if I had them" simulation, not a real trade.
-  const [simRemove, setSimRemove] = useState<string | null>(null);
-  const [simAdd, setSimAdd] = useState<string | null>(null);
-  const [addPickerOpen, setAddPickerOpen] = useState(false);
+  // Hypothetical swaps: any number of this roster's real "slots" can each
+  // be independently replaced with any other rostered player in the
+  // league that year. Keyed by the ORIGINAL player each slot represents
+  // (not by whatever's currently displayed there), so re-opening a slot
+  // that's already been swapped still targets the same slot, not a new
+  // one. One-sided -- only this team's roster/rank changes, a replacement
+  // player's real team is untouched, since this is a "what if I had them"
+  // simulation, not a real trade.
+  const [swaps, setSwaps] = useState<Map<string, RosterRankRow>>(new Map());
+  const [openSwapSlot, setOpenSwapSlot] = useState<string | null>(null);
 
-  // Changing team/year invalidates whatever swap was being simulated.
+  // Changing team/year invalidates whatever swaps were being simulated.
   useEffect(() => {
-    setSimRemove(null);
-    setSimAdd(null);
+    setSwaps(new Map());
   }, [team, year]);
 
   useEffect(() => {
@@ -181,21 +182,35 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
     [rosterRows, team],
   );
 
-  const addCandidates = useMemo(
+  // Every rostered player elsewhere in the league that year -- the pool
+  // any slot can be swapped to.
+  const otherTeamsPlayers = useMemo(
     () => rosterRows.filter((r) => r.FantasyTeam !== team).sort((a, b) => a.Rank - b.Rank),
     [rosterRows, team],
   );
-  const simAddRow = useMemo(() => addCandidates.find((r) => r.Player === simAdd) ?? null, [addCandidates, simAdd]);
-  const simulating = simRemove != null && simAddRow != null;
 
-  // The roster actually displayed/used everywhere below -- the real
-  // roster, or the real roster with one hypothetical swap applied.
-  const displayedRoster = useMemo(() => {
-    if (!simulating) return teamRoster;
-    return [...teamRoster.filter((r) => r.Player !== simRemove), simAddRow!].sort((a, b) => a.Rank - b.Rank);
-  }, [teamRoster, simulating, simRemove, simAddRow]);
+  // One "slot" per real roster spot, holding either the real player or
+  // whatever they've been hypothetically swapped for.
+  const slots = useMemo(
+    () => teamRoster.map((orig) => ({ originalPlayer: orig.Player, display: swaps.get(orig.Player) ?? orig })),
+    [teamRoster, swaps],
+  );
+  const sortedSlots = useMemo(() => [...slots].sort((a, b) => a.display.Rank - b.display.Rank), [slots]);
+  const displayedRoster = useMemo(() => sortedSlots.map((s) => s.display), [sortedSlots]);
+  const simulating = swaps.size > 0;
 
   const displayedAvgRank = useMemo(() => average(displayedRoster.map((r) => r.Rank)), [displayedRoster]);
+
+  // Selectable replacements for a given slot -- every other team's
+  // player, minus whoever's already occupying one of THIS team's other
+  // slots (no duplicating a player across two slots on the same
+  // simulated roster).
+  function candidatesForSlot(originalPlayer: string): RosterRankRow[] {
+    const displayedElsewhere = new Set(
+      slots.filter((s) => s.originalPlayer !== originalPlayer).map((s) => s.display.Player),
+    );
+    return otherTeamsPlayers.filter((r) => !displayedElsewhere.has(r.Player));
+  }
 
   const teamAverages = useMemo(() => {
     const byTeam = new Map<string, number[]>();
@@ -286,66 +301,17 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
         </CardContent>
       </Card>
 
-      {teamRoster.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Simulate a Swap</CardTitle>
-            <CardDescription>Hypothetically bench one player on this roster for another, and see the roster rank change</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-wrap items-center gap-6">
-            <LabeledSelect
-              label="Remove"
-              value={simRemove ?? NO_SWAP}
-              onValueChange={(v) => setSimRemove(v === NO_SWAP ? null : v)}
-              options={[
-                { value: NO_SWAP, label: "None" },
-                ...teamRoster.map((r) => ({ value: r.Player, label: r.Player })),
-              ]}
-            />
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">Add</span>
-              <Popover open={addPickerOpen} onOpenChange={setAddPickerOpen}>
-                <PopoverTrigger className={buttonVariants({ variant: "outline", size: "sm" })}>
-                  {simAddRow ? `${simAddRow.Player} (${simAddRow.NBATeam})` : "Choose a player..."}
-                </PopoverTrigger>
-                <PopoverContent className="w-64 p-0">
-                  <Command>
-                    <CommandInput placeholder="Search players..." />
-                    <CommandList>
-                      <CommandEmpty>No players found.</CommandEmpty>
-                      <CommandGroup>
-                        {addCandidates.map((r) => (
-                          <CommandItem
-                            key={r.Player}
-                            onSelect={() => {
-                              setSimAdd(r.Player);
-                              setAddPickerOpen(false);
-                            }}
-                          >
-                            {r.Player} <span className="ml-1 text-muted-foreground">({r.NBATeam}, rank {r.Rank})</span>
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-            </div>
-            {(simRemove || simAdd) && (
-              <Button type="button" variant="outline" size="sm" onClick={() => { setSimRemove(null); setSimAdd(null); }}>
-                <X className="size-3.5" /> Reset
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
       <Card>
         {simulating && (
           <CardHeader>
             <CardDescription className="font-bold tracking-wide text-primary uppercase">
               Simulated roster
             </CardDescription>
+            <CardAction>
+              <Button type="button" variant="outline" size="sm" onClick={() => setSwaps(new Map())}>
+                Reset Roster
+              </Button>
+            </CardAction>
           </CardHeader>
         )}
         <CardContent>
@@ -391,21 +357,52 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                   </TableCell>
                   <TableCell colSpan={colSpan} />
                 </TableRow>
-                {displayedRoster.map((row) => {
+                {sortedSlots.map((slot) => {
+                  const row = slot.display;
                   const games = gamesByNBATeam.get(row.NBATeam) ?? [];
                   const totalThisWeek = games.length;
                   const remaining = games.filter((g) => new Date(g.Date).getTime() > now).length;
                   const gameDaysThisWeek = new Set(games.map((g) => easternDateKey(g.Date)));
-                  const isSwappedIn = simulating && row.Player === simAdd;
+                  const isSwappedIn = row.Player !== slot.originalPlayer;
+                  const candidates = candidatesForSlot(slot.originalPlayer);
                   return (
-                    <TableRow key={row.Player} className={cn(isSwappedIn && "bg-focus-row/50")}>
+                    <TableRow key={slot.originalPlayer}>
                       <TableCell className="font-sans font-semibold">
-                        {row.Player}
-                        {isSwappedIn && (
-                          <span className="ml-2 rounded-sm bg-primary px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-primary-foreground uppercase">
-                            New
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1.5">
+                          <Popover
+                            open={openSwapSlot === slot.originalPlayer}
+                            onOpenChange={(open) => setOpenSwapSlot(open ? slot.originalPlayer : null)}
+                          >
+                            <PopoverTrigger
+                              className={buttonVariants({ variant: "ghost", size: "icon", className: "size-6 shrink-0" })}
+                              title={`Swap ${row.Player}`}
+                            >
+                              <ArrowLeftRight className="size-3.5" />
+                            </PopoverTrigger>
+                            <PopoverContent className="w-64 p-0">
+                              <Command>
+                                <CommandInput placeholder="Search players..." />
+                                <CommandList>
+                                  <CommandEmpty>No players found.</CommandEmpty>
+                                  <CommandGroup>
+                                    {candidates.map((r) => (
+                                      <CommandItem
+                                        key={r.Player}
+                                        onSelect={() => {
+                                          setSwaps((prev) => new Map(prev).set(slot.originalPlayer, r));
+                                          setOpenSwapSlot(null);
+                                        }}
+                                      >
+                                        {r.Player} <span className="ml-1 text-muted-foreground">({r.NBATeam}, rank {r.Rank})</span>
+                                      </CommandItem>
+                                    ))}
+                                  </CommandGroup>
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
+                          <span className={cn(isSwappedIn && "text-yellow-500")}>{row.Player}</span>
+                        </div>
                       </TableCell>
                       <TableCell className="text-muted-foreground">{row.NBATeam}</TableCell>
                       <TableCell className="text-right font-mono tabular-nums">{row.Rank}</TableCell>
