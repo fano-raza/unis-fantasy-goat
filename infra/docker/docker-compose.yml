@@ -51,7 +51,8 @@ services:
   # Tag @FeatureBot in Discord to log a feature request -- appends the
   # message to /srv/unisfantasy/data/feature_requests.md and reacts with a
   # checkbox. Independent of discord-bot (which is stopped/being retired);
-  # see discord/feature_bot.py.
+  # see discord/feature_bot.py. Also runs the weekly Top 6 role sync, which
+  # calls dashboard-api like stat-bot does.
   feature-bot:
     build:
       context: ../..
@@ -62,6 +63,8 @@ services:
       - ./env/feature-bot.env
     volumes:
       - /srv/unisfantasy/data:/srv/unisfantasy/data
+    depends_on:
+      - dashboard-api
     restart: unless-stopped
 
   # Slash commands for quick stat lookups (standings-check, champ-check,

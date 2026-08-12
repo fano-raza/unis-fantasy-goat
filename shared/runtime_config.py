@@ -32,3 +32,11 @@ def draft_results_csv_path(year: int) -> str:
 
 def feature_requests_path() -> Path:
     return DATA_ROOT / "feature_requests.md"
+
+
+def top6_role_state_path() -> Path:
+    """Last-run date for FeatureBot's weekly Top 6 role update (see
+    discord/feature_bot.py) -- a container restart shouldn't cause a
+    duplicate same-day run, and a missed hourly tick should still catch up
+    later the same day."""
+    return DATA_ROOT / "top6_role_last_run.txt"
