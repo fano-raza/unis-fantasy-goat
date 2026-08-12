@@ -213,7 +213,10 @@ const QUERY_TOTAL_FIELDS: QueryTotalField[] = [
   { label: "Total Category Losses", metric: "CAT_LOSSES", seasons: ["RS", "PO"], direction: "lower" },
   { label: "Total Reg Season Wins", metric: "MATCHUP_WINS", seasons: ["RS"], direction: "higher" },
   { label: "Total Reg Season Losses", metric: "MATCHUP_LOSSES", seasons: ["RS"], direction: "lower" },
-  { label: "Total Playoff Wins", metric: "MATCHUP_WINS", seasons: ["PO"], direction: "higher" },
+  // Renamed from "Total Playoff Wins" for the same reason as Matchup/
+  // Category Wins above -- now also a Comparison-table row (Playoffs
+  // section), not just a League Top 3 contributor.
+  { label: "Playoff Wins", metric: "MATCHUP_WINS", seasons: ["PO"], direction: "higher" },
   { label: "Total Playoff Losses", metric: "MATCHUP_LOSSES", seasons: ["PO"], direction: "lower" },
 ];
 
@@ -230,7 +233,7 @@ const QUERY_TOTAL_FIELDS: QueryTotalField[] = [
 const COMPARISON_GROUPS: { title: string; fields: string[] }[] = [
   {
     title: "Playoffs",
-    fields: ["Championships", "Finals", "Playoffs", "PO W/L", "PO W/L %", "PO Cats", "PO Cats %"],
+    fields: ["Championships", "Finals", "Playoffs", "Playoff Wins", "PO W/L", "PO W/L %", "PO Cats", "PO Cats %"],
   },
   {
     title: "Regular Season",
@@ -438,7 +441,7 @@ function ProfilePageInner() {
   // group's field list isn't filtered out by comparisonFields.includes(f).
   const comparisonFields = comparableFields(allTeams)
     .filter((f) => !COMPARISON_EXCLUDED_FIELDS.has(f))
-    .concat(["Matchup Wins", "Category Wins"]);
+    .concat(["Matchup Wins", "Category Wins", "Playoff Wins"]);
   const selectedRows = visibleSelected
     .map((t) => allTeams.find((r) => r.Team === t))
     .filter((r): r is TeamSummary => !!r)
@@ -446,6 +449,7 @@ function ProfilePageInner() {
       ...r,
       "Matchup Wins": queryTotals["Matchup Wins"]?.find((q) => q.Team === r.Team)?.value ?? null,
       "Category Wins": queryTotals["Category Wins"]?.find((q) => q.Team === r.Team)?.value ?? null,
+      "Playoff Wins": queryTotals["Playoff Wins"]?.find((q) => q.Team === r.Team)?.value ?? null,
     }));
   const availableTeams = allTeams.filter((r) => !selected.includes(r.Team));
   // Equal-width columns (Stat column + one per selected team) on every

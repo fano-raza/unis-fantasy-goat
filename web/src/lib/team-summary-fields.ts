@@ -27,6 +27,7 @@ const FIELD_DIRECTIONS: Record<string, Direction> = {
   "Best RS Finish Years": "skip",
   "Matchup Wins": "higher",
   "Category Wins": "higher",
+  "Playoff Wins": "higher",
   "Career W/L": "skip",
   "Career W/L %": "higher",
   "Career Matchups": "skip",
