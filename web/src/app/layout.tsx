@@ -48,6 +48,18 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6">
           {children}
         </main>
+        <footer className="border-t border-border">
+          <div className="mx-auto w-full max-w-5xl px-4 py-4 text-center text-xs text-muted-foreground sm:px-6">
+            <a
+              href="https://www.fanoraza.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-foreground hover:underline"
+            >
+              fanoraza.com
+            </a>
+          </div>
+        </footer>
       </body>
     </html>
   );
