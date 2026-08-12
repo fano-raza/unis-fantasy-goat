@@ -109,6 +109,9 @@ const TOP3_EXCLUDED = new Set([
   "Best RS Finish Years",
   "Best Week Rating",
   "Worst Week Rating",
+  // Redundant with the rating fields already shown -- same reasoning as
+  // COMPARISON_EXCLUDED_FIELDS in team-summary-fields.ts.
+  "Avg Weighted Rank",
 ]);
 
 // Standard competition ranking for a raw category value across totals/
@@ -465,6 +468,11 @@ function ProfilePageInner() {
       setH2h(null);
       return;
     }
+    // Clear immediately (not just on the < 2 early-return above) so adding/
+    // removing a team shows the loading state right away instead of the
+    // previous team set's now-stale H2H rows (with a "--" for whichever
+    // team just changed) sitting on screen until the new fetch resolves.
+    setH2h(null);
     let cancelled = false;
     const pairs: [string, string][] = [];
     for (let i = 0; i < teams.length; i++) {
