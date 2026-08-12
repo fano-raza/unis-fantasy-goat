@@ -188,6 +188,17 @@ export interface NBAScheduleRequest {
   end_date: string;
 }
 
+export interface WeekCalendarRow {
+  Year: number;
+  Week: number;
+  StartDate: string;
+  EndDate: string;
+}
+
+export interface WeekCalendarRequest {
+  year: number;
+}
+
 export interface DraftPicksRequest {
   years?: number[];
   teams?: string[];
@@ -377,6 +388,9 @@ export const getRosterRanks = (req: RosterRanksRequest) =>
 
 export const getNBASchedule = (req: NBAScheduleRequest) =>
   post<NBAScheduleGame[]>("/league/nba_schedule", req);
+
+export const getWeekCalendar = (req: WeekCalendarRequest) =>
+  post<WeekCalendarRow[]>("/league/week_calendar", req);
 
 export const getStandings = (req: StandingsRequest) =>
   post<StandingsResponse>("/league/standings", req);

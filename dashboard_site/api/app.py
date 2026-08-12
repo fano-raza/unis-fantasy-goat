@@ -28,6 +28,7 @@ from .schemas import (
     StandingsRequest,
     TeamSummaryRequest,
     TimeSeriesRequest,
+    WeekCalendarRequest,
     WeeklyLeaderboardRequest,
     WeeklyTeamRequest,
 )
@@ -311,6 +312,14 @@ def league_roster_ranks(req: RosterRanksRequest) -> list[dict]:
 def league_nba_schedule(req: NBAScheduleRequest) -> list[dict]:
     try:
         return league_store.nba_schedule(req.start_date, req.end_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/league/week_calendar")
+def league_week_calendar(req: WeekCalendarRequest) -> list[dict]:
+    try:
+        return league_store.week_calendar(req.year)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

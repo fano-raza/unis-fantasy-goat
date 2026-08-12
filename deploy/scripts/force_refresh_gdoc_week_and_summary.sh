@@ -34,6 +34,7 @@ from scripts.export_team_summary import main as export_team_summary
 from scripts.export_player_stats import main as export_player_stats
 from scripts.export_roster_ranks import main as export_roster_ranks
 from scripts.export_nba_schedule import main as export_nba_schedule
+from scripts.export_week_calendar import main as export_week_calendar
 
 year = int("${YEAR}")
 week = int("${WEEK}")
@@ -72,6 +73,10 @@ print("roster_ranks.csv refreshed.")
 print("Refreshing NBA schedule...")
 export_nba_schedule()
 print("nba_schedule.csv refreshed.")
+
+print("Refreshing week calendar...")
+export_week_calendar()
+print("week_calendar.csv refreshed.")
 PY
 
 echo "[refresh] done"

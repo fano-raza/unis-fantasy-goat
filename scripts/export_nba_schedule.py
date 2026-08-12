@@ -1,6 +1,8 @@
 """Exports the real NBA schedule (today onward, through the following NBA
-season's rough end) into Ref/nba_schedule.csv, for the Team page's Roster
-sub-view "games this week" feature.
+season's rough end -- or, with --backfill, every past fantasy season's
+real date range too) into Ref/nba_schedule.csv, for the Team page's
+Roster sub-view "games this week" feature and its per-season week
+selector.
 
 Uses ESPN's PUBLIC scoreboard API (site.api.espn.com) -- distinct from the
 espn_fr FANTASY library used elsewhere in this codebase, and unauthenticated
@@ -30,6 +32,7 @@ abbreviation would silently drop games for a quarter of the league.
 
 from __future__ import annotations
 
+import argparse
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -43,6 +46,10 @@ if str(REPO_ROOT) not in sys.path:
 
 from shared.atomic_write import atomic_write  # noqa: E402
 from shared.runtime_config import REF_DIR  # noqa: E402
+
+# Earliest date any fantasy season's week_calendar.csv can reference
+# (2019's ESPN-heuristic week 1) -- the --backfill starting point.
+EARLIEST_SEASON_DATE = date(2018, 10, 16)
 
 OUTPUT_PATH = REF_DIR / "nba_schedule.csv"
 COLUMNS = ["Date", "HomeTeam", "AwayTeam"]
@@ -93,10 +100,19 @@ def _fetch_range(start: date, end: date) -> list[dict]:
     data = resp.json()
 
     rows = []
+    skipped = 0
     for event in data.get("events", []):
         competitors = event["competitions"][0]["competitors"]
         home = next(c for c in competitors if c["homeAway"] == "home")
         away = next(c for c in competitors if c["homeAway"] == "away")
+        # Preseason exhibitions against non-NBA clubs (e.g. EuroLeague teams
+        # during October preseason tours) show up in this scoreboard but
+        # have no "abbreviation" field -- confirmed live (e.g. "Ulm at
+        # Portland Trail Blazers", Oct 2024). Not a real fantasy-relevant
+        # NBA-vs-NBA game, so skip rather than crash the whole backfill.
+        if "abbreviation" not in home["team"] or "abbreviation" not in away["team"]:
+            skipped += 1
+            continue
         rows.append(
             {
                 "Date": event["date"],
@@ -104,31 +120,60 @@ def _fetch_range(start: date, end: date) -> list[dict]:
                 "AwayTeam": _normalize(away["team"]["abbreviation"]),
             }
         )
+    if skipped:
+        print(f"  (skipped {skipped} non-NBA exhibition game(s))")
     return rows
 
 
-def main() -> None:
+def main(backfill: bool = False) -> None:
     today = date.today()
+    start_date = EARLIEST_SEASON_DATE if backfill else today
+    months = ((today + timedelta(days=30 * MONTHS_AHEAD)) - start_date).days // 30 + 1
+
     rows: list[dict] = []
-    seen_dates: set[str] = set()
-    for start, end in _month_ranges(today, MONTHS_AHEAD):
+    seen_keys: set[str] = set()
+    for start, end in _month_ranges(start_date, months):
         chunk_rows = _fetch_range(start, end)
         # ESPN's date-range chunking can overlap at boundaries -- dedupe by
         # the (Date, HomeTeam, AwayTeam) triple rather than trust the chunks
         # are cleanly disjoint.
         for row in chunk_rows:
             key = f"{row['Date']}|{row['HomeTeam']}|{row['AwayTeam']}"
-            if key in seen_dates:
+            if key in seen_keys:
                 continue
-            seen_dates.add(key)
+            seen_keys.add(key)
             rows.append(row)
         print(f"{start} - {end}: {len(chunk_rows)} games")
 
-    df = pd.DataFrame(rows, columns=COLUMNS).sort_values("Date").reset_index(drop=True)
+    new_df = pd.DataFrame(rows, columns=COLUMNS)
+
+    # Merge into any existing export rather than replacing it wholesale --
+    # a plain daily run (start_date=today) must not wipe out games from a
+    # past --backfill run that are now before "today," and a --backfill
+    # run must not lose whatever future games a previous daily run already
+    # pulled in. Dedupe on the same (Date, HomeTeam, AwayTeam) key.
+    if OUTPUT_PATH.exists():
+        existing_df = pd.read_csv(OUTPUT_PATH)
+        existing_df = existing_df[
+            ~existing_df.apply(lambda r: f"{r.Date}|{r.HomeTeam}|{r.AwayTeam}" in seen_keys, axis=1)
+        ]
+        combined = pd.concat([existing_df, new_df], ignore_index=True)
+    else:
+        combined = new_df
+
+    combined = combined.sort_values("Date").reset_index(drop=True)
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write(OUTPUT_PATH, lambda f: df.to_csv(f, index=False))
-    print(f"Wrote {len(df)} games to {OUTPUT_PATH}")
+    atomic_write(OUTPUT_PATH, lambda f: combined.to_csv(f, index=False))
+    print(f"Wrote {len(combined)} total games to {OUTPUT_PATH} ({len(new_df)} fetched this run)")
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--backfill",
+        action="store_true",
+        help="Pull every past fantasy season's real date range too (one-time setup), "
+        "not just today onward.",
+    )
+    args = parser.parse_args()
+    main(backfill=args.backfill)

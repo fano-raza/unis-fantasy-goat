@@ -59,6 +59,7 @@ class LeagueStore:
         self._player_stats_df: pd.DataFrame | None = None
         self._roster_ranks_df: pd.DataFrame | None = None
         self._nba_schedule_df: pd.DataFrame | None = None
+        self._week_calendar_df: pd.DataFrame | None = None
         self._category_history: dict | None = None
         self._rs_finish_history: dict | None = None
         self._po_lookup = self._load_po_real_matchup_lookup()
@@ -498,6 +499,31 @@ class LeagueStore:
             )
         self._roster_ranks_df = pd.read_csv(path)
         return self._roster_ranks_df
+
+    def week_calendar(self, year: int) -> list[dict]:
+        """Every fantasy week's real calendar date range (Week, StartDate,
+        EndDate) for one season, for the Team page's Roster sub-view week
+        selector. Reads scripts/export_week_calendar.py's precomputed
+        Ref/week_calendar.csv -- exact for Yahoo seasons (from their own
+        game_weeks API), heuristically derived for ESPN seasons and for
+        fantasy year 2024 specifically (see that script's docstring for
+        why -- no real date source exists for those)."""
+        df = self._ensure_week_calendar_df()
+        df = df[df["Year"] == year].sort_values("Week")
+        df = df.where(pd.notnull(df), None)
+        return df.to_dict(orient="records")
+
+    def _ensure_week_calendar_df(self) -> pd.DataFrame:
+        if self._week_calendar_df is not None:
+            return self._week_calendar_df
+        ref_dir = getattr(self.store, "ref_dir", None)
+        path = Path(ref_dir) / "week_calendar.csv" if ref_dir else None
+        if path is None or not path.exists():
+            raise ValueError(
+                "week_calendar.csv not found -- run scripts/export_week_calendar.py first"
+            )
+        self._week_calendar_df = pd.read_csv(path)
+        return self._week_calendar_df
 
     def nba_schedule(self, start_date: str, end_date: str) -> list[dict]:
         """Real NBA games (date/time, home/away team) in [start_date,

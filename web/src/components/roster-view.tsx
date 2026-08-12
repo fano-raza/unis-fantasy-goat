@@ -17,6 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
 import { LabeledSelect } from "@/components/labeled-select";
 import { SteppableSelect } from "@/components/steppable-select";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
@@ -24,14 +25,15 @@ import { cn } from "@/lib/utils";
 import {
   getNBASchedule,
   getRosterRanks,
+  getWeekCalendar,
   type LeagueMeta,
   type NBAScheduleGame,
   type RosterRankRow,
+  type WeekCalendarRow,
 } from "@/lib/api";
 import { useSelectedTeam } from "@/lib/use-selected-team";
 
 const EASTERN_TZ = "America/New_York";
-const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 // The America/New_York calendar date a game falls on -- NOT the raw UTC
 // date. A 10PM ET tip-off is already "tomorrow" in UTC (e.g.
@@ -43,23 +45,43 @@ function easternDateKey(isoDate: string): string {
   return new Date(isoDate).toLocaleDateString("en-CA", { timeZone: EASTERN_TZ });
 }
 
-// Monday-Sunday range containing today (Eastern time), as "YYYY-MM-DD"
-// bounds for the /league/nba_schedule request.
-function currentEasternWeek(): { start: string; end: string; days: string[] } {
-  const todayKey = new Date().toLocaleDateString("en-CA", { timeZone: EASTERN_TZ });
-  const today = new Date(`${todayKey}T12:00:00Z`); // noon UTC avoids DST-edge date-shift on the pure-date parse
-  const dow = today.getUTCDay(); // 0=Sun..6=Sat
-  const diffToMonday = dow === 0 ? -6 : 1 - dow;
-  const monday = new Date(today);
-  monday.setUTCDate(today.getUTCDate() + diffToMonday);
+function todayKey(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: EASTERN_TZ });
+}
 
+// Every "YYYY-MM-DD" date in [start, end] inclusive, both ISO date-only
+// strings. A fantasy week isn't always a clean 7-day Mon-Sun block --
+// ESPN-era week 1 runs Tue-Sun (6 days), and some seasons' playoff
+// matchup periods span 2 calendar weeks (14 days) -- so this scales to
+// whatever the real range is instead of assuming exactly 7 columns.
+function dateRange(start: string, end: string): string[] {
   const days: string[] = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(monday);
-    d.setUTCDate(monday.getUTCDate() + i);
-    days.push(d.toISOString().slice(0, 10));
+  const cursor = new Date(`${start}T12:00:00Z`); // noon UTC avoids DST-edge date-shift on pure-date parsing
+  const endDate = new Date(`${end}T12:00:00Z`);
+  while (cursor.getTime() <= endDate.getTime()) {
+    days.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
-  return { start: days[0], end: days[6], days };
+  return days;
+}
+
+function dayLabel(day: string): string {
+  const d = new Date(`${day}T12:00:00Z`);
+  const weekday = d.toLocaleDateString("en-US", { timeZone: "UTC", weekday: "short" });
+  const md = d.toLocaleDateString("en-US", { timeZone: "UTC", month: "numeric", day: "numeric" });
+  return `${weekday} ${md}`;
+}
+
+// The most recent week that's already started as of today, real time --
+// for the current season this lands on "this week" (or the final week,
+// once the season's over); for a past season every week has already
+// started, so this always resolves to that season's last week. One
+// formula, no isCurrentSeason branch needed.
+function latestWeek(weeks: WeekCalendarRow[]): number | null {
+  if (weeks.length === 0) return null;
+  const today = todayKey();
+  const started = weeks.filter((w) => w.StartDate <= today);
+  return started.length > 0 ? started[started.length - 1].Week : weeks[0].Week;
 }
 
 function average(values: number[]): number | null {
@@ -69,17 +91,17 @@ function average(values: number[]): number | null {
 export function RosterView({ meta }: { meta: LeagueMeta }) {
   const [year, setYear] = useState(meta.current_year);
   const [team, setTeam] = useSelectedTeam(meta.members[0] ?? "");
+  const [week, setWeek] = useState<number | null>(null);
   const [showFullWeek, setShowFullWeek] = useState(false);
 
   const [rosterRows, setRosterRows] = useState<RosterRankRow[]>([]);
   const [rosterLoading, setRosterLoading] = useState(true);
   const [rosterError, setRosterError] = useState<string | null>(null);
 
+  const [weekCalendar, setWeekCalendar] = useState<WeekCalendarRow[]>([]);
+
   const [scheduleGames, setScheduleGames] = useState<NBAScheduleGame[]>([]);
   const [scheduleLoading, setScheduleLoading] = useState(true);
-
-  const isCurrentSeason = year === meta.current_year;
-  const week = useMemo(() => currentEasternWeek(), []);
 
   useEffect(() => {
     setRosterLoading(true);
@@ -95,19 +117,34 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
       .finally(() => setRosterLoading(false));
   }, [year]);
 
-  // Real-world "this week" schedule is only meaningful for the current
-  // fantasy season -- a historical season's roster is a frozen snapshot
-  // from years ago, so "games this week" has no coherent meaning there.
+  // Week calendar is season-specific (real dates differ by year), so a
+  // year switch needs a fresh fetch. Default (and re-default, if the
+  // current week isn't in the new season's calendar) to that season's
+  // latest started week.
   useEffect(() => {
-    if (!isCurrentSeason) {
+    getWeekCalendar({ year }).then((rows) => {
+      setWeekCalendar(rows);
+      setWeek((w) => (w != null && rows.some((r) => r.Week === w) ? w : latestWeek(rows)));
+    });
+  }, [year]);
+
+  const selectedWeek = useMemo(() => weekCalendar.find((w) => w.Week === week) ?? null, [weekCalendar, week]);
+  const weekDays = useMemo(
+    () => (selectedWeek ? dateRange(selectedWeek.StartDate, selectedWeek.EndDate) : []),
+    [selectedWeek],
+  );
+
+  useEffect(() => {
+    if (!selectedWeek) {
+      setScheduleGames([]);
       setScheduleLoading(false);
       return;
     }
     setScheduleLoading(true);
-    getNBASchedule({ start_date: week.start, end_date: week.end })
+    getNBASchedule({ start_date: selectedWeek.StartDate, end_date: selectedWeek.EndDate })
       .then(setScheduleGames)
       .finally(() => setScheduleLoading(false));
-  }, [isCurrentSeason, week.start, week.end]);
+  }, [selectedWeek]);
 
   const teamRoster = useMemo(
     () => rosterRows.filter((r) => r.FantasyTeam === team).sort((a, b) => a.Rank - b.Rank),
@@ -140,15 +177,17 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
   }, [scheduleGames]);
 
   const now = Date.now();
+  const today = todayKey();
+  const weekOptions = useMemo(() => weekCalendar.map((w) => w.Week), [weekCalendar]);
+  const atLatestWeek = week != null && week === latestWeek(weekCalendar);
+  const colSpan = showFullWeek ? Math.max(weekDays.length, 1) : 1;
 
   return (
     <div className="flex flex-col gap-4">
       <Card>
         <CardHeader>
           <CardTitle>Roster</CardTitle>
-          <CardDescription>
-            A team&apos;s full roster, player ranks, and (for the current season) each player&apos;s games this week
-          </CardDescription>
+          <CardDescription>A team&apos;s full roster, player ranks, and each player&apos;s games for the selected week</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-6">
           <SteppableSelect label="Season" value={year} onValueChange={setYear} options={meta.years} />
@@ -158,13 +197,25 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
             onValueChange={setTeam}
             options={meta.members.map((m) => ({ value: m, label: m }))}
           />
-          {isCurrentSeason && (
-            <label className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
-              <span className="text-muted-foreground">This Week</span>
-              <Switch checked={showFullWeek} onCheckedChange={setShowFullWeek} />
-              <span className="text-muted-foreground">Full Week Grid</span>
-            </label>
+          {weekOptions.length > 0 && week != null && (
+            <div className="flex items-center gap-2">
+              <SteppableSelect label="Week" value={week} onValueChange={setWeek} options={weekOptions} />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={atLatestWeek}
+                onClick={() => setWeek(latestWeek(weekCalendar))}
+              >
+                Latest Week
+              </Button>
+            </div>
           )}
+          <label className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
+            <span className="text-muted-foreground">Games Left</span>
+            <Switch checked={showFullWeek} onCheckedChange={setShowFullWeek} />
+            <span className="text-muted-foreground">Full Week Grid</span>
+          </label>
         </CardContent>
       </Card>
 
@@ -175,10 +226,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
           ) : rosterError ? (
             <p className="text-sm text-muted-foreground">No roster data for {year} ({rosterError}).</p>
           ) : teamRoster.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No roster data for {team} in {year}
-              {!isCurrentSeason ? "" : " yet"}.
-            </p>
+            <p className="text-sm text-muted-foreground">No roster data for {team} in {year}.</p>
           ) : (
             <Table>
               <TableHeader>
@@ -186,16 +234,13 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                   <TableHead>Player</TableHead>
                   <TableHead>NBA Team</TableHead>
                   <TableHead className="text-right">Rank</TableHead>
-                  {isCurrentSeason &&
-                    (showFullWeek ? (
-                      DAY_LABELS.map((d) => (
-                        <TableHead key={d} className="text-center">
-                          {d}
+                  {showFullWeek
+                    ? weekDays.map((d) => (
+                        <TableHead key={d} className={cn("text-center", d < today && "text-muted-foreground/50")}>
+                          {dayLabel(d)}
                         </TableHead>
                       ))
-                    ) : (
-                      <TableHead className="text-right">Games Left</TableHead>
-                    ))}
+                    : <TableHead className="text-right">Games Left</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -206,9 +251,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                   <TableCell className="text-right font-mono font-extrabold tabular-nums text-primary">
                     {teamAvgRank !== null ? teamAvgRank.toFixed(1) : "—"}
                   </TableCell>
-                  {isCurrentSeason && (
-                    <TableCell colSpan={showFullWeek ? 7 : 1} />
-                  )}
+                  <TableCell colSpan={colSpan} />
                 </TableRow>
                 {teamRoster.map((row) => {
                   const games = gamesByNBATeam.get(row.NBATeam) ?? [];
@@ -220,26 +263,25 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                       <TableCell className="font-sans font-semibold">{row.Player}</TableCell>
                       <TableCell className="text-muted-foreground">{row.NBATeam}</TableCell>
                       <TableCell className="text-right font-mono tabular-nums">{row.Rank}</TableCell>
-                      {isCurrentSeason &&
-                        (scheduleLoading ? (
-                          <TableCell colSpan={showFullWeek ? 7 : 1} className="text-center text-muted-foreground">
-                            <LoadingBasketballs />
+                      {scheduleLoading ? (
+                        <TableCell colSpan={colSpan} className="text-center text-muted-foreground">
+                          <LoadingBasketballs />
+                        </TableCell>
+                      ) : showFullWeek ? (
+                        weekDays.map((day) => (
+                          <TableCell key={day} className="text-center">
+                            {gameDaysThisWeek.has(day) ? (
+                              <span className={cn("text-win", day < today && "opacity-40")}>●</span>
+                            ) : (
+                              <span className="text-muted-foreground/30">—</span>
+                            )}
                           </TableCell>
-                        ) : showFullWeek ? (
-                          week.days.map((day) => (
-                            <TableCell key={day} className="text-center">
-                              {gameDaysThisWeek.has(day) ? (
-                                <span className="text-win">●</span>
-                              ) : (
-                                <span className="text-muted-foreground/30">—</span>
-                              )}
-                            </TableCell>
-                          ))
-                        ) : (
-                          <TableCell className="text-right font-mono tabular-nums">
-                            {remaining}/{totalThisWeek}
-                          </TableCell>
-                        ))}
+                        ))
+                      ) : (
+                        <TableCell className="text-right font-mono tabular-nums">
+                          {remaining}/{totalThisWeek}
+                        </TableCell>
+                      )}
                     </TableRow>
                   );
                 })}

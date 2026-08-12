@@ -115,6 +115,10 @@ class RosterRanksRequest(BaseModel):
     year: int
 
 
+class WeekCalendarRequest(BaseModel):
+    year: int
+
+
 class NBAScheduleRequest(BaseModel):
     start_date: str  # "YYYY-MM-DD"
     end_date: str  # "YYYY-MM-DD"
