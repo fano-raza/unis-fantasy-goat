@@ -17,10 +17,12 @@ from .schemas import (
     HeadToHeadRequest,
     LeadersRequest,
     MetaResponse,
+    NBAScheduleRequest,
     QueryRequest,
     QueryResponse,
     DraftPicksRequest,
     RecordsRequest,
+    RosterRanksRequest,
     ScheduleSwapRequest,
     SeasonLeadersRequest,
     StandingsRequest,
@@ -295,6 +297,22 @@ def league_analysis_rows(req: AggregateRequest) -> list[dict]:
 @app.post("/league/team_summary")
 def league_team_summary(req: TeamSummaryRequest) -> list[dict]:
     return league_store.team_summary(teams=req.teams)
+
+
+@app.post("/league/roster_ranks")
+def league_roster_ranks(req: RosterRanksRequest) -> list[dict]:
+    try:
+        return league_store.roster_ranks(req.year)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/league/nba_schedule")
+def league_nba_schedule(req: NBAScheduleRequest) -> list[dict]:
+    try:
+        return league_store.nba_schedule(req.start_date, req.end_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post("/league/standings")

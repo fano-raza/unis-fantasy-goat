@@ -111,6 +111,15 @@ class TeamSummaryRequest(BaseModel):
     teams: list[str] | None = None
 
 
+class RosterRanksRequest(BaseModel):
+    year: int
+
+
+class NBAScheduleRequest(BaseModel):
+    start_date: str  # "YYYY-MM-DD"
+    end_date: str  # "YYYY-MM-DD"
+
+
 class DraftPicksRequest(BaseModel):
     years: list[int] | None = None
     teams: list[str] | None = None

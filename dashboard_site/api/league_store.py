@@ -57,6 +57,8 @@ class LeagueStore:
         self._weekly_df: pd.DataFrame | None = None
         self._team_summary_df: pd.DataFrame | None = None
         self._player_stats_df: pd.DataFrame | None = None
+        self._roster_ranks_df: pd.DataFrame | None = None
+        self._nba_schedule_df: pd.DataFrame | None = None
         self._category_history: dict | None = None
         self._rs_finish_history: dict | None = None
         self._po_lookup = self._load_po_real_matchup_lookup()
@@ -470,6 +472,60 @@ class LeagueStore:
             )
         self._player_stats_df = pd.read_csv(path)
         return self._player_stats_df
+
+    def roster_ranks(self, year: int) -> list[dict]:
+        """Every fantasy team's roster (player, rank, real NBA team) for one
+        season, for the Team page's Roster sub-view. Reads
+        scripts/export_roster_ranks.py's precomputed Ref/roster_ranks.csv
+        directly (needs Models/espn_fr/yfpy_fr, same reasoning as
+        team_summary/player_stats above). Bulk per-year payload, not
+        per-team -- average-rank-per-team and the team-ordered list are
+        cheap to compute client-side from one fetch, same pattern already
+        used for analysis_rows."""
+        df = self._ensure_roster_ranks_df()
+        df = df[df["Year"] == year]
+        df = df.where(pd.notnull(df), None)
+        return df.to_dict(orient="records")
+
+    def _ensure_roster_ranks_df(self) -> pd.DataFrame:
+        if self._roster_ranks_df is not None:
+            return self._roster_ranks_df
+        ref_dir = getattr(self.store, "ref_dir", None)
+        path = Path(ref_dir) / "roster_ranks.csv" if ref_dir else None
+        if path is None or not path.exists():
+            raise ValueError(
+                "roster_ranks.csv not found -- run scripts/export_roster_ranks.py first"
+            )
+        self._roster_ranks_df = pd.read_csv(path)
+        return self._roster_ranks_df
+
+    def nba_schedule(self, start_date: str, end_date: str) -> list[dict]:
+        """Real NBA games (date/time, home/away team) in [start_date,
+        end_date] (inclusive, "YYYY-MM-DD"), for the Team page's Roster
+        sub-view "games this week" feature. Reads
+        scripts/export_nba_schedule.py's precomputed Ref/nba_schedule.csv --
+        a plain network call to ESPN's public scoreboard API, unrelated to
+        this league's own data, computed offline same as player_stats."""
+        df = self._ensure_nba_schedule_df()
+        # Date is stored as a full ISO datetime string (e.g.
+        # "2026-10-03T23:00Z") -- string comparison against "YYYY-MM-DD"
+        # bounds works correctly since ISO8601 sorts lexicographically, and
+        # avoids a pandas datetime dtype round-trip through JSON.
+        df = df[(df["Date"] >= start_date) & (df["Date"] <= end_date + "T23:59Z")]
+        df = df.where(pd.notnull(df), None)
+        return df.to_dict(orient="records")
+
+    def _ensure_nba_schedule_df(self) -> pd.DataFrame:
+        if self._nba_schedule_df is not None:
+            return self._nba_schedule_df
+        ref_dir = getattr(self.store, "ref_dir", None)
+        path = Path(ref_dir) / "nba_schedule.csv" if ref_dir else None
+        if path is None or not path.exists():
+            raise ValueError(
+                "nba_schedule.csv not found -- run scripts/export_nba_schedule.py first"
+            )
+        self._nba_schedule_df = pd.read_csv(path)
+        return self._nba_schedule_df
 
     def playoff_brackets(self) -> dict:
         """Per-year playoff bracket structure (rounds, matchups, seeding,
