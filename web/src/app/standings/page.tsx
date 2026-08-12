@@ -37,6 +37,7 @@ import {
 import { LabeledSelect, NO_FOCUS_TEAM } from "@/components/labeled-select";
 import { SteppableSelect } from "@/components/steppable-select";
 import { ArrowToggle } from "@/components/arrow-toggle";
+import { useSelectedTeam } from "@/lib/use-selected-team";
 import { ViewTabs } from "@/components/view-tabs";
 import { SourceLastUpdated } from "@/components/source-last-updated";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
@@ -234,7 +235,7 @@ function StandingsPageInner() {
   const [ratingsStatMode, setRatingsStatMode] = useState<"totals" | "averages">("totals");
   const [ratingsRs, setRatingsRs] = useState(true);
   const [ratingsPo, setRatingsPo] = useState(true);
-  const [ratingsFocusTeam, setRatingsFocusTeam] = useState<string>(NO_FOCUS_TEAM);
+  const [ratingsFocusTeam, setRatingsFocusTeam, ratingsFocusTeamHydrated] = useSelectedTeam(NO_FOCUS_TEAM);
   const [ratingsDisplay, setRatingsDisplay] = useState<"table" | "leaders">("table");
   const [ratingsRows, setRatingsRows] = useState<AggregateRow[]>([]);
   const [ratingsLeaders, setRatingsLeaders] = useState<SeasonLeadersResponse | null>(null);
@@ -387,11 +388,12 @@ function StandingsPageInner() {
   // Default (and re-default, if the current focus team disappears from a
   // new filter's rows) to whichever team ranks #1.
   useEffect(() => {
+    if (!ratingsFocusTeamHydrated || ratingsRows.length === 0) return;
     const teamsShown = new Set(ratingsRows.map((r) => r.team));
     if (ratingsFocusTeam !== NO_FOCUS_TEAM && teamsShown.has(ratingsFocusTeam)) return;
     const topTeam = ratingsRows.find((r) => r.rank === 1);
     setRatingsFocusTeam(topTeam?.team ?? NO_FOCUS_TEAM);
-  }, [ratingsRows, ratingsFocusTeam]);
+  }, [ratingsRows, ratingsFocusTeam, ratingsFocusTeamHydrated]);
 
   // Line-graph data: mirrors the 1v1/League Wins card's own WL/Cats toggle,
   // no separate control (per the plan's clarified scope).

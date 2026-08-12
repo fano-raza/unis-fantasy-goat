@@ -38,6 +38,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { StatTable } from "@/components/stat-table";
 import { ArrowToggle } from "@/components/arrow-toggle";
+import { ViewTabs } from "@/components/view-tabs";
 import { SourceLastUpdated } from "@/components/source-last-updated";
 import { Podium, Star, Trophy, X } from "lucide-react";
 import {
@@ -76,6 +77,7 @@ import { TeamBadges } from "@/components/team-badges";
 import { BadgeDrawer } from "@/components/badge-drawer";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { useElementHeight } from "@/lib/use-element-height";
+import { SELECTED_TEAM_STORAGE_KEY } from "@/lib/use-selected-team";
 
 type View = "profile" | "comparison" | "roster";
 const VIEW_OPTIONS = [
@@ -132,7 +134,7 @@ function rankForCategory(cat: Category, rows: AggregateRow[], team: string): num
   return better + 1;
 }
 
-const SELECTED_TEAM_KEY = "profile-selected-team";
+const SELECTED_TEAM_KEY = SELECTED_TEAM_STORAGE_KEY;
 const SELECTED_TEAMS_KEY = "comparison-selected-teams";
 const MOBILE_TEAM_CAP = 2;
 const DESKTOP_TEAM_CAP = 4;
@@ -589,7 +591,12 @@ function ProfilePageInner() {
         ref={stickyBarRef}
         className="sticky top-0 z-30 flex flex-wrap items-center gap-3 rounded-sm border border-border bg-card px-3 py-2 shadow-sm"
       >
-        <ArrowToggle options={VIEW_OPTIONS} value={view} onChange={handleViewChange} />
+        <div className="sm:hidden">
+          <ArrowToggle options={VIEW_OPTIONS} value={view} onChange={handleViewChange} />
+        </div>
+        <div className="hidden sm:flex">
+          <ViewTabs options={VIEW_OPTIONS} value={view} onChange={handleViewChange} />
+        </div>
 
         {view === "profile" ? (
           <>
@@ -609,7 +616,7 @@ function ProfilePageInner() {
               </SelectContent>
             </Select>
           </>
-        ) : (
+        ) : view === "comparison" ? (
           <div className="flex flex-wrap items-center gap-2">
             {visibleSelected.map((t) => (
               <span
@@ -655,7 +662,7 @@ function ProfilePageInner() {
               </Popover>
             )}
           </div>
-        )}
+        ) : null}
 
         <div className="ml-auto">
           <SourceLastUpdated source="team_summary" />

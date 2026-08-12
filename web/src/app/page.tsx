@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { StatTable } from "@/components/stat-table";
 import { LabeledSelect, NO_FOCUS_TEAM } from "@/components/labeled-select";
 import { SteppableSelect } from "@/components/steppable-select";
+import { useSelectedTeam } from "@/lib/use-selected-team";
 import { SourceLastUpdated } from "@/components/source-last-updated";
 import {
   API_BASE_URL,
@@ -49,7 +50,7 @@ export default function WeeklyStatsPage() {
   const [metaError, setMetaError] = useState<unknown>(null);
   const [year, setYear] = useState<number | null>(null);
   const [week, setWeek] = useState<number | null>(null);
-  const [focusTeam, setFocusTeam] = useState<string>(NO_FOCUS_TEAM);
+  const [focusTeam, setFocusTeam, focusTeamHydrated] = useSelectedTeam(NO_FOCUS_TEAM);
   const [mode, setMode] = useState<"stat" | "rating">("stat");
   const [rows, setRows] = useState<WeekRow[]>([]);
   const [rowsError, setRowsError] = useState<string | null>(null);
@@ -90,11 +91,12 @@ export default function WeeklyStatsPage() {
   // new week's table) to whichever team displays as #1. Left alone once the
   // user manually picks a team that's still shown.
   useEffect(() => {
+    if (!focusTeamHydrated || rows.length === 0) return;
     const teamsShown = new Set(rows.map((r) => r.team));
     if (focusTeam !== NO_FOCUS_TEAM && teamsShown.has(focusTeam)) return;
     const topTeam = rows.find((r) => displayRanks.get(r.team) === 1);
     setFocusTeam(topTeam?.team ?? NO_FOCUS_TEAM);
-  }, [rows, displayRanks, focusTeam]);
+  }, [rows, displayRanks, focusTeam, focusTeamHydrated]);
 
   const weekOptions = useMemo(() => {
     if (!meta || year == null) return [];

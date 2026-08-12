@@ -17,12 +17,13 @@ import { SteppableSelect } from "@/components/steppable-select";
 import { SourceLastUpdated } from "@/components/source-last-updated";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { getAverages, getLeagueMeta, type AggregateRow, type LeagueMeta } from "@/lib/api";
+import { useSelectedTeam } from "@/lib/use-selected-team";
 
 export default function UltraPage() {
   const [meta, setMeta] = useState<LeagueMeta | null>(null);
   const [year, setYear] = useState<number | null>(null);
   const [weeks, setWeeks] = useState<number[]>([]);
-  const [focusTeam, setFocusTeam] = useState<string>(NO_FOCUS_TEAM);
+  const [focusTeam, setFocusTeam, focusTeamHydrated] = useSelectedTeam(NO_FOCUS_TEAM);
   const [rows, setRows] = useState<AggregateRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -71,11 +72,12 @@ export default function UltraPage() {
   // Default (and re-default, if the current focus team disappears from a
   // new year/week selection) to whichever team ranks #1.
   useEffect(() => {
+    if (!focusTeamHydrated || rows.length === 0) return;
     const teamsShown = new Set(rows.map((r) => r.team));
     if (focusTeam !== NO_FOCUS_TEAM && teamsShown.has(focusTeam)) return;
     const topTeam = rows.find((r) => r.rank === 1);
     setFocusTeam(topTeam?.team ?? NO_FOCUS_TEAM);
-  }, [rows, focusTeam]);
+  }, [rows, focusTeam, focusTeamHydrated]);
 
   if (!meta || year == null) return <LoadingBasketballs label="Loading" />;
 

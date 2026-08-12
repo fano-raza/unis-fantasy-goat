@@ -28,6 +28,7 @@ import {
   type NBAScheduleGame,
   type RosterRankRow,
 } from "@/lib/api";
+import { useSelectedTeam } from "@/lib/use-selected-team";
 
 const EASTERN_TZ = "America/New_York";
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -67,7 +68,7 @@ function average(values: number[]): number | null {
 
 export function RosterView({ meta }: { meta: LeagueMeta }) {
   const [year, setYear] = useState(meta.current_year);
-  const [team, setTeam] = useState(meta.members[0] ?? "");
+  const [team, setTeam] = useSelectedTeam(meta.members[0] ?? "");
   const [showFullWeek, setShowFullWeek] = useState(false);
 
   const [rosterRows, setRosterRows] = useState<RosterRankRow[]>([]);

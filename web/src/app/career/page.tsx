@@ -16,6 +16,7 @@ import { FilterDrawer } from "@/components/filter-drawer";
 import { LabeledSelect, NO_FOCUS_TEAM } from "@/components/labeled-select";
 import { SourceLastUpdated } from "@/components/source-last-updated";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
+import { useSelectedTeam } from "@/lib/use-selected-team";
 import {
   getAverages,
   getLeagueMeta,
@@ -28,7 +29,7 @@ export default function CareerStatsPage() {
   const [meta, setMeta] = useState<LeagueMeta | null>(null);
   const [mode, setMode] = useState<"stat" | "rating">("stat");
   const [statMode, setStatMode] = useState<"totals" | "averages">("totals");
-  const [focusTeam, setFocusTeam] = useState<string>(NO_FOCUS_TEAM);
+  const [focusTeam, setFocusTeam, focusTeamHydrated] = useSelectedTeam(NO_FOCUS_TEAM);
   const [filter, setFilter] = useState<FilterPanelValue | null>(null);
   const [rows, setRows] = useState<AggregateRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -98,11 +99,12 @@ export default function CareerStatsPage() {
   // already a plain full-league ranking (no bracket-exclusion gap like
   // Weekly Stats' week_rank), so it can be used directly.
   useEffect(() => {
+    if (!focusTeamHydrated || rows.length === 0) return;
     const teamsShown = new Set(rows.map((r) => r.team));
     if (focusTeam !== NO_FOCUS_TEAM && teamsShown.has(focusTeam)) return;
     const topTeam = rows.find((r) => r.rank === 1);
     setFocusTeam(topTeam?.team ?? NO_FOCUS_TEAM);
-  }, [rows, focusTeam]);
+  }, [rows, focusTeam, focusTeamHydrated]);
 
   if (!meta || !filter) return <LoadingBasketballs label="Loading" />;
 

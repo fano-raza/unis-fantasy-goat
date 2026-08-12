@@ -32,6 +32,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ChecklistGroup } from "@/components/filter-panel";
 import { GenericFilterDrawer } from "@/components/generic-filter-drawer";
 import { ArrowToggle } from "@/components/arrow-toggle";
+import { ViewTabs } from "@/components/view-tabs";
 import { SourceLastUpdated } from "@/components/source-last-updated";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
 import {
@@ -67,7 +68,12 @@ export default function PlayersPage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="sticky top-0 z-30 flex items-center gap-3 rounded-sm border border-border bg-card px-3 py-2 shadow-sm">
-        <ArrowToggle options={VIEW_OPTIONS} value={view} onChange={(v) => setView(v as View)} />
+        <div className="sm:hidden">
+          <ArrowToggle options={VIEW_OPTIONS} value={view} onChange={(v) => setView(v as View)} />
+        </div>
+        <div className="hidden sm:flex">
+          <ViewTabs options={VIEW_OPTIONS} value={view} onChange={(v) => setView(v as View)} />
+        </div>
       </div>
       {view === "draft" ? <DraftHub meta={meta} /> : <TradeHub />}
     </div>
