@@ -324,4 +324,31 @@ def run_bot() -> None:
             except Exception as exc:
                 print(f"Failed to react to feature request confirmation: {exc}")
 
+    @bot.slash_command(
+        name="manual-push",
+        description="Immediately run the Top 6 role sync (for testing -- doesn't wait for Monday).",
+        # Restricted to members who already have Manage Roles (mirrors the
+        # permission the bot itself needs for this) -- this triggers a real
+        # server-wide role reassignment, not a read-only lookup like the
+        # other commands in this file, so it isn't left open to everyone.
+        default_member_permissions=disnake.Permissions(manage_roles=True),
+        **slash_kwargs,
+    )
+    async def manual_push(inter: disnake.ApplicationCommandInteraction):
+        # Deferred + ephemeral: the sync fetches every linked member one at
+        # a time and can take longer than Discord's 3s interaction window,
+        # and the result (who got added/removed) isn't meant to be a public
+        # announcement -- same "silent" design as the scheduled run itself,
+        # just visible to whoever triggered it instead of no one.
+        await inter.response.defer(ephemeral=True)
+        try:
+            await run_top6_role_update(bot)
+            await inter.followup.send(
+                "✅ Top 6 role sync ran -- check the bot's console/logs for exactly who changed.",
+                ephemeral=True,
+            )
+        except Exception as exc:
+            print(f"/manual-push failed: {exc}")
+            await inter.followup.send(f"❌ Top 6 role sync failed: {exc}", ephemeral=True)
+
     bot.run(token)

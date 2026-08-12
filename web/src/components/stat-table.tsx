@@ -50,18 +50,23 @@ interface StatTableProps {
   stickyHeaderOffset?: number;
   // Ultra page only -- adds a yellow ring around a non-focus row's category
   // cell when its value is within 10% of the focus team's value in that
-  // same category, on top of (not instead of) the existing green/red
-  // comparison background. Off by default, unaffected elsewhere.
+  // same category, where "10%" is scaled by that category's own value
+  // range across the displayed rows (max - min), not the focus team's raw
+  // value -- see isCloseValue's comment for why. On top of (not instead
+  // of) the existing green/red comparison background. Off by default,
+  // unaffected elsewhere.
   highlightClose?: boolean;
 }
 
-// Within 10% of the focus team's own value in that category, relative to
-// the focus team's value -- 0 is treated as "not close" to anything but 0
-// itself, so a real 0 baseline doesn't divide-by-zero into a false match.
-function isCloseValue(value: number | undefined, baseline: number | undefined): boolean {
-  if (value === undefined || baseline === undefined) return false;
-  if (baseline === 0) return value === 0;
-  return Math.abs(value - baseline) <= 0.1 * Math.abs(baseline);
+// Within 10% of that category's RANGE across every row currently shown in
+// the table (max - min for the active stat/rating mode) -- not 10% of the
+// focus team's own value, which scaled the threshold unevenly across
+// categories with very different typical magnitudes (e.g. PTS vs. FT%). A
+// flat range of 0 (every row identical in this category) means nothing can
+// be meaningfully "close", so nothing highlights.
+function isCloseValue(value: number | undefined, baseline: number | undefined, range: number): boolean {
+  if (value === undefined || baseline === undefined || range <= 0) return false;
+  return Math.abs(value - baseline) <= 0.1 * range;
 }
 
 function allPlayRecord(
@@ -162,6 +167,21 @@ export function StatTable({
   const headerStickyStyle: CSSProperties | undefined = headerSticky ? { top: stickyHeaderOffset } : undefined;
   const [sort, setSort] = useState<SortState | null>(null);
   const baseline = focusTeam ? rows.find((r) => r.team === focusTeam) : undefined;
+
+  // Per-category max-min across every row currently in the table (in the
+  // active stat/rating mode), for isCloseValue's threshold. Sorting only
+  // reorders `rows`, never changes which rows are present, so this doesn't
+  // need to depend on `sortedRows` below.
+  const categoryRanges = useMemo(() => {
+    const ranges = {} as Record<Category, number>;
+    for (const cat of MAIN_CATS) {
+      const values = rows
+        .map((r) => (mode === "stat" ? r.stats[cat] : r.ratings[cat]))
+        .filter((v): v is number => v !== undefined);
+      ranges[cat] = values.length ? Math.max(...values) - Math.min(...values) : 0;
+    }
+    return ranges;
+  }, [rows, mode]);
 
   // Measures the first row's actual rendered Team-cell width and positions
   // the sticky Score column there -- see the TEAM_COL_WIDTH comment above
@@ -356,7 +376,10 @@ export function StatTable({
                     ? allPlayRecord(cat, baseline, rows)
                     : undefined;
                 const close =
-                  highlightClose && baseSource && !isFocus && isCloseValue(value, baseSource[cat]);
+                  highlightClose &&
+                  baseSource &&
+                  !isFocus &&
+                  isCloseValue(value, baseSource[cat], categoryRanges[cat]);
                 return (
                   <TableCell
                     key={cat}
