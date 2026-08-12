@@ -20,6 +20,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from Models.League import fantasyLeague  # noqa: E402
 from Models.team_profile import build_team_summary_df  # noqa: E402
+from shared.atomic_write import atomic_write  # noqa: E402
 from shared.runtime_config import REF_DIR  # noqa: E402
 
 OUTPUT_PATH = REF_DIR / "team_summary.csv"
@@ -30,7 +31,7 @@ def main() -> None:
     df = build_team_summary_df(reuse_managers={tm.name: tm for tm in lg.historicalMembers})
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(OUTPUT_PATH, index=False)
+    atomic_write(OUTPUT_PATH, lambda f: df.to_csv(f, index=False))
 
     print(f"Wrote {len(df)} team summary rows to {OUTPUT_PATH}")
 

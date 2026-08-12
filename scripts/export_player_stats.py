@@ -49,6 +49,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from constants import currentYear, espn_leagueID, espn_s2, espn_swid  # noqa: E402
 from espn_fr.basketball.league import League  # noqa: E402
+from shared.atomic_write import atomic_write  # noqa: E402
 from shared.runtime_config import REF_DIR  # noqa: E402
 
 OUTPUT_PATH = REF_DIR / "player_stats.csv"
@@ -151,7 +152,7 @@ def main() -> None:
 
     df = pd.DataFrame(rows)
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(OUTPUT_PATH, index=False)
+    atomic_write(OUTPUT_PATH, lambda f: df.to_csv(f, index=False))
 
     print(f"Wrote {len(df)} player stat rows to {OUTPUT_PATH}")
 

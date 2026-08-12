@@ -325,9 +325,13 @@ function StandingsPageInner() {
           setStandings(current);
           setPreviousStandings(prior);
           setHistory(hist);
-          setError(null);
         })
         .catch((err) => {
+          // Deliberately doesn't touch ratingsDone's state -- error is
+          // cleared once, at the top of this effect (see setError(null)
+          // above), not per-branch here. Two independent success/failure
+          // outcomes racing to call setError(null) on their own success
+          // could otherwise stomp the *other* branch's genuine error.
           setStandings(null);
           setPreviousStandings(null);
           setHistory(null);
@@ -351,12 +355,25 @@ function StandingsPageInner() {
         priorRatingsReq ? ratingsFetcher(priorRatingsReq).catch(() => null) : Promise.resolve(null),
         getSeasonLeaders({ ...ratingsReq, mode: ratingsStatMode }),
         getAnalysisRows(ratingsReq),
-      ]).then(([rows, priorRows, leaders, analysisRows]) => {
-        const priorRanks = new Map((priorRows ?? []).map((r) => [r.team, r.rank]));
-        setRatingsRows(rows.map((r) => ({ ...r, previousRank: priorRanks.get(r.team) ?? null })));
-        setRatingsLeaders(leaders);
-        setRatingsHistory(analysisRows);
-      });
+      ])
+        .then(([rows, priorRows, leaders, analysisRows]) => {
+          const priorRanks = new Map((priorRows ?? []).map((r) => [r.team, r.rank]));
+          setRatingsRows(rows.map((r) => ({ ...r, previousRank: priorRanks.get(r.team) ?? null })));
+          setRatingsLeaders(leaders);
+          setRatingsHistory(analysisRows);
+        })
+        .catch((err) => {
+          // Previously uncaught -- a ratings-specific failure left stale
+          // rows/leaders on screen with isLoading resolved to false and no
+          // error shown at all, which read as silently wrong rather than
+          // failed. Now surfaces through the same `error` state the
+          // standings half already uses (see the identical comment on that
+          // branch for why success here doesn't also call setError(null)).
+          setRatingsRows([]);
+          setRatingsLeaders(null);
+          setRatingsHistory([]);
+          setError(err instanceof Error ? err.message : String(err));
+        });
 
       Promise.allSettled([standingsDone, ratingsDone]).then(() => setIsLoading(false));
     }, 200);
@@ -447,17 +464,7 @@ function StandingsPageInner() {
         </CardContent>
       </Card>
 
-      {error ? (
-        <Card>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">No data for the current filters ({error}).</p>
-          </CardContent>
-        </Card>
-      ) : isLoading || !standings ? (
-        <LoadingBasketballs label="Loading standings" />
-      ) : (
-        <>
-          {view === "1v1" && (
+      {view === "1v1" && (
             <>
               <Card>
                 <CardHeader>
@@ -479,7 +486,14 @@ function StandingsPageInner() {
                     />
                     <span className="text-muted-foreground">Cats</span>
                   </label>
-                  {showPlayoffTree ? (
+                  {/* Controls above stay interactive regardless of load state -- a
+                      failed/loading fetch only swaps out the data area below, so a
+                      bad filter combination can always be changed back. */}
+                  {error ? (
+                    <p className="text-sm text-muted-foreground">No data for the current filters ({error}).</p>
+                  ) : isLoading || !standings ? (
+                    <LoadingBasketballs label="Loading standings" />
+                  ) : showPlayoffTree ? (
                     <PlayoffTree bracket={brackets[String(year)]} year={year} />
                   ) : (
                     <StandingsTable
@@ -513,22 +527,30 @@ function StandingsPageInner() {
                   />
                   <span className="text-muted-foreground">Cats</span>
                 </label>
-                <StandingsTable
-                  rows={leagueMode === "wl" ? standings.league_wl : standings.league_cats}
-                  previousRanks={
-                    previousStandings
-                      ? toRankMap(
-                          leagueMode === "wl" ? previousStandings.league_wl : previousStandings.league_cats,
-                        )
-                      : undefined
-                  }
-                />
+                {error ? (
+                  <p className="text-sm text-muted-foreground">No data for the current filters ({error}).</p>
+                ) : isLoading || !standings ? (
+                  <LoadingBasketballs label="Loading standings" />
+                ) : (
+                  <StandingsTable
+                    rows={leagueMode === "wl" ? standings.league_wl : standings.league_cats}
+                    previousRanks={
+                      previousStandings
+                        ? toRankMap(
+                            leagueMode === "wl" ? previousStandings.league_wl : previousStandings.league_cats,
+                          )
+                        : undefined
+                    }
+                  />
+                )}
               </CardContent>
             </Card>
           )}
 
           {(view === "1v1" || view === "league_wins") &&
             showGraph &&
+            !error &&
+            !isLoading &&
             historyChartData.length > 0 && (
               <Card>
                 <CardHeader>
@@ -652,7 +674,13 @@ function StandingsPageInner() {
                     />
                   </div>
 
-                  {ratingsDisplay === "table" ? (
+                  {/* Controls above stay interactive regardless of load state -- see
+                      the identical comment on the 1v1 view's card for why. */}
+                  {error ? (
+                    <p className="text-sm text-muted-foreground">No data for the current filters ({error}).</p>
+                  ) : isLoading ? (
+                    <LoadingBasketballs label="Loading standings" />
+                  ) : ratingsDisplay === "table" ? (
                     <StatTable
                       rows={ratingsRows}
                       mode="stat"
@@ -694,7 +722,7 @@ function StandingsPageInner() {
                 </CardContent>
               </Card>
 
-              {showGraph && ratingsChartData.length > 0 && (
+              {showGraph && !error && !isLoading && ratingsChartData.length > 0 && (
                 <Card>
                   <CardHeader>
                     <CardTitle>Rating Over Time</CardTitle>
@@ -768,8 +796,6 @@ function StandingsPageInner() {
               )}
             </>
           )}
-        </>
-      )}
     </div>
   );
 }

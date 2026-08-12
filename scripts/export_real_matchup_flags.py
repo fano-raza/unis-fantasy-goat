@@ -25,6 +25,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from Models.League import fantasyLeague  # noqa: E402
+from shared.atomic_write import atomic_write  # noqa: E402
 from shared.runtime_config import REF_DIR  # noqa: E402
 
 OUTPUT_PATH = REF_DIR / "real_matchup_flags.csv"
@@ -44,12 +45,16 @@ def main() -> None:
         .max()
     )
 
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(OUTPUT_PATH, "w", newline="") as f:
+    sorted_po = po.sort_values(["Year", "Week", "Team"])
+
+    def _write(f) -> None:
         writer = csv.writer(f)
         writer.writerow(["Year", "Week", "Season", "Team", "real_matchup"])
-        for _, row in po.sort_values(["Year", "Week", "Team"]).iterrows():
+        for _, row in sorted_po.iterrows():
             writer.writerow([int(row["Year"]), int(row["Week"]), row["Season"], row["Team"], int(row["real_matchup"])])
+
+    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write(OUTPUT_PATH, _write, newline="")
 
     print(f"Wrote {len(po)} playoff-week real_matchup rows to {OUTPUT_PATH}")
 

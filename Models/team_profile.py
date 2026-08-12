@@ -6,123 +6,164 @@ def _record_dict_to_str(r: dict) -> str:
         return ""
     return f"{r.get('wins', 0)}-{r.get('losses', 0)}-{r.get('ties', 0)}"
 
-def get_longest_win_streak(df: pd.DataFrame, year_reset = True) -> int:
+def get_longest_win_streak(df: pd.DataFrame, year_reset = True) -> tuple[int, list[int]]:
+    """Returns (longest streak length, sorted list of year(s) that streak
+    occurred in -- more than one year if tied). A streak's year(s) are
+    whichever years actually contributed a counted win to it, so ties
+    within the same run are attributed correctly even if year_reset=False
+    lets a run span a year boundary."""
     if df is None or df.empty:
-        return 0
+        return 0, []
 
     df = df.sort_values(["Year", "Week"])
     streak = best = 0
-    oldYear = df.iloc[0]["Year"]  # scalar, not a 1-row Series
-
-    for _, row in df.iterrows():
-        year = row["Year"]
-        if year_reset:
-            if year != oldYear:
-                streak = 0
-
-        win = int(row.get("matchup_win", 0) or 0)
-        loss = int(row.get("matchup_loss", 0) or 0)
-
-        if win == 1:
-            streak += 1
-            best = max(best, streak)
-        else:
-            # loss (or anything else): reset streak
-            streak = 0
-
-        oldYear = year
-
-    return best
-
-def get_longest_undefeated_streak(df: pd.DataFrame, year_reset = True) -> int:
-    if df is None or df.empty:
-        return 0
-
-    df = df.sort_values(["Year", "Week"])
-    streak = best = 0
-    oldYear = df.iloc[0]["Year"]  # scalar, not a 1-row Series
-
-    for _, row in df.iterrows():
-        year = row["Year"]
-        if year_reset:
-            if year != oldYear:
-                streak = 0
-
-        win = int(row.get("matchup_win", 0) or 0)
-        loss = int(row.get("matchup_loss", 0) or 0)
-
-        if win == 1:
-            streak += 1
-            best = max(best, streak)
-        elif win == 0 and loss == 0:
-            # tie / no-result: don't reset streak
-            pass
-        else:
-            # loss (or anything else): reset streak
-            streak = 0
-
-        oldYear = year
-
-    return best
-
-
-def get_longest_loss_streak(df: pd.DataFrame, year_reset = True) -> int:
-    if df is None or df.empty:
-        return 0
-
-    df = df.sort_values(["Year", "Week"])
-    streak = worst = 0
-    oldYear = df.iloc[0]["Year"]  # scalar, not a 1-row Series
-
-    for _, row in df.iterrows():
-        year = row["Year"]
-        if year_reset:
-            if year != oldYear:
-                streak = 0
-
-        win = int(row.get("matchup_win", 0) or 0)
-        loss = int(row.get("matchup_loss", 0) or 0)
-
-        if loss == 1:
-            streak += 1
-            worst = max(worst, streak)
-        else:
-            # loss (or anything else): reset streak
-            streak = 0
-
-        oldYear = year
-
-    return worst
-
-
-def _longest_true_streak(df: pd.DataFrame, flag_col: str, year_reset: bool = True) -> int:
-    """Generic version of get_longest_win_streak's shape -- longest run of
-    consecutive True values in `flag_col`, sorted by (Year, Week), resetting
-    at season boundaries by default. Used for the two new pairs of streak
-    fields below (standings-placement and weekly-rating-rank), which need
-    the exact same run-length logic as the win/loss streaks above but over
-    a different boolean condition."""
-    if df is None or df.empty:
-        return 0
-
-    df = df.sort_values(["Year", "Week"])
-    streak = best = 0
+    streak_years: set[int] = set()
+    best_years: set[int] = set()
     oldYear = df.iloc[0]["Year"]  # scalar, not a 1-row Series
 
     for _, row in df.iterrows():
         year = row["Year"]
         if year_reset and year != oldYear:
             streak = 0
+            streak_years = set()
 
-        if bool(row[flag_col]):
+        win = int(row.get("matchup_win", 0) or 0)
+        loss = int(row.get("matchup_loss", 0) or 0)
+
+        if win == 1:
             streak += 1
-            best = max(best, streak)
+            streak_years.add(year)
+            if streak > best:
+                best = streak
+                best_years = set(streak_years)
+            elif streak == best:
+                best_years |= streak_years
         else:
+            # loss (or anything else): reset streak
             streak = 0
+            streak_years = set()
 
         oldYear = year
 
-    return best
+    return best, sorted(best_years)
+
+def get_longest_undefeated_streak(df: pd.DataFrame, year_reset = True) -> tuple[int, list[int]]:
+    if df is None or df.empty:
+        return 0, []
+
+    df = df.sort_values(["Year", "Week"])
+    streak = best = 0
+    streak_years: set[int] = set()
+    best_years: set[int] = set()
+    oldYear = df.iloc[0]["Year"]  # scalar, not a 1-row Series
+
+    for _, row in df.iterrows():
+        year = row["Year"]
+        if year_reset and year != oldYear:
+            streak = 0
+            streak_years = set()
+
+        win = int(row.get("matchup_win", 0) or 0)
+        loss = int(row.get("matchup_loss", 0) or 0)
+
+        if win == 1:
+            streak += 1
+            streak_years.add(year)
+            if streak > best:
+                best = streak
+                best_years = set(streak_years)
+            elif streak == best:
+                best_years |= streak_years
+        elif win == 0 and loss == 0:
+            # tie / no-result: don't reset streak (also doesn't add a year --
+            # the streak's length only counts wins, so its attributed
+            # year(s) should match the wins that actually built it)
+            pass
+        else:
+            # loss (or anything else): reset streak
+            streak = 0
+            streak_years = set()
+
+        oldYear = year
+
+    return best, sorted(best_years)
+
+
+def get_longest_loss_streak(df: pd.DataFrame, year_reset = True) -> tuple[int, list[int]]:
+    if df is None or df.empty:
+        return 0, []
+
+    df = df.sort_values(["Year", "Week"])
+    streak = worst = 0
+    streak_years: set[int] = set()
+    worst_years: set[int] = set()
+    oldYear = df.iloc[0]["Year"]  # scalar, not a 1-row Series
+
+    for _, row in df.iterrows():
+        year = row["Year"]
+        if year_reset and year != oldYear:
+            streak = 0
+            streak_years = set()
+
+        win = int(row.get("matchup_win", 0) or 0)
+        loss = int(row.get("matchup_loss", 0) or 0)
+
+        if loss == 1:
+            streak += 1
+            streak_years.add(year)
+            if streak > worst:
+                worst = streak
+                worst_years = set(streak_years)
+            elif streak == worst:
+                worst_years |= streak_years
+        else:
+            # win/tie (or anything else): reset streak
+            streak = 0
+            streak_years = set()
+
+        oldYear = year
+
+    return worst, sorted(worst_years)
+
+
+def _longest_true_streak(df: pd.DataFrame, flag_col: str, year_reset: bool = True) -> tuple[int, list[int]]:
+    """Generic version of get_longest_win_streak's shape -- longest run of
+    consecutive True values in `flag_col`, sorted by (Year, Week), resetting
+    at season boundaries by default, plus which year(s) that run occurred
+    in (same tie-handling as get_longest_win_streak). Used for the two new
+    pairs of streak fields below (standings-placement and weekly-rating-
+    rank), which need the exact same run-length logic as the win/loss
+    streaks above but over a different boolean condition."""
+    if df is None or df.empty:
+        return 0, []
+
+    df = df.sort_values(["Year", "Week"])
+    streak = best = 0
+    streak_years: set[int] = set()
+    best_years: set[int] = set()
+    oldYear = df.iloc[0]["Year"]  # scalar, not a 1-row Series
+
+    for _, row in df.iterrows():
+        year = row["Year"]
+        if year_reset and year != oldYear:
+            streak = 0
+            streak_years = set()
+
+        if bool(row[flag_col]):
+            streak += 1
+            streak_years.add(year)
+            if streak > best:
+                best = streak
+                best_years = set(streak_years)
+            elif streak == best:
+                best_years |= streak_years
+        else:
+            streak = 0
+            streak_years = set()
+
+        oldYear = year
+
+    return best, sorted(best_years)
 
 
 def _get_playoff_summary(tm: teamManager) -> dict:
@@ -268,13 +309,13 @@ def build_team_summary_df(teams: list | None = None, reuse_managers: dict | None
     # computed per-team below. Reuses _lowest_rating_count_rs's exact
     # filtering/comparison technique above, turned into a streak instead of
     # a count via _longest_true_streak.
-    def _rating_rank_streaks_rs(tm: teamManager) -> tuple[int, int]:
+    def _rating_rank_streaks_rs(tm: teamManager) -> tuple[tuple[int, list[int]], tuple[int, list[int]]]:
         df = tm.compStatDF
         if df.empty or "week_rank" not in df.columns:
-            return 0, 0
+            return (0, []), (0, [])
         df = df[(df["Week Name"].str.startswith("M")) & (df["real_matchup"] >= 1)]
         if df.empty:
-            return 0, 0
+            return (0, []), (0, [])
         wk_min = df.groupby(["Year", "Week"])["week_rank"].transform("min")
         wk_max = df.groupby(["Year", "Week"])["week_rank"].transform("max")
         df = df.assign(is_first=df["week_rank"] == wk_min, is_last=df["week_rank"] == wk_max)
@@ -328,19 +369,18 @@ def build_team_summary_df(teams: list | None = None, reuse_managers: dict | None
         # Longest win streak (career, RS+PO, real matchups only)
         streak_df = tm.get_filtered_df(RS=True, PO=True, real=True)[["Year", "Week", "Opp", "matchup_win", "matchup_loss"]]
 
-        longest_win_streak = get_longest_win_streak(streak_df)
-        longest_undefeated_streak = get_longest_undefeated_streak(streak_df)
-        longest_loss_streak = get_longest_loss_streak(streak_df)
+        longest_win_streak, longest_win_streak_years = get_longest_win_streak(streak_df)
+        longest_undefeated_streak, longest_undefeated_streak_years = get_longest_undefeated_streak(streak_df)
+        longest_loss_streak, longest_loss_streak_years = get_longest_loss_streak(streak_df)
 
         # Longest streak of consecutive RS weeks ranked #1 / last by that
         # week's own Weighted Rank rating -- see _rating_rank_streaks_rs's
         # docstring for why this is deliberately not the same thing as the
         # standings-placement streak computed a few lines below.
-        longest_first_rating_streak, longest_last_rating_streak = _rating_rank_streaks_rs(tm)
-
-        longest_win_streak_no_reset = get_longest_win_streak(streak_df, year_reset=False)
-        longest_undefeated_streak_no_reset = get_longest_undefeated_streak(streak_df, year_reset=False)
-        longest_loss_streak_no_reset = get_longest_loss_streak(streak_df, year_reset=False)
+        (longest_first_rating_streak, longest_first_rating_streak_years), (
+            longest_last_rating_streak,
+            longest_last_rating_streak_years,
+        ) = _rating_rank_streaks_rs(tm)
 
         # --- Best single-season RS rating + best single-season RS standings finish.
         # Distinct from "Avg Rating"/"RS 1st Place" below: this is per-season, not
@@ -380,8 +420,8 @@ def build_team_summary_df(teams: list | None = None, reuse_managers: dict | None
                 })
 
         position_df = pd.DataFrame(position_rows)
-        longest_1st_streak = _longest_true_streak(position_df, "is_first")
-        longest_last_streak = _longest_true_streak(position_df, "is_last")
+        longest_1st_streak, longest_1st_streak_years = _longest_true_streak(position_df, "is_first")
+        longest_last_streak, longest_last_streak_years = _longest_true_streak(position_df, "is_last")
 
         best_rs_rating = max(per_year_rs_rating.values()) if per_year_rs_rating else None
         best_rs_rating_years = (
@@ -483,15 +523,19 @@ def build_team_summary_df(teams: list | None = None, reuse_managers: dict | None
             "PO Cats %": po_cats_pct,
 
             "Best Win Streak": longest_win_streak,
+            "Best Win Streak Years": ", ".join(map(str, longest_win_streak_years)),
             "Worst Losing Streak": longest_loss_streak,
+            "Worst Losing Streak Years": ", ".join(map(str, longest_loss_streak_years)),
             "Best Undefeated Streak": longest_undefeated_streak,
-            # "Best Win Streak No Reset": longest_win_streak_no_reset,
-            # "Worst Losing Streak No Reset": longest_loss_streak_no_reset,
-            # "Best Undefeated Streak No Reset": longest_undefeated_streak_no_reset,
-            "Longest 1st Streak": longest_1st_streak,
+            "Best Undefeated Streak Years": ", ".join(map(str, longest_undefeated_streak_years)),
+            "Longest 1st Place Streak": longest_1st_streak,
+            "Longest 1st Place Streak Years": ", ".join(map(str, longest_1st_streak_years)),
             "Longest Last Streak": longest_last_streak,
+            "Longest Last Streak Years": ", ".join(map(str, longest_last_streak_years)),
             "Longest #1 Rating Streak": longest_first_rating_streak,
+            "Longest #1 Rating Streak Years": ", ".join(map(str, longest_first_rating_streak_years)),
             "Longest Last Rating Streak": longest_last_rating_streak,
+            "Longest Last Rating Streak Years": ", ".join(map(str, longest_last_rating_streak_years)),
 
             # Ratings
             "Avg Rating (out of 100)": avg_rating,

@@ -25,6 +25,8 @@ const FIELD_DIRECTIONS: Record<string, Direction> = {
   "Best RS Rating Years": "skip",
   "Best RS Finish": "lower",
   "Best RS Finish Years": "skip",
+  "Matchup Wins": "higher",
+  "Category Wins": "higher",
   "Career W/L": "skip",
   "Career W/L %": "higher",
   "Career Matchups": "skip",
@@ -40,12 +42,19 @@ const FIELD_DIRECTIONS: Record<string, Direction> = {
   "PO Cats": "skip",
   "PO Cats %": "higher",
   "Best Win Streak": "higher",
+  "Best Win Streak Years": "skip",
   "Worst Losing Streak": "lower",
+  "Worst Losing Streak Years": "skip",
   "Best Undefeated Streak": "higher",
-  "Longest 1st Streak": "higher",
+  "Best Undefeated Streak Years": "skip",
+  "Longest 1st Place Streak": "higher",
+  "Longest 1st Place Streak Years": "skip",
   "Longest Last Streak": "lower",
+  "Longest Last Streak Years": "skip",
   "Longest #1 Rating Streak": "higher",
+  "Longest #1 Rating Streak Years": "skip",
   "Longest Last Rating Streak": "lower",
+  "Longest Last Rating Streak Years": "skip",
   "Avg Rating (out of 100)": "higher",
   "Avg Rank": "lower",
   "Avg Weighted Rank": "lower",
@@ -95,17 +104,30 @@ export const COMPARISON_EXCLUDED_FIELDS = new Set([
   "Avg Weighted Rank",
 ]);
 
-export const DEEMPHASIZED_FIELDS = new Set([
-  "Championship Years",
-  "Finals Years",
-  "Playoff Years",
-  "MVP Years",
-  "RS 1st Years",
-  "Best RS Rating Years",
-  "Best RS Finish Years",
-  "Best Draft Season",
-  "Worst Draft Season",
-]);
+// Comparison table: fields with a companion "X Years"/"X Season" column
+// render as one row ("value (years)") instead of two -- see
+// formatValueWithYears below. Every base field that has a year/season
+// companion in the team_summary export must be listed here.
+export const PAIRED_YEARS_FIELD: Record<string, string> = {
+  Championships: "Championship Years",
+  Finals: "Finals Years",
+  Playoffs: "Playoff Years",
+  MVPs: "MVP Years",
+  "Worst Ratings": "Worst Rating Years",
+  "RS 1st Place": "RS 1st Years",
+  "RS Last Place": "RS Last Years",
+  "Best RS Rating": "Best RS Rating Years",
+  "Best RS Finish": "Best RS Finish Years",
+  "Best Draft Score": "Best Draft Season",
+  "Worst Draft Score": "Worst Draft Season",
+  "Best Win Streak": "Best Win Streak Years",
+  "Worst Losing Streak": "Worst Losing Streak Years",
+  "Best Undefeated Streak": "Best Undefeated Streak Years",
+  "Longest 1st Place Streak": "Longest 1st Place Streak Years",
+  "Longest Last Streak": "Longest Last Streak Years",
+  "Longest #1 Rating Streak": "Longest #1 Rating Streak Years",
+  "Longest Last Rating Streak": "Longest Last Rating Streak Years",
+};
 
 // Every non-"Team" key on the exported team_summary rows, in export order.
 export function comparableFields(rows: TeamSummary[]): string[] {
@@ -138,6 +160,24 @@ export function formatValue(value: string | number | null | undefined): string {
     return Number.isInteger(value) ? String(value) : value.toFixed(3);
   }
   return String(value);
+}
+
+// Comparison table's row value: the base field's value, with its paired
+// years/season column appended in parentheses when that field has one and
+// it's non-empty (e.g. "3 (2019, 2021, 2023)" for Championships). Falls
+// back to the plain value for fields with no pairing, or when the years
+// value itself is empty (e.g. a streak of 0 has no year to show). Most
+// pairings are comma-joined year-list strings, but "Best/Worst Draft
+// Season" are single numbers (a team can only have one best-ever draft
+// season, unlike the tie-able Years lists) -- accept either.
+export function formatValueWithYears(row: TeamSummary, field: string): string {
+  const base = formatValue(row[field]);
+  const yearsField = PAIRED_YEARS_FIELD[field];
+  if (!yearsField) return base;
+  const years = row[yearsField];
+  if (years === null || years === undefined) return base;
+  if (typeof years === "string" && !years.trim()) return base;
+  return `${base} (${years})`;
 }
 
 export function ordinal(n: number): string {

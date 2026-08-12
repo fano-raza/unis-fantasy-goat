@@ -60,10 +60,10 @@ import { NEG_CATS } from "@/lib/highlight";
 import {
   comparableFields,
   COMPARISON_EXCLUDED_FIELDS,
-  DEEMPHASIZED_FIELDS,
   directionFor,
   EMPHASIZED_FIELDS,
   formatValue,
+  formatValueWithYears,
   ordinal,
   rankFor,
 } from "@/lib/team-summary-fields";
@@ -199,9 +199,14 @@ interface QueryTotalField {
 }
 
 const QUERY_TOTAL_FIELDS: QueryTotalField[] = [
-  { label: "Total Wins", metric: "MATCHUP_WINS", seasons: ["RS", "PO"], direction: "higher" },
+  // Renamed from "Total Wins"/"Total Category Wins" so the same field name
+  // (and the same underlying /query data) can also be surfaced as its own
+  // row in the Comparison table's Winning section, not just used behind the
+  // scenes for League Top 3 -- see the Comparison-page section below for
+  // where these two get injected into selectedRows.
+  { label: "Matchup Wins", metric: "MATCHUP_WINS", seasons: ["RS", "PO"], direction: "higher" },
   { label: "Total Losses", metric: "MATCHUP_LOSSES", seasons: ["RS", "PO"], direction: "lower" },
-  { label: "Total Category Wins", metric: "CAT_WINS", seasons: ["RS", "PO"], direction: "higher" },
+  { label: "Category Wins", metric: "CAT_WINS", seasons: ["RS", "PO"], direction: "higher" },
   { label: "Total Category Losses", metric: "CAT_LOSSES", seasons: ["RS", "PO"], direction: "lower" },
   { label: "Total Reg Season Wins", metric: "MATCHUP_WINS", seasons: ["RS"], direction: "higher" },
   { label: "Total Reg Season Losses", metric: "MATCHUP_LOSSES", seasons: ["RS"], direction: "lower" },
@@ -214,37 +219,25 @@ const QUERY_TOTAL_FIELDS: QueryTotalField[] = [
 // exactly one of these -- "Regular Season" was the user's own anchor
 // ("MVP, all ratings, RS standings placement"); the other 3 buckets follow
 // the same logic (playoff-specific / general win-loss+streaks / draft).
+// Fields with a companion year/season column (see PAIRED_YEARS_FIELD in
+// team-summary-fields.ts) are listed once here -- their years render inline
+// in parentheses on the same row (formatValueWithYears), not as a second
+// row, so the standalone "X Years"/"X Season" column names never appear
+// here.
 const COMPARISON_GROUPS: { title: string; fields: string[] }[] = [
   {
     title: "Playoffs",
-    fields: [
-      "Championships",
-      "Championship Years",
-      "Finals",
-      "Finals Years",
-      "Playoffs",
-      "Playoff Years",
-      "PO W/L",
-      "PO W/L %",
-      "PO Cats",
-      "PO Cats %",
-    ],
+    fields: ["Championships", "Finals", "Playoffs", "PO W/L", "PO W/L %", "PO Cats", "PO Cats %"],
   },
   {
     title: "Regular Season",
     fields: [
       "MVPs",
-      "MVP Years",
       "Worst Ratings",
-      "Worst Rating Years",
       "RS 1st Place",
-      "RS 1st Years",
       "RS Last Place",
-      "RS Last Years",
       "Best RS Rating",
-      "Best RS Rating Years",
       "Best RS Finish",
-      "Best RS Finish Years",
       "Avg Rating (out of 100)",
       "Avg Rank",
       "#1 Rating Weeks",
@@ -256,6 +249,8 @@ const COMPARISON_GROUPS: { title: string; fields: string[] }[] = [
   {
     title: "Winning",
     fields: [
+      "Matchup Wins",
+      "Category Wins",
       "Career W/L",
       "Career W/L %",
       "Career Matchups",
@@ -269,7 +264,7 @@ const COMPARISON_GROUPS: { title: string; fields: string[] }[] = [
       "Best Win Streak",
       "Worst Losing Streak",
       "Best Undefeated Streak",
-      "Longest 1st Streak",
+      "Longest 1st Place Streak",
       "Longest Last Streak",
       "Longest #1 Rating Streak",
       "Longest Last Rating Streak",
@@ -277,14 +272,7 @@ const COMPARISON_GROUPS: { title: string; fields: string[] }[] = [
   },
   {
     title: "Draft",
-    fields: [
-      "Career Draft Score",
-      "Avg Draft Score",
-      "Best Draft Score",
-      "Best Draft Season",
-      "Worst Draft Score",
-      "Worst Draft Season",
-    ],
+    fields: ["Career Draft Score", "Avg Draft Score", "Best Draft Score", "Worst Draft Score"],
   },
 ];
 
@@ -441,10 +429,21 @@ function ProfilePageInner() {
   const cap = isMobile ? MOBILE_TEAM_CAP : DESKTOP_TEAM_CAP;
   const visibleSelected = selected.slice(0, cap);
   const canAddMore = selected.length < cap;
-  const comparisonFields = comparableFields(allTeams).filter((f) => !COMPARISON_EXCLUDED_FIELDS.has(f));
+  // "Matchup Wins"/"Category Wins" aren't team_summary.csv columns (they
+  // come from the generic /query endpoint via QUERY_TOTAL_FIELDS, same
+  // data League Top 3 already uses) -- appended here so the Winning
+  // group's field list isn't filtered out by comparisonFields.includes(f).
+  const comparisonFields = comparableFields(allTeams)
+    .filter((f) => !COMPARISON_EXCLUDED_FIELDS.has(f))
+    .concat(["Matchup Wins", "Category Wins"]);
   const selectedRows = visibleSelected
     .map((t) => allTeams.find((r) => r.Team === t))
-    .filter((r): r is TeamSummary => !!r);
+    .filter((r): r is TeamSummary => !!r)
+    .map((r) => ({
+      ...r,
+      "Matchup Wins": queryTotals["Matchup Wins"]?.find((q) => q.Team === r.Team)?.value ?? null,
+      "Category Wins": queryTotals["Category Wins"]?.find((q) => q.Team === r.Team)?.value ?? null,
+    }));
   const availableTeams = allTeams.filter((r) => !selected.includes(r.Team));
   // Equal-width columns (Stat column + one per selected team) on every
   // viewport -- computed as a percentage rather than a fixed Tailwind
@@ -788,14 +787,12 @@ function ProfilePageInner() {
                           {fields.map((field) => {
                             const highlight = highlightFor(field, selectedRows);
                             const emphasized = EMPHASIZED_FIELDS.has(field);
-                            const deemphasized = DEEMPHASIZED_FIELDS.has(field);
                             return (
                               <TableRow key={field}>
                                 <TableCell
                                   className={cn(
                                     "whitespace-normal font-sans font-medium text-muted-foreground sm:whitespace-nowrap",
                                     emphasized && "font-bold text-base",
-                                    deemphasized && "text-muted-foreground/60",
                                   )}
                                 >
                                   {field}
@@ -807,10 +804,9 @@ function ProfilePageInner() {
                                       "whitespace-normal text-right sm:whitespace-nowrap",
                                       highlightClass[highlight[row.Team]],
                                       emphasized && "font-bold text-base",
-                                      deemphasized && "text-muted-foreground/60",
                                     )}
                                   >
-                                    {formatValue(row[field])}
+                                    {formatValueWithYears(row, field)}
                                   </TableCell>
                                 ))}
                               </TableRow>
