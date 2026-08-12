@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Nav } from "@/components/nav";
 import { MobileNav } from "@/components/mobile-nav";
@@ -30,9 +31,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <header className="border-b border-border">
           <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 py-4 sm:px-6">
             <div className="flex items-center justify-between gap-3">
-              <span className="text-xl font-black tracking-tight italic">
+              <Link
+                href="/"
+                className="text-xl font-black tracking-tight italic transition-opacity hover:opacity-80"
+              >
                 UNIS 2014 <span className="text-primary">FANTASY</span>
-              </span>
+              </Link>
               <div className="flex items-center gap-3">
                 <div className="sm:hidden">
                   <MobileNav />
