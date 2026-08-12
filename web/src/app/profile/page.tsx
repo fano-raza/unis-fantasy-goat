@@ -43,6 +43,7 @@ import { Podium, Star, Trophy, X } from "lucide-react";
 import {
   getAverages,
   getCategoryHistory,
+  getHeadToHead,
   getLeagueMeta,
   getQuery,
   getTeamSummary,
@@ -161,6 +162,28 @@ const highlightClass: Record<BestWorst, string> = {
   neutral: "",
 };
 
+// Aggregate head-to-head, summed across every *other* selected team (see
+// the fetch effect below) -- winPct uses the app's standard 0.49 tie weight,
+// same convention as every other W/L% field on this page.
+interface H2HRow {
+  team: string;
+  wins: number;
+  losses: number;
+  ties: number;
+  winPct: number;
+}
+
+function highlightH2H(rows: H2HRow[]): Record<string, BestWorst> {
+  const result: Record<string, BestWorst> = {};
+  for (const row of rows) result[row.team] = "neutral";
+  if (rows.length < 2) return result;
+  const pcts = rows.map((r) => r.winPct);
+  if (pcts.every((p) => p === pcts[0])) return result;
+  const best = Math.max(...pcts);
+  for (const row of rows) result[row.team] = row.winPct === best ? "best" : "worst";
+  return result;
+}
+
 // Win/loss career totals for the "League Top 3" table -- not present in
 // team_summary.csv (that has W-L-T strings, not individually rankable
 // counts), so pulled from the generic /query endpoint instead of a new
@@ -184,6 +207,85 @@ const QUERY_TOTAL_FIELDS: QueryTotalField[] = [
   { label: "Total Reg Season Losses", metric: "MATCHUP_LOSSES", seasons: ["RS"], direction: "lower" },
   { label: "Total Playoff Wins", metric: "MATCHUP_WINS", seasons: ["PO"], direction: "higher" },
   { label: "Total Playoff Losses", metric: "MATCHUP_LOSSES", seasons: ["PO"], direction: "lower" },
+];
+
+// Comparison table's 4 subcategory sections. Every non-excluded
+// team_summary column (see COMPARISON_EXCLUDED_FIELDS) should appear in
+// exactly one of these -- "Regular Season" was the user's own anchor
+// ("MVP, all ratings, RS standings placement"); the other 3 buckets follow
+// the same logic (playoff-specific / general win-loss+streaks / draft).
+const COMPARISON_GROUPS: { title: string; fields: string[] }[] = [
+  {
+    title: "Playoffs",
+    fields: [
+      "Championships",
+      "Championship Years",
+      "Finals",
+      "Finals Years",
+      "Playoffs",
+      "Playoff Years",
+      "PO W/L",
+      "PO W/L %",
+      "PO Cats",
+      "PO Cats %",
+    ],
+  },
+  {
+    title: "Regular Season",
+    fields: [
+      "MVPs",
+      "MVP Years",
+      "Worst Ratings",
+      "Worst Rating Years",
+      "RS 1st Place",
+      "RS 1st Years",
+      "RS Last Place",
+      "RS Last Years",
+      "Best RS Rating",
+      "Best RS Rating Years",
+      "Best RS Finish",
+      "Best RS Finish Years",
+      "Avg Rating (out of 100)",
+      "Avg Rank",
+      "#1 Rating Weeks",
+      "Lowest Rating Weeks",
+      "Avg Opp Rating (out of 100)",
+      "Opponent Rating Ratio",
+    ],
+  },
+  {
+    title: "Winning",
+    fields: [
+      "Career W/L",
+      "Career W/L %",
+      "Career Matchups",
+      "RS W/L",
+      "RS W/L %",
+      "Career Cats",
+      "Career Cats %",
+      "Career Cat Games",
+      "RS Cats",
+      "RS Cats %",
+      "Best Win Streak",
+      "Worst Losing Streak",
+      "Best Undefeated Streak",
+      "Longest 1st Streak",
+      "Longest Last Streak",
+      "Longest #1 Rating Streak",
+      "Longest Last Rating Streak",
+    ],
+  },
+  {
+    title: "Draft",
+    fields: [
+      "Career Draft Score",
+      "Avg Draft Score",
+      "Best Draft Score",
+      "Best Draft Season",
+      "Worst Draft Score",
+      "Worst Draft Season",
+    ],
+  },
 ];
 
 function rankFromQueryRows(
@@ -242,6 +344,7 @@ function ProfilePageInner() {
   const [selected, setSelected] = useState<string[]>([]);
   const [addOpen, setAddOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [h2h, setH2h] = useState<H2HRow[] | null>(null);
 
   const searchParams = useSearchParams();
 
@@ -348,6 +451,56 @@ function ProfilePageInner() {
   // fraction class since the team count varies (1-4 on desktop, 1-2 on
   // mobile).
   const colWidthPct = `${100 / (selectedRows.length + 1)}%`;
+
+  const selectedTeamKey = selectedRows.map((r) => r.Team).join("|");
+
+  // Aggregate H2H: summed matchup W-L-T against every *other* selected team
+  // (pairwise -- N teams = N*(N-1)/2 calls to the existing single-pair
+  // endpoint, same fan-out pattern as the rest of this app's multi-fetch
+  // effects). A pair with no real matchup history throws on the backend --
+  // caught and treated as 0-0-0 for that pair rather than failing the whole
+  // aggregate.
+  useEffect(() => {
+    const teams = selectedRows.map((r) => r.Team);
+    if (teams.length < 2) {
+      setH2h(null);
+      return;
+    }
+    let cancelled = false;
+    const pairs: [string, string][] = [];
+    for (let i = 0; i < teams.length; i++) {
+      for (let j = i + 1; j < teams.length; j++) pairs.push([teams[i], teams[j]]);
+    }
+    Promise.all(pairs.map(([a, b]) => getHeadToHead({ team_a: a, team_b: b }).catch(() => null))).then(
+      (results) => {
+        if (cancelled) return;
+        const totals = new Map(teams.map((t) => [t, { wins: 0, losses: 0, ties: 0 }]));
+        results.forEach((res, idx) => {
+          if (!res) return;
+          const [a, b] = pairs[idx];
+          const ta = totals.get(a)!;
+          const tb = totals.get(b)!;
+          ta.wins += res.record.wins;
+          ta.losses += res.record.losses;
+          ta.ties += res.record.ties;
+          tb.wins += res.record.losses;
+          tb.losses += res.record.wins;
+          tb.ties += res.record.ties;
+        });
+        setH2h(
+          teams.map((t) => {
+            const { wins, losses, ties } = totals.get(t)!;
+            const denom = wins + losses + ties;
+            return { team: t, wins, losses, ties, winPct: denom > 0 ? (wins + 0.49 * ties) / denom : 0 };
+          }),
+        );
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTeamKey]);
 
   const profile = allTeams.find((r) => r.Team === team);
   const totalsRow = totals.find((r) => r.team === team);
@@ -507,70 +660,170 @@ function ProfilePageInner() {
             </CardHeader>
           </Card>
 
-          <Card>
-            <CardContent>
-              {selectedRows.length === 0 ? (
+          {selectedRows.length === 0 ? (
+            <Card>
+              <CardContent>
                 <p className="text-sm text-muted-foreground">
                   Add two or more teams to compare.
                 </p>
-              ) : (
-                <Table className="table-fixed">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead
-                        style={{ width: colWidthPct, top: stickyBarHeight }}
-                        className="sticky z-20 whitespace-normal bg-card sm:whitespace-nowrap"
-                      >
-                        Stat
-                      </TableHead>
-                      {selectedRows.map((row) => (
-                        <TableHead
-                          key={row.Team}
-                          style={{ width: colWidthPct, top: stickyBarHeight }}
-                          className="sticky z-20 whitespace-normal bg-card text-right text-primary sm:whitespace-nowrap"
-                        >
-                          {row.Team}
-                        </TableHead>
-                      ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {comparisonFields.map((field) => {
-                      const highlight = highlightFor(field, selectedRows);
-                      const emphasized = EMPHASIZED_FIELDS.has(field);
-                      const deemphasized = DEEMPHASIZED_FIELDS.has(field);
-                      return (
-                        <TableRow key={field}>
-                          <TableCell
-                            className={cn(
-                              "whitespace-normal font-sans font-medium text-muted-foreground sm:whitespace-nowrap",
-                              emphasized && "font-bold text-base",
-                              deemphasized && "text-muted-foreground/60",
-                            )}
-                          >
-                            {field}
-                          </TableCell>
-                          {selectedRows.map((row) => (
-                            <TableCell
-                              key={row.Team}
-                              className={cn(
-                                "whitespace-normal text-right sm:whitespace-nowrap",
-                                highlightClass[highlight[row.Team]],
-                                emphasized && "font-bold text-base",
-                                deemphasized && "text-muted-foreground/60",
-                              )}
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              {selectedRows.length >= 2 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Head-to-Head</CardTitle>
+                    <CardDescription>
+                      Summed matchup record against every other selected team
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {h2h ? (
+                      <Table className="table-fixed">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead
+                              style={{ width: colWidthPct, top: stickyBarHeight }}
+                              className="sticky z-20 whitespace-normal bg-card sm:whitespace-nowrap"
                             >
-                              {formatValue(row[field])}
-                            </TableCell>
-                          ))}
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                              Stat
+                            </TableHead>
+                            {selectedRows.map((row) => (
+                              <TableHead
+                                key={row.Team}
+                                style={{ width: colWidthPct, top: stickyBarHeight }}
+                                className="sticky z-20 whitespace-normal bg-card text-right text-primary sm:whitespace-nowrap"
+                              >
+                                {row.Team}
+                              </TableHead>
+                            ))}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {(() => {
+                            const highlight = highlightH2H(h2h);
+                            return (
+                              <>
+                                <TableRow>
+                                  <TableCell className="whitespace-normal font-sans font-medium text-muted-foreground sm:whitespace-nowrap">
+                                    H2H Record
+                                  </TableCell>
+                                  {selectedRows.map((row) => {
+                                    const stat = h2h.find((r) => r.team === row.Team);
+                                    return (
+                                      <TableCell
+                                        key={row.Team}
+                                        className={cn(
+                                          "whitespace-normal text-right sm:whitespace-nowrap",
+                                          highlightClass[highlight[row.Team]],
+                                        )}
+                                      >
+                                        {stat ? `${stat.wins}-${stat.losses}-${stat.ties}` : "—"}
+                                      </TableCell>
+                                    );
+                                  })}
+                                </TableRow>
+                                <TableRow>
+                                  <TableCell className="whitespace-normal font-sans font-bold text-base text-muted-foreground sm:whitespace-nowrap">
+                                    H2H Win%
+                                  </TableCell>
+                                  {selectedRows.map((row) => {
+                                    const stat = h2h.find((r) => r.team === row.Team);
+                                    return (
+                                      <TableCell
+                                        key={row.Team}
+                                        className={cn(
+                                          "whitespace-normal text-right font-bold text-base sm:whitespace-nowrap",
+                                          highlightClass[highlight[row.Team]],
+                                        )}
+                                      >
+                                        {stat ? (stat.winPct * 100).toFixed(1) : "—"}%
+                                      </TableCell>
+                                    );
+                                  })}
+                                </TableRow>
+                              </>
+                            );
+                          })()}
+                        </TableBody>
+                      </Table>
+                    ) : (
+                      <LoadingBasketballs label="Loading" />
+                    )}
+                  </CardContent>
+                </Card>
               )}
-            </CardContent>
-          </Card>
+
+              {COMPARISON_GROUPS.map((group) => {
+                const fields = group.fields.filter((f) => comparisonFields.includes(f));
+                if (fields.length === 0) return null;
+                return (
+                  <Card key={group.title}>
+                    <CardHeader>
+                      <CardTitle>{group.title}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <Table className="table-fixed">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead
+                              style={{ width: colWidthPct, top: stickyBarHeight }}
+                              className="sticky z-20 whitespace-normal bg-card sm:whitespace-nowrap"
+                            >
+                              Stat
+                            </TableHead>
+                            {selectedRows.map((row) => (
+                              <TableHead
+                                key={row.Team}
+                                style={{ width: colWidthPct, top: stickyBarHeight }}
+                                className="sticky z-20 whitespace-normal bg-card text-right text-primary sm:whitespace-nowrap"
+                              >
+                                {row.Team}
+                              </TableHead>
+                            ))}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {fields.map((field) => {
+                            const highlight = highlightFor(field, selectedRows);
+                            const emphasized = EMPHASIZED_FIELDS.has(field);
+                            const deemphasized = DEEMPHASIZED_FIELDS.has(field);
+                            return (
+                              <TableRow key={field}>
+                                <TableCell
+                                  className={cn(
+                                    "whitespace-normal font-sans font-medium text-muted-foreground sm:whitespace-nowrap",
+                                    emphasized && "font-bold text-base",
+                                    deemphasized && "text-muted-foreground/60",
+                                  )}
+                                >
+                                  {field}
+                                </TableCell>
+                                {selectedRows.map((row) => (
+                                  <TableCell
+                                    key={row.Team}
+                                    className={cn(
+                                      "whitespace-normal text-right sm:whitespace-nowrap",
+                                      highlightClass[highlight[row.Team]],
+                                      emphasized && "font-bold text-base",
+                                      deemphasized && "text-muted-foreground/60",
+                                    )}
+                                  >
+                                    {formatValue(row[field])}
+                                  </TableCell>
+                                ))}
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </>
+          )}
         </>
       ) : (
         <>

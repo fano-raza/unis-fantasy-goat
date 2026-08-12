@@ -141,6 +141,7 @@ export default function UltraPage() {
                 showFocusScore
                 pinFocusRow
                 stickyHeaderOffset={0}
+                highlightClose
               />
             )}
           </CardContent>

@@ -42,6 +42,10 @@ const FIELD_DIRECTIONS: Record<string, Direction> = {
   "Best Win Streak": "higher",
   "Worst Losing Streak": "lower",
   "Best Undefeated Streak": "higher",
+  "Longest 1st Streak": "higher",
+  "Longest Last Streak": "lower",
+  "Longest #1 Rating Streak": "higher",
+  "Longest Last Rating Streak": "lower",
   "Avg Rating (out of 100)": "higher",
   "Avg Rank": "lower",
   "Avg Weighted Rank": "lower",
@@ -79,10 +83,17 @@ export const EMPHASIZED_FIELDS = new Set([
   "Best Draft Score",
 ]);
 
-// Comparison-page only: a single-week fluke isn't a meaningful comparison
-// stat. Separate from TOP3_EXCLUDED (Profile-only), even though both
-// happen to exclude the same two fields today, for a different reason.
-export const COMPARISON_EXCLUDED_FIELDS = new Set(["Best Week Rating", "Worst Week Rating"]);
+// Comparison-page only: "Best/Worst Week Rating" are single-week flukes, not
+// meaningful comparison stats (separate from TOP3_EXCLUDED even though both
+// happen to exclude the same two fields today, for a different reason).
+// "Avg Weighted Rank" is excluded because it's effectively the same signal
+// as "Avg Rating (out of 100)"/"Avg Rank", already shown -- kept in the CSV
+// export itself in case some other consumer wants it later.
+export const COMPARISON_EXCLUDED_FIELDS = new Set([
+  "Best Week Rating",
+  "Worst Week Rating",
+  "Avg Weighted Rank",
+]);
 
 export const DEEMPHASIZED_FIELDS = new Set([
   "Championship Years",

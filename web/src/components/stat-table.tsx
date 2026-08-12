@@ -48,6 +48,20 @@ interface StatTableProps {
   // becomes sticky at that offset so it stays visible while scrolling the
   // table body vertically. Undefined disables it, unaffected elsewhere.
   stickyHeaderOffset?: number;
+  // Ultra page only -- adds a yellow ring around a non-focus row's category
+  // cell when its value is within 10% of the focus team's value in that
+  // same category, on top of (not instead of) the existing green/red
+  // comparison background. Off by default, unaffected elsewhere.
+  highlightClose?: boolean;
+}
+
+// Within 10% of the focus team's own value in that category, relative to
+// the focus team's value -- 0 is treated as "not close" to anything but 0
+// itself, so a real 0 baseline doesn't divide-by-zero into a false match.
+function isCloseValue(value: number | undefined, baseline: number | undefined): boolean {
+  if (value === undefined || baseline === undefined) return false;
+  if (baseline === 0) return value === 0;
+  return Math.abs(value - baseline) <= 0.1 * Math.abs(baseline);
 }
 
 function allPlayRecord(
@@ -141,6 +155,7 @@ export function StatTable({
   showFocusScore,
   pinFocusRow,
   stickyHeaderOffset,
+  highlightClose,
 }: StatTableProps) {
   const headerSticky = stickyHeaderOffset !== undefined;
   const headerStickyClass = headerSticky ? "sticky z-20 bg-card" : undefined;
@@ -340,10 +355,16 @@ export function StatTable({
                   showFocusScore && isFocus && baseline
                     ? allPlayRecord(cat, baseline, rows)
                     : undefined;
+                const close =
+                  highlightClose && baseSource && !isFocus && isCloseValue(value, baseSource[cat]);
                 return (
                   <TableCell
                     key={cat}
-                    className={cn("text-right font-semibold", comparisonClass[comparison])}
+                    className={cn(
+                      "text-right font-semibold",
+                      comparisonClass[comparison],
+                      close && "ring-1 ring-inset ring-yellow-400",
+                    )}
                   >
                     {record ? (
                       <span className="flex flex-col items-end leading-tight">

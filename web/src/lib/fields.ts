@@ -3,7 +3,7 @@ import { MAIN_CATS, type AnalysisRow } from "./api";
 export interface AnalysisField {
   key: string;
   label: string;
-  group: "General" | "Stats" | "Ratings" | "Ranks";
+  group: "General" | "Stats" | "Ratings";
   get: (row: AnalysisRow) => number | undefined;
 }
 
@@ -50,12 +50,6 @@ export const ANALYSIS_FIELDS: AnalysisField[] = [
     get: (r) => r.week_rating,
   },
   {
-    key: "overall_rank",
-    label: "Overall Rank",
-    group: "Ranks",
-    get: (r) => r.week_rank,
-  },
-  {
     key: "opponent_rating",
     label: "Opponent Rating",
     group: "Ratings",
@@ -75,14 +69,6 @@ export const ANALYSIS_FIELDS: AnalysisField[] = [
       label: `${cat} Rating`,
       group: "Ratings",
       get: (r) => r.ratings[cat],
-    }),
-  ),
-  ...MAIN_CATS.map(
-    (cat): AnalysisField => ({
-      key: `rank:${cat}`,
-      label: `${cat} Rank`,
-      group: "Ranks",
-      get: (r) => r.ranks[cat],
     }),
   ),
 ];

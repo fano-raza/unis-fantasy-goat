@@ -37,6 +37,7 @@ import {
 import { LabeledSelect, NO_FOCUS_TEAM } from "@/components/labeled-select";
 import { SteppableSelect } from "@/components/steppable-select";
 import { ArrowToggle } from "@/components/arrow-toggle";
+import { ViewTabs } from "@/components/view-tabs";
 import { SourceLastUpdated } from "@/components/source-last-updated";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { categoricalPalette } from "@/lib/palette";
@@ -405,7 +406,12 @@ function StandingsPageInner() {
     <div className="flex flex-col gap-4">
       <div className="sticky top-0 z-30 flex flex-wrap items-center gap-3 rounded-sm border border-border bg-card px-3 py-2 shadow-sm">
         <SteppableSelect label="Season" value={year} onValueChange={setYear} options={meta.years} />
-        <ArrowToggle options={VIEW_OPTIONS} value={view} onChange={(v) => setView(v as View)} />
+        <div className="sm:hidden">
+          <ArrowToggle options={VIEW_OPTIONS} value={view} onChange={(v) => setView(v as View)} />
+        </div>
+        <div className="hidden sm:flex">
+          <ViewTabs options={VIEW_OPTIONS} value={view} onChange={(v) => setView(v as View)} />
+        </div>
       </div>
 
       <Card>

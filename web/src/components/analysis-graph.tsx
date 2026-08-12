@@ -472,7 +472,7 @@ function FieldSelect({
   value: string;
   onValueChange: (value: string) => void;
 }) {
-  const groups = ["General", "Stats", "Ratings", "Ranks"] as const;
+  const groups = ["General", "Stats", "Ratings"] as const;
   return (
     <label className="flex items-center gap-2">
       <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">

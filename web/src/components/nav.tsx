@@ -10,7 +10,7 @@ export const NAV_LINKS = [
   { href: "/ultra", label: "Ultra" },
   { href: "/career", label: "Career Stats" },
   { href: "/standings", label: "Standings" },
-  { href: "/profile", label: "Profile" },
+  { href: "/profile", label: "Team" },
   { href: "/analysis", label: "Analysis" },
   { href: "/players", label: "Players" },
   { href: "/champions-lounge", label: "Champions Lounge", locked: true },

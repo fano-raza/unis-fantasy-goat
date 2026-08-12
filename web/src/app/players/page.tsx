@@ -56,7 +56,7 @@ const VIEW_OPTIONS = [
 
 export default function PlayersPage() {
   const [meta, setMeta] = useState<LeagueMeta | null>(null);
-  const [view, setView] = useState<View>("draft");
+  const [view, setView] = useState<View>("trade");
 
   useEffect(() => {
     getLeagueMeta().then(setMeta);

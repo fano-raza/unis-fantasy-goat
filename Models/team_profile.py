@@ -95,6 +95,36 @@ def get_longest_loss_streak(df: pd.DataFrame, year_reset = True) -> int:
     return worst
 
 
+def _longest_true_streak(df: pd.DataFrame, flag_col: str, year_reset: bool = True) -> int:
+    """Generic version of get_longest_win_streak's shape -- longest run of
+    consecutive True values in `flag_col`, sorted by (Year, Week), resetting
+    at season boundaries by default. Used for the two new pairs of streak
+    fields below (standings-placement and weekly-rating-rank), which need
+    the exact same run-length logic as the win/loss streaks above but over
+    a different boolean condition."""
+    if df is None or df.empty:
+        return 0
+
+    df = df.sort_values(["Year", "Week"])
+    streak = best = 0
+    oldYear = df.iloc[0]["Year"]  # scalar, not a 1-row Series
+
+    for _, row in df.iterrows():
+        year = row["Year"]
+        if year_reset and year != oldYear:
+            streak = 0
+
+        if bool(row[flag_col]):
+            streak += 1
+            best = max(best, streak)
+        else:
+            streak = 0
+
+        oldYear = year
+
+    return best
+
+
 def _get_playoff_summary(tm: teamManager) -> dict:
     playoff_years = []
     finals_years = []
@@ -232,6 +262,28 @@ def build_team_summary_df(teams: list | None = None, reuse_managers: dict | None
         is_this_team = df["Team"] == tm.name
         return int((is_worst & is_this_team).sum())
 
+    # Longest streak of consecutive RS weeks ranked #1 / last by that week's
+    # own Weighted Rank rating (week_rank) -- week-to-week, NOT a cumulative
+    # or season-average rating, and NOT the standings-placement streak
+    # computed per-team below. Reuses _lowest_rating_count_rs's exact
+    # filtering/comparison technique above, turned into a streak instead of
+    # a count via _longest_true_streak.
+    def _rating_rank_streaks_rs(tm: teamManager) -> tuple[int, int]:
+        df = tm.compStatDF
+        if df.empty or "week_rank" not in df.columns:
+            return 0, 0
+        df = df[(df["Week Name"].str.startswith("M")) & (df["real_matchup"] >= 1)]
+        if df.empty:
+            return 0, 0
+        wk_min = df.groupby(["Year", "Week"])["week_rank"].transform("min")
+        wk_max = df.groupby(["Year", "Week"])["week_rank"].transform("max")
+        df = df.assign(is_first=df["week_rank"] == wk_min, is_last=df["week_rank"] == wk_max)
+        team_df = df[df["Team"] == tm.name]
+        return (
+            _longest_true_streak(team_df, "is_first"),
+            _longest_true_streak(team_df, "is_last"),
+        )
+
     for name in teams:
         tm = managers[name]
         # --- Playoffs (use playoff matchup objects directly; includes tiebreak-resolved outcomes)
@@ -280,6 +332,12 @@ def build_team_summary_df(teams: list | None = None, reuse_managers: dict | None
         longest_undefeated_streak = get_longest_undefeated_streak(streak_df)
         longest_loss_streak = get_longest_loss_streak(streak_df)
 
+        # Longest streak of consecutive RS weeks ranked #1 / last by that
+        # week's own Weighted Rank rating -- see _rating_rank_streaks_rs's
+        # docstring for why this is deliberately not the same thing as the
+        # standings-placement streak computed a few lines below.
+        longest_first_rating_streak, longest_last_rating_streak = _rating_rank_streaks_rs(tm)
+
         longest_win_streak_no_reset = get_longest_win_streak(streak_df, year_reset=False)
         longest_undefeated_streak_no_reset = get_longest_undefeated_streak(streak_df, year_reset=False)
         longest_loss_streak_no_reset = get_longest_loss_streak(streak_df, year_reset=False)
@@ -296,12 +354,34 @@ def build_team_summary_df(teams: list | None = None, reuse_managers: dict | None
         # scope here -- flagged for a separate follow-up).
         per_year_rs_rating: dict[int, float] = {}
         per_year_rs_finish: dict[int, int] = {}
+        # Week-by-week standings position (that season's real format, WL or
+        # Cats), collected so a longest-streak-at-#1 / longest-streak-in-
+        # last-place can be computed below -- distinct from per_year_rs_finish
+        # above, which only keeps the *final* week's position per season.
+        position_rows: list[dict] = []
         for year in tm.yearsPlayed:
             per_year_rs_rating[year] = float(tm.get_avg_rating(years=[year], RS=True, PO=False))
             season = tm.regSeasons[year]
             per_year_rs_finish[year] = int(
                 season.get_team_position_WL() if season.is_WL else season.get_team_position_Cats()
             )
+            year_team_count = team_count_by_year.get(year)
+            for week in range(1, season.currentWeek + 1):
+                position = (
+                    season.get_team_position_WL(endWeek=week)
+                    if season.is_WL
+                    else season.get_team_position_Cats(endWeek=week)
+                )
+                position_rows.append({
+                    "Year": year,
+                    "Week": week,
+                    "is_first": position == 1,
+                    "is_last": year_team_count is not None and position == year_team_count,
+                })
+
+        position_df = pd.DataFrame(position_rows)
+        longest_1st_streak = _longest_true_streak(position_df, "is_first")
+        longest_last_streak = _longest_true_streak(position_df, "is_last")
 
         best_rs_rating = max(per_year_rs_rating.values()) if per_year_rs_rating else None
         best_rs_rating_years = (
@@ -408,6 +488,10 @@ def build_team_summary_df(teams: list | None = None, reuse_managers: dict | None
             # "Best Win Streak No Reset": longest_win_streak_no_reset,
             # "Worst Losing Streak No Reset": longest_loss_streak_no_reset,
             # "Best Undefeated Streak No Reset": longest_undefeated_streak_no_reset,
+            "Longest 1st Streak": longest_1st_streak,
+            "Longest Last Streak": longest_last_streak,
+            "Longest #1 Rating Streak": longest_first_rating_streak,
+            "Longest Last Rating Streak": longest_last_rating_streak,
 
             # Ratings
             "Avg Rating (out of 100)": avg_rating,
