@@ -42,6 +42,7 @@ import {
   type WeekCalendarRow,
 } from "@/lib/api";
 import { useSelectedTeam } from "@/lib/use-selected-team";
+import { ordinal } from "@/lib/team-summary-fields";
 import { ArrowLeftRight, TriangleAlert } from "lucide-react";
 
 const EASTERN_TZ = "America/New_York";
@@ -236,6 +237,13 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
     return rows.sort((a, b) => a.avgRank - b.avgRank);
   }, [rosterRows, simulating, displayedRoster, team]);
 
+  // This team's place in teamAverages (1-indexed) -- shown inline next to
+  // Average Rank so it doesn't require scrolling down to Roster Rankings.
+  const teamPlacement = useMemo(() => {
+    const idx = teamAverages.findIndex((r) => r.team === team);
+    return idx === -1 ? null : idx + 1;
+  }, [teamAverages, team]);
+
   // NBA team abbreviation -> that week's games, pre-grouped so per-player
   // lookups below are O(1) instead of re-scanning every game per player.
   const gamesByNBATeam = useMemo(() => {
@@ -371,6 +379,11 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                   <TableCell />
                   <TableCell className="text-right font-mono font-extrabold tabular-nums text-primary">
                     {displayedAvgRank !== null ? displayedAvgRank.toFixed(1) : "—"}
+                    {teamPlacement !== null && (
+                      <span className="ml-1 font-sans text-xs font-bold text-muted-foreground">
+                        ({ordinal(teamPlacement)})
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell colSpan={colSpan} />
                 </TableRow>
@@ -410,7 +423,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                                           setOpenSwapSlot(null);
                                         }}
                                       >
-                                        {r.Player} <span className="ml-1 text-muted-foreground">({r.NBATeam}, rank {r.Rank})</span>
+                                        {r.Player} <span className="ml-1 text-muted-foreground">({r.NBATeam})</span>
                                       </CommandItem>
                                     ))}
                                   </CommandGroup>
@@ -472,7 +485,12 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                 {teamAverages.map((row, i) => (
                   <TableRow key={row.team} className={cn(row.team === team && "bg-focus-row")}>
                     <TableCell>{i + 1}</TableCell>
-                    <TableCell className="font-sans font-extrabold tracking-wide uppercase">
+                    <TableCell
+                      className={cn(
+                        "font-sans font-extrabold tracking-wide uppercase",
+                        simulating && row.team === team && "text-yellow-500",
+                      )}
+                    >
                       {row.team}
                     </TableCell>
                     <TableCell className="text-right font-mono tabular-nums">
