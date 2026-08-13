@@ -167,7 +167,8 @@ export interface TeamSummaryRequest {
 
 export interface RosterRankRow {
   Year: number;
-  FantasyTeam: string;
+  // null for a free agent -- not on any fantasy roster that season.
+  FantasyTeam: string | null;
   Player: string;
   NBATeam: string;
   Rank: number;
