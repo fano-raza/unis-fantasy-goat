@@ -17,7 +17,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from discord.bot_env import load_local_env  # noqa: E402
-from discord.feature_bot import parse_discord_ref  # noqa: E402
+from discord.feature_bot import IN_PROGRESS_REACTION, parse_discord_ref  # noqa: E402
 from shared.runtime_config import feature_requests_path  # noqa: E402
 
 OPEN_HEADER = "## Open"
@@ -64,6 +64,21 @@ def react(channel_id: int, message_id: int, emoji: str, token: str) -> None:
     resp.raise_for_status()
 
 
+def unreact(channel_id: int, message_id: int, emoji: str, token: str) -> None:
+    """Removes the bot's own reaction -- same endpoint as react(), DELETE
+    instead of PUT. A 404 here just means the bot never reacted with this
+    emoji on this message (e.g. a request marked Done without ever having
+    been marked in-progress first), which is a normal case, not an error."""
+    import requests
+
+    encoded = quote(emoji)
+    url = f"https://discord.com/api/v10/channels/{channel_id}/messages/{message_id}/reactions/{encoded}/@me"
+    resp = requests.delete(url, headers={"Authorization": f"Bot {token}"}, timeout=10)
+    if resp.status_code == 404:
+        return
+    resp.raise_for_status()
+
+
 def find_single_open_match(
     sections: list[tuple[str, list[str]]], substring: str
 ) -> tuple[int, int, str] | None:
@@ -89,27 +104,53 @@ def find_single_open_match(
     return matches[0]
 
 
-def react_to_line(line: str, emoji: str, label: str) -> None:
-    """Reacts to a logged line's original Discord message, if it has one
-    (requests logged before message-ref tracking existed have no reference
-    and simply can't be reacted to -- not an error)."""
+def _resolve_ref_and_token(line: str, verbose: bool = True) -> tuple[int, int, str] | None:
     ref = parse_discord_ref(line)
     if not ref:
-        print("No stored Discord message reference on this line -- can't react (logged before this feature existed).")
-        return
+        if verbose:
+            print("No stored Discord message reference on this line -- can't react (logged before this feature existed).")
+        return None
 
     load_local_env()
     token = os.getenv("FEATURE_BOT_TOKEN")
     if not token:
-        print("FEATURE_BOT_TOKEN not set -- couldn't react.")
-        return
+        if verbose:
+            print("FEATURE_BOT_TOKEN not set -- couldn't react.")
+        return None
 
     channel_id, message_id = ref
+    return channel_id, message_id, token
+
+
+def react_to_line(line: str, emoji: str, label: str) -> None:
+    """Reacts to a logged line's original Discord message, if it has one
+    (requests logged before message-ref tracking existed have no reference
+    and simply can't be reacted to -- not an error)."""
+    resolved = _resolve_ref_and_token(line)
+    if resolved is None:
+        return
+    channel_id, message_id, token = resolved
     try:
         react(channel_id, message_id, emoji, token)
         print(f"Reacted {emoji} to the original message (channel={channel_id}, message={message_id}).")
     except Exception as exc:
         print(f"Failed to react: {exc}")
+
+
+def unreact_to_line(line: str, emoji: str) -> None:
+    """Removes a previously-added reaction (e.g. the 🚧 in-progress marker
+    once a request reaches a resolved outcome) from a logged line's
+    original Discord message, if it has one. Silent no-op if there's no
+    stored reference or no token -- this is always a secondary cleanup
+    step alongside react_to_line, which already reports those cases."""
+    resolved = _resolve_ref_and_token(line, verbose=False)
+    if resolved is None:
+        return
+    channel_id, message_id, token = resolved
+    try:
+        unreact(channel_id, message_id, emoji, token)
+    except Exception as exc:
+        print(f"Failed to remove {emoji} reaction: {exc}")
 
 
 def react_only(substring: str, emoji: str, label: str) -> None:
@@ -147,4 +188,7 @@ def move_and_react(substring: str, target_header: str, emoji: str, label: str) -
 
     path.write_text(render(preamble, sections))
     print(f"Moved to {target_header.removeprefix('## ')}: {moved_line.strip()}")
+    # A resolved outcome (Done or Rejected) supersedes "in progress" -- clear
+    # that marker so a shipped/declined request doesn't still show 🚧.
+    unreact_to_line(moved_line, IN_PROGRESS_REACTION)
     react_to_line(moved_line, emoji, label)
