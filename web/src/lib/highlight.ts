@@ -16,10 +16,21 @@ export function compareCell(
   value: number | undefined,
   baseline: number | undefined,
   category: Category,
+  options?: {
+    // Ratings are already direction-normalized -- a higher rating always
+    // means "did better" in that category, even TO (a NEG_CATS member),
+    // since the rating conversion itself already accounts for lower-TO-is-
+    // better. The lower-is-better inversion below only makes sense for raw
+    // stat totals/averages; re-applying it to rating values double-inverts
+    // TO (was showing red on the higher, better rating). Defaults to false
+    // (existing NEG_CATS-inversion behavior, unchanged) so every raw-stat
+    // call site is unaffected.
+    ratingMode?: boolean;
+  },
 ): Comparison {
   if (value === undefined || baseline === undefined) return "neutral";
   if (value === baseline) return "neutral";
-  const higherIsBetter = !NEG_CATS.includes(category);
+  const higherIsBetter = options?.ratingMode ? true : !NEG_CATS.includes(category);
   const isHigher = value > baseline;
   const better = higherIsBetter ? isHigher : !isHigher;
   return better ? "better" : "worse";

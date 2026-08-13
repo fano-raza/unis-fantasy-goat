@@ -364,7 +364,9 @@ export function StatTable({
               {MAIN_CATS.map((cat) => {
                 const value = source[cat];
                 const comparison =
-                  baseSource && !isFocus ? compareCell(value, baseSource[cat], cat) : "neutral";
+                  baseSource && !isFocus
+                    ? compareCell(value, baseSource[cat], cat, { ratingMode: mode === "rating" })
+                    : "neutral";
                 // All-play record for this single week: the focus team's
                 // raw stat in this category vs. every other row's raw stat
                 // (always computed from `stats`, not `ratings` -- ratings
