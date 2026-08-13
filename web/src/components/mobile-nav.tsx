@@ -48,7 +48,9 @@ export function MobileNav() {
             </DialogClose>
           </div>
           {NAV_LINKS.map((link) => {
-            const active = pathname === link.href;
+            // Also active on a sub-page route (e.g. /profile/roster,
+            // /standings/ratings) -- see the matching comment in nav.tsx.
+            const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
             return (
               <Link
                 key={link.href}
