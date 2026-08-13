@@ -189,8 +189,9 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
     [rosterRows, team],
   );
 
-  // Every rostered player elsewhere in the league that year -- the pool
-  // any slot can be swapped to.
+  // Every other player in the league that year -- rostered by someone
+  // else, or a free agent (FantasyTeam === "") -- the pool any slot can
+  // be swapped to.
   const otherTeamsPlayers = useMemo(
     () => rosterRows.filter((r) => r.FantasyTeam !== team).sort((a, b) => a.Rank - b.Rank),
     [rosterRows, team],
@@ -222,6 +223,9 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
   const teamAverages = useMemo(() => {
     const byTeam = new Map<string, number[]>();
     for (const row of rosterRows) {
+      // Free agents (FantasyTeam === "") aren't a real team -- excluded so
+      // they don't show up as a bogus 11th entry in Roster Rankings.
+      if (!row.FantasyTeam) continue;
       if (!byTeam.has(row.FantasyTeam)) byTeam.set(row.FantasyTeam, []);
       byTeam.get(row.FantasyTeam)!.push(row.Rank);
     }
