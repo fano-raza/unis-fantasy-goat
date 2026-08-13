@@ -9,8 +9,9 @@ import { getLeagueMeta, type LeagueMeta } from "@/lib/api";
 const VIEW_OPTIONS = [
   { value: "draft", label: "Draft Hub" },
   { value: "trade", label: "Trade Hub" },
+  { value: "roster", label: "Roster" },
 ];
-const VIEW_PATHS = { trade: "/players", draft: "/players/draft" };
+const VIEW_PATHS = { trade: "/players", draft: "/players/draft", roster: "/team/roster" };
 
 export default function PlayersPage() {
   const [meta, setMeta] = useState<LeagueMeta | null>(null);

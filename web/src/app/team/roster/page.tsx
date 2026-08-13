@@ -11,8 +11,14 @@ const VIEW_OPTIONS = [
   { value: "profile", label: "Profile" },
   { value: "comparison", label: "Comparison" },
   { value: "roster", label: "Roster" },
+  { value: "trade", label: "Trade Hub" },
 ];
-const VIEW_PATHS = { profile: "/team/profile", comparison: "/team/comparison", roster: "/team/roster" };
+const VIEW_PATHS = {
+  profile: "/team/profile",
+  comparison: "/team/comparison",
+  roster: "/team/roster",
+  trade: "/players",
+};
 
 export default function RosterPage() {
   const [meta, setMeta] = useState<LeagueMeta | null>(null);

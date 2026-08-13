@@ -59,8 +59,14 @@ const VIEW_OPTIONS = [
   { value: "profile", label: "Profile" },
   { value: "comparison", label: "Comparison" },
   { value: "roster", label: "Roster" },
+  { value: "trade", label: "Trade Hub" },
 ];
-const VIEW_PATHS = { profile: "/team/profile", comparison: "/team/comparison", roster: "/team/roster" };
+const VIEW_PATHS = {
+  profile: "/team/profile",
+  comparison: "/team/comparison",
+  roster: "/team/roster",
+  trade: "/players",
+};
 
 // Gold / silver / bronze for the League Top 3 table's 1st/2nd/3rd rank text
 // -- topFields is always filtered to rank <= 3, so no 4th-place case exists.
