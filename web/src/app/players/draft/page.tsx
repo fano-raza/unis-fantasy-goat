@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { RoutedViewSwitcher } from "@/components/routed-view-switcher";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
-import { TradeHub } from "@/components/trade-hub";
+import { DraftHub } from "@/components/draft-hub";
 import { getLeagueMeta, type LeagueMeta } from "@/lib/api";
 
 const VIEW_OPTIONS = [
@@ -12,7 +12,7 @@ const VIEW_OPTIONS = [
 ];
 const VIEW_PATHS = { trade: "/players", draft: "/players/draft" };
 
-export default function PlayersPage() {
+export default function DraftHubPage() {
   const [meta, setMeta] = useState<LeagueMeta | null>(null);
 
   useEffect(() => {
@@ -24,9 +24,9 @@ export default function PlayersPage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="sticky top-0 z-30 flex items-center gap-3 rounded-sm border border-border bg-card px-3 py-2 shadow-sm">
-        <RoutedViewSwitcher options={VIEW_OPTIONS} current="trade" paths={VIEW_PATHS} />
+        <RoutedViewSwitcher options={VIEW_OPTIONS} current="draft" paths={VIEW_PATHS} />
       </div>
-      <TradeHub />
+      <DraftHub meta={meta} />
     </div>
   );
 }
