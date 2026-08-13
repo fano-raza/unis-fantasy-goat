@@ -320,7 +320,7 @@ export function StatTable({
                   isFocus && "bg-focus-row text-primary",
                 )}
               >
-                <Link href={`/profile?team=${encodeURIComponent(row.team)}`} className="hover:underline">
+                <Link href={`/team/profile?team=${encodeURIComponent(row.team)}`} className="hover:underline">
                   {row.team}
                 </Link>
               </TableCell>

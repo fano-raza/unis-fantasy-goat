@@ -71,7 +71,7 @@ export function StandingsTable({
                 </span>
               </TableCell>
               <TableCell className="font-sans font-extrabold tracking-wide uppercase">
-                <Link href={`/profile?team=${encodeURIComponent(row.team)}`} className="hover:underline">
+                <Link href={`/team/profile?team=${encodeURIComponent(row.team)}`} className="hover:underline">
                   {row.team}
                 </Link>
               </TableCell>

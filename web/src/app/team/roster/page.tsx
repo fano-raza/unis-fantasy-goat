@@ -12,7 +12,7 @@ const VIEW_OPTIONS = [
   { value: "comparison", label: "Comparison" },
   { value: "roster", label: "Roster" },
 ];
-const VIEW_PATHS = { profile: "/profile", comparison: "/profile/comparison", roster: "/profile/roster" };
+const VIEW_PATHS = { profile: "/team/profile", comparison: "/team/comparison", roster: "/team/roster" };
 
 export default function RosterPage() {
   const [meta, setMeta] = useState<LeagueMeta | null>(null);

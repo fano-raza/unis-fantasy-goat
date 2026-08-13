@@ -60,7 +60,7 @@ const VIEW_OPTIONS = [
   { value: "comparison", label: "Comparison" },
   { value: "roster", label: "Roster" },
 ];
-const VIEW_PATHS = { profile: "/profile", comparison: "/profile/comparison", roster: "/profile/roster" };
+const VIEW_PATHS = { profile: "/team/profile", comparison: "/team/comparison", roster: "/team/roster" };
 
 // Gold / silver / bronze for the League Top 3 table's 1st/2nd/3rd rank text
 // -- topFields is always filtered to rank <= 3, so no 4th-place case exists.
@@ -128,7 +128,7 @@ interface QueryTotalField {
 
 const QUERY_TOTAL_FIELDS: QueryTotalField[] = [
   // Same underlying /query data is also surfaced as its own row on the
-  // Comparison page's table (app/profile/comparison/page.tsx) under this
+  // Comparison page's table (app/team/comparison/page.tsx) under this
   // same field name -- keep the two in sync if either changes.
   { label: "Matchup Wins", metric: "MATCHUP_WINS", seasons: ["RS", "PO"], direction: "higher" },
   { label: "Total Losses", metric: "MATCHUP_LOSSES", seasons: ["RS", "PO"], direction: "lower" },

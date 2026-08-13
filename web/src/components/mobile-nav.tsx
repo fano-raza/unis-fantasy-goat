@@ -48,9 +48,10 @@ export function MobileNav() {
             </DialogClose>
           </div>
           {NAV_LINKS.map((link) => {
-            // Also active on a sub-page route (e.g. /profile/roster,
+            // Also active on a sub-page route (e.g. /team/roster,
             // /standings/ratings) -- see the matching comment in nav.tsx.
-            const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
+            const prefix = link.activePrefix ?? link.href;
+            const active = pathname === link.href || pathname.startsWith(`${prefix}/`);
             return (
               <Link
                 key={link.href}
