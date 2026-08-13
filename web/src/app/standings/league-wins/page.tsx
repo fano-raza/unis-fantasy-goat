@@ -4,13 +4,11 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { PlayoffTree } from "@/components/playoff-tree";
 import { Switch } from "@/components/ui/switch";
 import { SteppableSelect } from "@/components/steppable-select";
 import { RoutedViewSwitcher } from "@/components/routed-view-switcher";
@@ -21,11 +19,9 @@ import { PositionOverTimeChart, buildHistoryChartData } from "@/components/posit
 import { categoricalPalette } from "@/lib/palette";
 import {
   getLeagueMeta,
-  getPlayoffBrackets,
   getStandings,
   getStandingsHistory,
   type LeagueMeta,
-  type PlayoffBracketsResponse,
   type StandingsHistoryResponse,
   type StandingsResponse,
 } from "@/lib/api";
@@ -37,53 +33,37 @@ const VIEW_OPTIONS = [
 ];
 const VIEW_PATHS = { "1v1": "/standings", league_wins: "/standings/league-wins", ratings: "/standings/ratings" };
 
-export default function StandingsPage() {
+export default function LeagueWinsPage() {
   return (
     <Suspense fallback={<LoadingBasketballs label="Loading" />}>
-      <StandingsPageInner />
+      <LeagueWinsPageInner />
     </Suspense>
   );
 }
 
-// useSearchParams() (for the ?year=/?tree= deep links) requires a Suspense
-// boundary around whatever calls it, per Next.js -- the actual page content
-// lives here, wrapped by the plain default export above.
-function StandingsPageInner() {
+// useSearchParams() (for the ?year= deep link) requires a Suspense boundary
+// around whatever calls it, per Next.js.
+function LeagueWinsPageInner() {
   const [meta, setMeta] = useState<LeagueMeta | null>(null);
   const [year, setYear] = useState<number | null>(null);
   const [weekRange, setWeekRange] = useState<[number, number] | null>(null);
-  const [oneVOneMode, setOneVOneMode] = useState<"wl" | "cats">("wl");
+  const [leagueMode, setLeagueMode] = useState<"wl" | "cats">("wl");
   const [showGraph, setShowGraph] = useState(true);
-  const [showPlayoffTree, setShowPlayoffTree] = useState(false);
   const [standings, setStandings] = useState<StandingsResponse | null>(null);
   const [previousStandings, setPreviousStandings] = useState<StandingsResponse | null>(null);
   const [history, setHistory] = useState<StandingsHistoryResponse | null>(null);
-  const [brackets, setBrackets] = useState<PlayoffBracketsResponse>({});
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    // A ?year= link (from a Profile stat-tile deep link) wins over the
-    // default current year, if it's a real year for this league. A ?tree=1
-    // alongside it pre-enables the Playoff Tree toggle (both used by the
-    // Profile stat-tile links).
     const yearFromUrl = Number(searchParams.get("year"));
-    if (searchParams.get("tree") === "1") setShowPlayoffTree(true);
     getLeagueMeta().then((m) => {
       setMeta(m);
       setYear(m.years.includes(yearFromUrl) ? yearFromUrl : m.current_year);
     });
-    // Deliberately only reads searchParams once, at mount -- see the
-    // matching comment on Profile's ?team= handling for why.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // All years' bracket data is a single small payload -- fetched once, not
-  // refetched per year switch (mirrors getLeagueMeta's own one-shot fetch).
-  useEffect(() => {
-    getPlayoffBrackets().then(setBrackets);
   }, []);
 
   const maxWeek = useMemo(() => {
@@ -97,7 +77,7 @@ function StandingsPageInner() {
   // year changes, also covering the initial load.
   useEffect(() => {
     if (!meta || year == null) return;
-    setOneVOneMode(meta.season_format[String(year)] ?? "wl");
+    setLeagueMode(meta.season_format[String(year)] ?? "wl");
   }, [meta, year]);
 
   // Reset to the full RS range whenever the year changes (also covers the
@@ -113,10 +93,6 @@ function StandingsPageInner() {
   // would be unnecessary friction here.
   useEffect(() => {
     if (year == null || !weekRange) return;
-    // Set immediately (not inside the debounced timeout below) so a filter
-    // change shows the loading state right away instead of leaving the
-    // previous year/week-range's stale standings (or a stale error from an
-    // earlier request) on screen for the debounce window.
     setIsLoading(true);
     setError(null);
     const [minWeek, maxWeekSel] = weekRange;
@@ -148,12 +124,14 @@ function StandingsPageInner() {
 
   const historyChartData = useMemo(() => {
     if (!history || !weekRange) return [];
-    return buildHistoryChartData(history[oneVOneMode], weekRange[0], weekRange[1]);
-  }, [history, oneVOneMode, weekRange]);
+    const key = leagueMode === "wl" ? "league_wl" : "league_cats";
+    return buildHistoryChartData(history[key], weekRange[0], weekRange[1]);
+  }, [history, leagueMode, weekRange]);
   const historyTeams = useMemo(() => {
     if (!history) return [];
-    return Object.keys(history[oneVOneMode]).sort();
-  }, [history, oneVOneMode]);
+    const key = leagueMode === "wl" ? "league_wl" : "league_cats";
+    return Object.keys(history[key]).sort();
+  }, [history, leagueMode]);
   const historyColors = useMemo(() => categoricalPalette(historyTeams.length), [historyTeams.length]);
 
   if (!meta || year == null || !weekRange) return <LoadingBasketballs label="Loading" />;
@@ -162,7 +140,7 @@ function StandingsPageInner() {
     <div className="flex flex-col gap-4">
       <div className="sticky top-0 z-30 flex flex-wrap items-center gap-3 rounded-sm border border-border bg-card px-3 py-2 shadow-sm">
         <SteppableSelect label="Season" value={year} onValueChange={setYear} options={meta.years} />
-        <RoutedViewSwitcher options={VIEW_OPTIONS} current="1v1" paths={VIEW_PATHS} />
+        <RoutedViewSwitcher options={VIEW_OPTIONS} current="league_wins" paths={VIEW_PATHS} />
       </div>
 
       <SeasonWeekRangeFilter
@@ -175,39 +153,30 @@ function StandingsPageInner() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Season Standings</CardTitle>
-          <CardDescription>Real matchup win-loss-tie record, by matchup outcome or aggregate category record</CardDescription>
-          <CardAction>
-            <label className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
-              <span className="text-muted-foreground">Playoff Tree</span>
-              <Switch checked={showPlayoffTree} onCheckedChange={setShowPlayoffTree} />
-            </label>
-          </CardAction>
+          <CardTitle>League Wins Standings</CardTitle>
+          <CardDescription>
+            All-play record -- every team vs. every other team, every week
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <label className="flex items-center gap-2 self-start text-[11px] font-bold tracking-wider uppercase">
             <span className="text-muted-foreground">W/L</span>
             <Switch
-              checked={oneVOneMode === "cats"}
-              onCheckedChange={(checked) => setOneVOneMode(checked ? "cats" : "wl")}
+              checked={leagueMode === "cats"}
+              onCheckedChange={(checked) => setLeagueMode(checked ? "cats" : "wl")}
             />
             <span className="text-muted-foreground">Cats</span>
           </label>
-          {/* Controls above stay interactive regardless of load state -- a
-              failed/loading fetch only swaps out the data area below, so a
-              bad filter combination can always be changed back. */}
           {error ? (
             <p className="text-sm text-muted-foreground">No data for the current filters ({error}).</p>
           ) : isLoading || !standings ? (
             <LoadingBasketballs label="Loading standings" />
-          ) : showPlayoffTree ? (
-            <PlayoffTree bracket={brackets[String(year)]} year={year} />
           ) : (
             <StandingsTable
-              rows={oneVOneMode === "wl" ? standings.wl : standings.cats}
+              rows={leagueMode === "wl" ? standings.league_wl : standings.league_cats}
               previousRanks={
                 previousStandings
-                  ? toRankMap(oneVOneMode === "wl" ? previousStandings.wl : previousStandings.cats)
+                  ? toRankMap(leagueMode === "wl" ? previousStandings.league_wl : previousStandings.league_cats)
                   : undefined
               }
             />
@@ -221,7 +190,7 @@ function StandingsPageInner() {
           teams={historyTeams}
           colors={historyColors}
           weekRange={weekRange}
-          modeLabel={oneVOneMode === "wl" ? "W/L" : "Cats"}
+          modeLabel={leagueMode === "wl" ? "W/L" : "Cats"}
         />
       )}
     </div>
