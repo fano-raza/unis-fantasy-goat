@@ -1,6 +1,8 @@
 import os
+import json
 import gspread as gs
 import math
+from pathlib import Path
 from espn_fr.basketball.constant import STATS_MAP
 import datetime
 import csv
@@ -23,16 +25,32 @@ espn_s2 = os.getenv("ESPN_S2") or (
 espn_swid = os.getenv("ESPN_SWID") or '{F1B30D95-9F03-4CA9-BE62-D89858BE885E}'
 
 ## Yahoo league/login info
+# The Yahoo consumer key/secret/refresh token live in private.json (repo
+# root, gitignored) instead of hardcoded here -- keeps the actual secret
+# values out of source/version control and in one discoverable file,
+# matching yfpy's own private.json convention (yfpy_fr/query.py's
+# YahooFantasySportsQuery reads the same two field names as its own
+# fallback when no consumer_key/consumer_secret is passed directly).
+# Missing file falls back to None rather than crashing this import --
+# surfaces as the same "client id cannot be empty"/"not authorized" errors
+# yfpy_fr already raises downstream, instead of breaking every module that
+# imports constants.py.
+_private_json_path = Path(__file__).resolve().parent / "private.json"
+try:
+    with open(_private_json_path) as _f:
+        _yahoo_private = json.load(_f)
+except FileNotFoundError:
+    _yahoo_private = {}
+
 # Same blank-env-var-shadows-default gotcha as espn_s2/espn_swid above --
 # the droplet's YAHOO_KEY/YAHOO_SECRET are set to "" (not unset), which
 # os.getenv(key, default) doesn't fall back on. Found while verifying Yahoo
 # rank data live on the droplet for the Team-page roster/rank feature --
 # every yfpy_fr call there was silently failing with "client id cannot be
 # empty" / "not authorized" because of this.
-yKey = os.getenv("YAHOO_KEY") or "dj0yJmk9S0hLcFVjVVZtd2ZMJmQ9WVdrOWVqUk9XazV4YW1zbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PTQ3"
-ySec = os.getenv("YAHOO_SECRET") or "f98bfdf3286771e0b58de7b4062a59b0f867f467"
-yTok = "uB0jRRyZ51jlQNiz47T97fln1VPV73fMQHr6EiZOLHq31g20X4pPKGU8dS4vAuDfRV1L1jWSvtuI57mrYF5Gvj1C75qjhbv4yjtrICnLapQ7IqnpjS1cdqXzhK2PG.EeRBAHBt0qE29gg6lUqX5HPFD0IddWjj6PEmbB8tZkJRfEefC1R8uvcyu97E545TbBaR8Aox1FGxReq6IVe_q4knZJ1vJVSxMY2xPgZNT6YrD.DK1vNakcsWys8FSPjOpGt0CdxSntrBXCOmENcjjPjbX7x47MHU1zckZoxmulP312SlcyrOYGZm3Ut5TZVL9dQM9BdAyFXzRkxnVPH0qdt6N1GuuSJ.RdNoTtku7Y5sL_ow..JtrwcXCm05zxsjx9wnyx9Cy_GGUc5EQqfY87a8GwBQN4I3zG2OkYAk7DsA9DFHq5mOTHxazAaTHem2YRaECRr9yxlRckzkcanjXl4Jwb_dvJxaPlXiq2ULhEJj0PGFulmgrpcIkemZL5cjDOYbjL99cSrtsIElNlUDihAgo7jvNflaYoQDSVqYdusIOn1eCjknFv_B72xGyjH9mwjr.mFKSN1GmG7lpBTJjLzAWt9DW6EhoPWI.4Im4Z5dllgTBTrpvy3Bw8CEff0pwhYIMJcx8VoX2m4P8GtR9bDHyMay6ltiurCdOi4C4TkKyCXmb_Svt3p4kpIxjABYK.LIUKC3mktTWMs2dhRUYdfENiZyVI.8SJZlkHp2B9rmgv3e2BLHILKqeZt4bh7cuggPMOpLKUcmwhqGotsBXD1gknm2prbQ5jcTPvT5HE2YKkk4gM3xZPpxs4q8gz3U98ugiH5B1swIyCB4hBHDmPGJ05RtntSYs4Z_FKoumR4j7jKmlLpd4kjuAumHz5LPFx.XEqILuabedRdTBvYA2BNteGtIMCDzfZxszEJMDTm2KaBYclZLLSCXZrl0JNPCGmT889BOK6W7Wu0BaVsALsM8aNSQBZyLeKV3uCa0K7REczBKZ1nRUacU8-"
-yRefTok = 'AFRlfGYz42hqZri9tJIlY6d1og_S~000~bkow8_Z7ijMknqCgEQhHIinloToXvkYm'
+yKey = os.getenv("YAHOO_KEY") or _yahoo_private.get("consumer_key")
+ySec = os.getenv("YAHOO_SECRET") or _yahoo_private.get("consumer_secret")
+yRefTok = _yahoo_private.get("refresh_token")
 
 yLeagueIDs = {
     2024:138772,
