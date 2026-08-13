@@ -150,13 +150,19 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
 
   // Week calendar is season-specific (real dates differ by year), so a
   // year switch needs a fresh fetch. Default (and re-default, if the
-  // current week isn't in the new season's calendar) to that season's
-  // latest started week.
+  // current week is no longer selectable in the new season) to that
+  // season's latest started week.
   useEffect(() => {
     getWeekCalendar({ year }).then((rows) => {
       setWeekCalendar(rows);
-      setWeek((w) => (w != null && rows.some((r) => r.Week === w) ? w : latestWeek(rows)));
+      const latest = latestWeek(rows);
+      const stillValid = latest != null && rows.some((r) => r.Week === week && r.Week >= latest);
+      setWeek(stillValid ? week : latest);
     });
+    // Deliberately excludes `week` -- this effect should only re-run on a
+    // year switch, not every time the user steps to a new week within the
+    // same year (that would fight the user's own navigation).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year]);
 
   const selectedWeek = useMemo(() => weekCalendar.find((w) => w.Week === week) ?? null, [weekCalendar, week]);
@@ -260,7 +266,17 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
 
   const now = Date.now();
   const today = todayKey();
-  const weekOptions = useMemo(() => weekCalendar.map((w) => w.Week), [weekCalendar]);
+  // Roster data isn't week-aware -- Ref/roster_ranks.csv is a single
+  // per-season snapshot (frozen end-of-season for closed years, "as of
+  // today" for the current year), not tracked week by week. Showing it
+  // against an arbitrary PAST week would pair real historical games with
+  // a roster that wasn't necessarily accurate back then, so only the
+  // latest started week and weeks after it are selectable.
+  const weekOptions = useMemo(() => {
+    const latest = latestWeek(weekCalendar);
+    if (latest == null) return [];
+    return weekCalendar.filter((w) => w.Week >= latest).map((w) => w.Week);
+  }, [weekCalendar]);
   const atLatestWeek = week != null && week === latestWeek(weekCalendar);
   const colSpan = showFullWeek ? Math.max(weekDays.length, 1) : 1;
 
