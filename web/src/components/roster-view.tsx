@@ -341,7 +341,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Player</TableHead>
+                  <TableHead className="sticky left-0 z-10 bg-card">Player</TableHead>
                   <TableHead>NBA Team</TableHead>
                   <TableHead className="text-right">Rank</TableHead>
                   {showFullWeek
@@ -365,9 +365,10 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
               </TableHeader>
               <TableBody>
                 <TableRow className="bg-focus-row">
-                  <TableCell colSpan={2} className="font-sans font-extrabold tracking-wide uppercase text-primary">
+                  <TableCell className="sticky left-0 z-10 bg-focus-row font-sans font-extrabold tracking-wide uppercase text-primary">
                     Average Rank
                   </TableCell>
+                  <TableCell />
                   <TableCell className="text-right font-mono font-extrabold tabular-nums text-primary">
                     {displayedAvgRank !== null ? displayedAvgRank.toFixed(1) : "—"}
                   </TableCell>
@@ -383,7 +384,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                   const candidates = candidatesForSlot(slot.originalPlayer);
                   return (
                     <TableRow key={slot.originalPlayer}>
-                      <TableCell className="font-sans font-semibold">
+                      <TableCell className="sticky left-0 z-10 bg-card font-sans font-semibold">
                         <div className="flex items-center gap-1.5">
                           <Popover
                             open={openSwapSlot === slot.originalPlayer}
