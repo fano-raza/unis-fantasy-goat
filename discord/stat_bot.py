@@ -153,8 +153,13 @@ def run_bot() -> None:
             return
         if bot.user not in message.mentions:
             return
+        game_lines = "\n".join(
+            f"`/{game} [days]` — {daily_games.GAME_LABELS[game]} leaderboard (default: last 7 days, or \"ever\" for all-time)"
+            for game in daily_games.GAMES
+        )
         await message.channel.send(
-            "🤖 **StatBot commands:**\n"
+            "🤖 **StatBot commands:**\n\n"
+            "**Fantasy Commands:**\n"
             "`/standings-check [year]` — league standings for a season\n"
             "`/champ-check [user]` — has this team ever won a title?\n"
             "`/mvp-check [user]` — has this team ever won MVP?\n"
@@ -162,7 +167,8 @@ def run_bot() -> None:
             "`/score-check` — your current matchup score\n"
             "`/rival-check <user>` — career head-to-head record\n"
             "`/trophy-case [user]` — career trophy summary\n"
-            "`/goat-check` — who's the league GOAT?"
+            "`/goat-check` — who's the league GOAT?\n\n"
+            "**Daily Games Commands:**\n" + game_lines
         )
 
     @bot.slash_command(name="standings-check", description="Show league standings for a season.", **slash_kwargs)
