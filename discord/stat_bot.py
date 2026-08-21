@@ -11,16 +11,23 @@ from __future__ import annotations
 
 import csv
 import os
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import aiohttp
 import disnake
-from disnake.ext import commands
+from disnake.ext import commands, tasks
 
+from discord import daily_games
 from discord.bot_env import build_ssl_connector, ensure_ssl_ca_bundle, load_local_env, parse_test_guild_ids
+from shared.runtime_config import daily_games_last_run_path
 
 API_BASE_URL = os.getenv("DASHBOARD_API_BASE_URL", "http://dashboard-api:8090")
+
+EASTERN = ZoneInfo("America/New_York")
+DAILY_GAMES_SYNC_HOUR = 4  # local (America/New_York) hour to run the daily #daily-games scan
 
 
 def _load_user_team_maps() -> tuple[dict[str, str], dict[str, list[str]]]:
@@ -68,6 +75,22 @@ def _years_suffix(years: str | None) -> str:
     return f" ({years})" if years else ""
 
 
+def _read_last_daily_games_sync_date() -> date | None:
+    path = daily_games_last_run_path()
+    if not path.exists():
+        return None
+    try:
+        return date.fromisoformat(path.read_text().strip())
+    except (ValueError, OSError):
+        return None
+
+
+def _write_last_daily_games_sync_date(d: date) -> None:
+    path = daily_games_last_run_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(d.isoformat())
+
+
 def run_bot() -> None:
     load_local_env()
     ensure_ssl_ca_bundle()
@@ -90,6 +113,25 @@ def run_bot() -> None:
     test_guild_ids = parse_test_guild_ids()
     slash_kwargs = {"guild_ids": test_guild_ids} if test_guild_ids else {}
 
+    @tasks.loop(hours=1)
+    async def _daily_games_sync_loop() -> None:
+        now_eastern = datetime.now(EASTERN)
+        if now_eastern.hour < DAILY_GAMES_SYNC_HOUR:
+            return
+        today = now_eastern.date()
+        if _read_last_daily_games_sync_date() == today:
+            return
+        try:
+            channel = bot.get_channel(daily_games.CHANNEL_ID) or await bot.fetch_channel(daily_games.CHANNEL_ID)
+            added = await daily_games.scan_and_record(channel)
+            # Only mark today as done on success -- a failed attempt (e.g.
+            # channel briefly unreachable) should retry next hour, still
+            # within the same day, rather than silently skip a whole day.
+            _write_last_daily_games_sync_date(today)
+            print(f"Daily games sync: added {added} new row(s)")
+        except Exception as exc:
+            print(f"Daily games sync failed, will retry next hour: {exc}")
+
     def _resolve_team(user: disnake.User | disnake.Member) -> Optional[str]:
         return by_user_id.get(str(user.id))
 
@@ -100,6 +142,10 @@ def run_bot() -> None:
     @bot.event
     async def on_ready():
         print(f"StatBot logged in as {bot.user} (id={bot.user.id})")
+        # on_ready can fire again after a reconnect -- guard against
+        # starting a second concurrent copy of the hourly loop.
+        if not _daily_games_sync_loop.is_running():
+            _daily_games_sync_loop.start()
 
     @bot.event
     async def on_message(message: disnake.Message):
@@ -307,5 +353,49 @@ def run_bot() -> None:
             f"MVPs: **{row.get('MVPs') or 0}**{_years_suffix(row.get('MVP Years'))}\n"
             f"RS 1st Place: **{row.get('RS 1st Place') or 0}**{_years_suffix(row.get('RS 1st Years'))}"
         )
+
+    async def _game_leaderboard(
+        inter: disnake.ApplicationCommandInteraction,
+        game: str,
+        days: Optional[str],
+    ) -> None:
+        try:
+            days_back, range_label = daily_games.parse_days_arg(days)
+        except ValueError as e:
+            await inter.response.send_message(f"⚠️ {e}", ephemeral=True)
+            return
+
+        board = daily_games.build_leaderboard(game, days_back)
+        label = daily_games.GAME_LABELS[game]
+        if not board:
+            await inter.response.send_message(f"No {label} data for {range_label} yet.")
+            return
+
+        display_names = daily_games.load_display_names()
+        lines = [f"🏆 **{label}** — {range_label}"]
+        for rank, entry in enumerate(board, start=1):
+            name = display_names.get(str(entry["uid"]), f"<@{entry['uid']}>")
+            avg = f"{entry['avg']:.2f}" if entry["avg"] is not None else "—"
+            lines.append(f"{rank}. **{name}** — {avg} avg ({entry['gp']} GP)")
+        await inter.response.send_message("\n".join(lines))
+
+    # One /<game> slash command per daily_games.GAMES entry, all sharing
+    # _game_leaderboard -- default last 7 days, optional `days` free-text
+    # arg (a number, or "ever" for full history since channel creation).
+    for _game in daily_games.GAMES:
+
+        def _register(game: str = _game) -> None:
+            @bot.slash_command(
+                name=game,
+                description=f"{daily_games.GAME_LABELS[game]} leaderboard (default: last 7 days).",
+                **slash_kwargs,
+            )
+            async def _game_command(
+                inter: disnake.ApplicationCommandInteraction,
+                days: Optional[str] = None,
+            ):
+                await _game_leaderboard(inter, game, days)
+
+        _register()
 
     bot.run(token)

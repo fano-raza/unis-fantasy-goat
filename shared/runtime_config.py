@@ -40,3 +40,22 @@ def weekly_role_sync_state_path() -> Path:
     restart shouldn't cause a duplicate same-day run, and a missed hourly
     tick should still catch up later the same day."""
     return DATA_ROOT / "weekly_role_sync_last_run.txt"
+
+
+def daily_games_history_path() -> Path:
+    """One row per #daily-games score post (MapTap/Worldle/Flagle/WhenTaken/
+    Travle) -- see discord/daily_games.py."""
+    return DATA_ROOT / "daily_games_history.csv"
+
+
+def daily_games_cursor_path() -> Path:
+    """Last processed Discord message id for the #daily-games scan, so the
+    daily refresh only walks new messages instead of the whole channel
+    history each time."""
+    return DATA_ROOT / "daily_games_cursor.txt"
+
+
+def daily_games_last_run_path() -> Path:
+    """Last-run date for StatBot's daily #daily-games sync -- same
+    restart/missed-tick reasoning as weekly_role_sync_state_path()."""
+    return DATA_ROOT / "daily_games_last_run.txt"
