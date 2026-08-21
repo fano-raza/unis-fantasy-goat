@@ -78,6 +78,8 @@ services:
     command: ["python", "-m", "services.stat_bot.entrypoint"]
     env_file:
       - ./env/stat-bot.env
+    volumes:
+      - /srv/unisfantasy/data:/srv/unisfantasy/data
     depends_on:
       - dashboard-api
     restart: unless-stopped
