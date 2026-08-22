@@ -37,29 +37,58 @@ CSV_FIELDS = ["message_id", "discord_user_id", "game", "date", "timestamp", "sco
 # "www.maptap.gg/@jwlc/names-that-mean-new-city" -- those aren't the daily
 # challenge and would otherwise inflate games-played (confirmed against
 # real channel history: 21 such posts in the most recent 14 days alone).
-_MAPTAP_MONTHS = "january|february|march|april|may|june|july|august|september|october|november|december"
-MAPTAP_MARKER = re.compile(rf"www\.maptap\.gg\s+(?:{_MAPTAP_MONTHS})\s+\d{{1,2}}", re.IGNORECASE)
+# No year in the text -- combined with the message's own post year below.
+_MAPTAP_MONTH_NAMES = (
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+)
+_MAPTAP_MONTH_NUM = {name: i + 1 for i, name in enumerate(_MAPTAP_MONTH_NAMES)}
+MAPTAP_MARKER = re.compile(
+    rf"www\.maptap\.gg\s+({'|'.join(_MAPTAP_MONTH_NAMES)})\s+(\d{{1,2}})", re.IGNORECASE
+)
 MAPTAP_SCORE_RE = re.compile(r"final score:\s*([\d,]+)", re.IGNORECASE)
 
 # "#Worldle #1673 (21.08.2026) 3/6 (100%)" -- the "(date)" group is optional:
 # the earliest (2023-08-18) posts were "#Worldle #574 6/6 (100%)", no date.
 WORLDLE_MARKER_RE = re.compile(r"#Worldle\b", re.IGNORECASE)
-WORLDLE_RE = re.compile(r"#Worldle\s+#\d+\s*(?:\([\d.]+\)\s*)?(\d|X)/6(?:\s*\((\d+)%\))?", re.IGNORECASE)
+WORLDLE_RE = re.compile(
+    r"#Worldle\s+#\d+\s*(?:\((\d{1,2}\.\d{1,2}\.\d{4})\)\s*)?(\d|X)/6(?:\s*\((\d+)%\))?", re.IGNORECASE
+)
 
 # "#Flagle #1642 (21.08.2026) 3/6" -- same shape as Worldle, no "(NN%)".
 FLAGLE_MARKER_RE = re.compile(r"#Flagle\b", re.IGNORECASE)
-FLAGLE_RE = re.compile(r"#Flagle\s+#\d+\s*(?:\([\d.]+\)\s*)?(\d|X)/6", re.IGNORECASE)
+FLAGLE_RE = re.compile(r"#Flagle\s+#\d+\s*(?:\((\d{1,2}\.\d{1,2}\.\d{4})\)\s*)?(\d|X)/6", re.IGNORECASE)
 
 # "#WhenTaken #906 (21.08.2026)\n\nI scored 669/1000\U0001f397️\n..."
 WHENTAKEN_MARKER_RE = re.compile(r"#WhenTaken\b", re.IGNORECASE)
+WHENTAKEN_DATE_RE = re.compile(r"#WhenTaken\s+#\d+\s*\((\d{1,2}\.\d{1,2}\.\d{4})\)", re.IGNORECASE)
 WHENTAKEN_SCORE_RE = re.compile(r"scored\s+(\d+)\s*/\s*1000", re.IGNORECASE)
 
 # "#travle #1346 +1" (solved, 1 extra guess over par) / "#travle #1346 -2
 # (Super Perfect)" (beat par -- negative is a real, better-than-0 result) /
-# "#travle #1346 (1 away) (1 hint)" (didn't finish).
+# "#travle #1346 (1 away) (1 hint)" (didn't finish). No date in the text --
+# always falls back to the message's own post date.
 TRAVLE_MARKER_RE = re.compile(r"#travle\b", re.IGNORECASE)
 TRAVLE_SOLVED_RE = re.compile(r"#travle\s+#\d+\s*([+-]\d+)", re.IGNORECASE)
 TRAVLE_AWAY_RE = re.compile(r"#travle\s+#\d+\s*\(\d+\s*away\)", re.IGNORECASE)
+
+
+def _parse_ddmmyyyy(raw: str) -> Optional[date]:
+    day_s, month_s, year_s = raw.split(".")
+    try:
+        return date(int(year_s), int(month_s), int(day_s))
+    except ValueError:
+        return None
 
 GAMES = ("maptap", "worldle", "flagle", "whentaken", "travle")
 GAME_LABELS = {
@@ -81,40 +110,70 @@ LOWER_IS_BETTER = {
 DEFAULT_DAYS_BACK = 7
 
 
-def parse_message(content: str) -> list[tuple[str, Optional[float], bool]]:
-    """(game, score, solved) for every game marker found in a message.
-    score is None for a failed/incomplete play (still counts as a game
-    played -- solved=False); normally 0 or 1 result per message."""
-    results: list[tuple[str, Optional[float], bool]] = []
+def parse_message(content: str, posted_date: date) -> list[tuple[str, Optional[float], bool, Optional[date]]]:
+    """(game, score, solved, explicit_date) for every game marker found in
+    a message. score is None for a failed/incomplete play (still counts as
+    a game played -- solved=False); normally 0 or 1 result per message.
+    explicit_date is the puzzle date parsed out of the message text itself
+    (Worldle/Flagle/WhenTaken carry a full DD.MM.YYYY; MapTap carries
+    "<Month> <day>" with no year, so posted_date's year fills the gap --
+    except right at a year boundary (posted in January about a December
+    puzzle), where posted_date's year would be off by one; Travle carries
+    no date at all) -- None means "fall back to the message's own post
+    date", which the caller (scan_and_record) does."""
+    results: list[tuple[str, Optional[float], bool, Optional[date]]] = []
 
-    if MAPTAP_MARKER.search(content):
-        m = MAPTAP_SCORE_RE.search(content)
-        if m:
-            results.append(("maptap", float(m.group(1).replace(",", "")), True))
+    m = MAPTAP_MARKER.search(content)
+    if m:
+        score_m = MAPTAP_SCORE_RE.search(content)
+        if score_m:
+            month_num = _MAPTAP_MONTH_NUM[m.group(1).lower()]
+            year = posted_date.year
+            # Year-boundary corrections -- the puzzle text has no year, so
+            # posted_date.year is only right if both dates fall in the same
+            # calendar year. Two ways they can disagree, both real: a
+            # December puzzle posted after UTC has already rolled to
+            # January (year -= 1), or -- the mirror case -- a January
+            # puzzle for a poster far enough ahead of UTC (e.g. UTC+13)
+            # that their local Jan 1 lands while UTC still reads Dec 31
+            # (year += 1).
+            if month_num == 12 and posted_date.month == 1:
+                year -= 1
+            elif month_num == 1 and posted_date.month == 12:
+                year += 1
+            try:
+                explicit_date = date(year, month_num, int(m.group(2)))
+            except ValueError:
+                explicit_date = None
+            results.append(("maptap", float(score_m.group(1).replace(",", "")), True, explicit_date))
 
     if WORLDLE_MARKER_RE.search(content):
         m = WORLDLE_RE.search(content)
         if m:
-            failed = m.group(1).upper() == "X"
-            results.append(("worldle", None if failed else float(m.group(1)), not failed))
+            failed = m.group(2).upper() == "X"
+            explicit_date = _parse_ddmmyyyy(m.group(1)) if m.group(1) else None
+            results.append(("worldle", None if failed else float(m.group(2)), not failed, explicit_date))
 
     if FLAGLE_MARKER_RE.search(content):
         m = FLAGLE_RE.search(content)
         if m:
-            failed = m.group(1).upper() == "X"
-            results.append(("flagle", None if failed else float(m.group(1)), not failed))
+            failed = m.group(2).upper() == "X"
+            explicit_date = _parse_ddmmyyyy(m.group(1)) if m.group(1) else None
+            results.append(("flagle", None if failed else float(m.group(2)), not failed, explicit_date))
 
     if WHENTAKEN_MARKER_RE.search(content):
         m = WHENTAKEN_SCORE_RE.search(content)
         if m:
-            results.append(("whentaken", float(m.group(1)), True))
+            date_m = WHENTAKEN_DATE_RE.search(content)
+            explicit_date = _parse_ddmmyyyy(date_m.group(1)) if date_m else None
+            results.append(("whentaken", float(m.group(1)), True, explicit_date))
 
     if TRAVLE_MARKER_RE.search(content):
         m = TRAVLE_SOLVED_RE.search(content)
         if m:
-            results.append(("travle", float(m.group(1)), True))
+            results.append(("travle", float(m.group(1)), True, None))
         elif TRAVLE_AWAY_RE.search(content):
-            results.append(("travle", None, False))
+            results.append(("travle", None, False, None))
 
     return results
 
@@ -158,13 +217,14 @@ async def scan_and_record(channel: disnake.abc.Messageable) -> int:
 
     async for message in channel.history(limit=None, after=after, oldest_first=True):
         last_seen_id = message.id
-        for game, score, solved in parse_message(message.content):
+        posted_date = message.created_at.date()
+        for game, score, solved, explicit_date in parse_message(message.content, posted_date):
             new_rows.append(
                 {
                     "message_id": message.id,
                     "discord_user_id": message.author.id,
                     "game": game,
-                    "date": message.created_at.date().isoformat(),
+                    "date": (explicit_date or posted_date).isoformat(),
                     "timestamp": message.created_at.isoformat(),
                     "score": "" if score is None else score,
                     "solved": int(solved),
