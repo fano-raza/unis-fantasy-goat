@@ -273,7 +273,12 @@ def build_leaderboard(game: str, days_back: Optional[int]) -> list[dict]:
     solved plays in range -- gp still counts unsolved attempts."""
     rows = load_history_rows(game)
     if days_back is not None:
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days_back)).date()
+        # Calendar-date arithmetic, not a raw timestamp subtraction: `date`
+        # has no time-of-day, so `(now - N days).date()` would include
+        # today (already partially elapsed) PLUS N full prior days -- N+1
+        # distinct dates, not N. today - (days_back - 1) gives exactly
+        # days_back distinct calendar dates ending today.
+        cutoff = datetime.now(timezone.utc).date() - timedelta(days=days_back - 1)
         rows = [r for r in rows if date.fromisoformat(r["date"]) >= cutoff]
 
     by_uid: dict[int, list[Optional[float]]] = {}
