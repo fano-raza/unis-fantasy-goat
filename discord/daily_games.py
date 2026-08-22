@@ -30,7 +30,15 @@ DISCORD_NAMES_CSV = Path(__file__).resolve().parent / "discord_names.csv"
 CSV_FIELDS = ["message_id", "discord_user_id", "game", "date", "timestamp", "score", "solved"]
 
 # "www.maptap.gg July 15\n98\U0001f525 94\U0001f3c5 58\U0001f92b 93\U0001f3c6 90\U0001f451\nFinal score: 857"
-MAPTAP_MARKER = "www.maptap.gg"
+# -- deliberately requires "<Month> <day>" right after the bare domain, NOT
+# just "www.maptap.gg" anywhere in the message: custom/community maps share
+# the same "Final score: N" line but use a path instead, e.g.
+# "www.maptap.gg/m/the-disasters-history-forgot-kyllh4" or
+# "www.maptap.gg/@jwlc/names-that-mean-new-city" -- those aren't the daily
+# challenge and would otherwise inflate games-played (confirmed against
+# real channel history: 21 such posts in the most recent 14 days alone).
+_MAPTAP_MONTHS = "january|february|march|april|may|june|july|august|september|october|november|december"
+MAPTAP_MARKER = re.compile(rf"www\.maptap\.gg\s+(?:{_MAPTAP_MONTHS})\s+\d{{1,2}}", re.IGNORECASE)
 MAPTAP_SCORE_RE = re.compile(r"final score:\s*([\d,]+)", re.IGNORECASE)
 
 # "#Worldle #1673 (21.08.2026) 3/6 (100%)" -- the "(date)" group is optional:
@@ -79,7 +87,7 @@ def parse_message(content: str) -> list[tuple[str, Optional[float], bool]]:
     played -- solved=False); normally 0 or 1 result per message."""
     results: list[tuple[str, Optional[float], bool]] = []
 
-    if MAPTAP_MARKER in content.lower():
+    if MAPTAP_MARKER.search(content):
         m = MAPTAP_SCORE_RE.search(content)
         if m:
             results.append(("maptap", float(m.group(1).replace(",", "")), True))
