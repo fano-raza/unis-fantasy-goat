@@ -390,7 +390,7 @@ def run_bot() -> None:
                     f"{entry['complete']}/{entry['gp']} Completed"
                 )
             else:
-                lines.append(f"{rank}. **{name}** — Score: {avg}, {entry['gp']} games played")
+                lines.append(f"{rank}. **{name}** — Score: {avg} ({entry['gp']} games)")
         await inter.response.send_message("\n".join(lines))
 
     # One /<game> slash command per daily_games.GAMES entry, all sharing
