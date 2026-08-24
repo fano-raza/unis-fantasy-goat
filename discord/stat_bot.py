@@ -168,7 +168,8 @@ def run_bot() -> None:
             "`/rival-check <user>` — career head-to-head record\n"
             "`/trophy-case [user]` — career trophy summary\n"
             "`/goat-check` — who's the league GOAT?\n\n"
-            "**Daily Games Commands:**\n" + game_lines
+            "**Daily Games Commands:**\n" + game_lines + "\n"
+            "`/dg-update` — force an immediate #daily-games stats update"
         )
 
     @bot.slash_command(name="standings-check", description="Show league standings for a season.", **slash_kwargs)
@@ -378,14 +379,18 @@ def run_bot() -> None:
             return
 
         display_names = daily_games.load_display_names()
+        can_be_incomplete = daily_games.CAN_BE_INCOMPLETE[game]
         lines = [f"🏆 **{label}** — {range_label}"]
         for rank, entry in enumerate(board, start=1):
             name = display_names.get(str(entry["uid"]), f"<@{entry['uid']}>")
             avg = f"{entry['avg']:.2f}" if entry["avg"] is not None else "—"
-            lines.append(
-                f"{rank}. **{name}** — {avg} avg "
-                f"({entry['complete']} complete, {entry['incomplete']} incomplete)"
-            )
+            if can_be_incomplete:
+                lines.append(
+                    f"{rank}. **{name}** — Average Tries: {avg}, "
+                    f"{entry['complete']}/{entry['gp']} Completed"
+                )
+            else:
+                lines.append(f"{rank}. **{name}** — Score: {avg}, {entry['gp']} games played")
         await inter.response.send_message("\n".join(lines))
 
     # One /<game> slash command per daily_games.GAMES entry, all sharing
@@ -406,5 +411,36 @@ def run_bot() -> None:
                 await _game_leaderboard(inter, game, days)
 
         _register()
+
+    @bot.slash_command(
+        name="dg-update",
+        description="Force an immediate #daily-games stats update instead of waiting for the hourly check.",
+        default_member_permissions=disnake.Permissions(administrator=True),
+        **slash_kwargs,
+    )
+    async def dg_update(inter: disnake.ApplicationCommandInteraction):
+        # default_member_permissions above is only Discord's *default* --
+        # a server admin can reassign the command to non-admins via
+        # Integrations settings, so enforce it here too rather than relying
+        # on that alone.
+        member_perms = getattr(inter.author, "guild_permissions", None)
+        if not member_perms or not member_perms.administrator:
+            await inter.response.send_message(
+                "🚫 This command is admin-only.", ephemeral=True
+            )
+            return
+        await inter.response.defer()
+        try:
+            channel = bot.get_channel(daily_games.CHANNEL_ID) or await bot.fetch_channel(daily_games.CHANNEL_ID)
+            added = await daily_games.scan_and_record(channel)
+            # Mark today as done, same as the hourly loop would -- so when it
+            # next ticks it sees today's sync already happened and skips,
+            # rather than redoing the scan (harmless since scan_and_record is
+            # incremental/idempotent, but pointless).
+            _write_last_daily_games_sync_date(datetime.now(EASTERN).date())
+        except Exception as exc:
+            await inter.followup.send(f"⚠️ Update failed: {exc}")
+            return
+        await inter.followup.send(f"✅ #daily-games stats updated -- {added} new row(s) added.")
 
     bot.run(token)

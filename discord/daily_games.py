@@ -107,6 +107,16 @@ LOWER_IS_BETTER = {
     "whentaken": False,
     "travle": True,
 }
+# True = the game has a fail state (Worldle/Flagle "X/6", Travle "(N away)"),
+# so a play can be incomplete. MapTap and WhenTaken only ever post a score --
+# there's no failure format for either -- so every play is complete.
+CAN_BE_INCOMPLETE = {
+    "maptap": False,
+    "worldle": True,
+    "flagle": True,
+    "whentaken": False,
+    "travle": True,
+}
 DEFAULT_DAYS_BACK = 7
 
 
