@@ -268,9 +268,11 @@ def load_history_rows(game: str) -> list[dict]:
 
 
 def build_leaderboard(game: str, days_back: Optional[int]) -> list[dict]:
-    """[{uid, gp, avg}], sorted best-first per the game's lower/higher-is-
-    better convention. avg is None (and sorted last) if the user has no
-    solved plays in range -- gp still counts unsolved attempts."""
+    """[{uid, gp, complete, incomplete, avg}], sorted best-first per the
+    game's lower/higher-is-better convention. gp = complete + incomplete
+    (total games played). avg is over complete plays only -- None (and
+    sorted last) if the user has zero complete plays in range, even if
+    incomplete > 0."""
     rows = load_history_rows(game)
     if days_back is not None:
         # Calendar-date arithmetic, not a raw timestamp subtraction: `date`
@@ -292,7 +294,15 @@ def build_leaderboard(game: str, days_back: Optional[int]) -> list[dict]:
     for uid, scores in by_uid.items():
         solved = [s for s in scores if s is not None]
         avg = sum(solved) / len(solved) if solved else None
-        result.append({"uid": uid, "gp": len(scores), "avg": avg})
+        result.append(
+            {
+                "uid": uid,
+                "gp": len(scores),
+                "complete": len(solved),
+                "incomplete": len(scores) - len(solved),
+                "avg": avg,
+            }
+        )
 
     def sort_key(item: dict):
         if item["avg"] is None:

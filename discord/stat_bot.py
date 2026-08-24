@@ -382,7 +382,10 @@ def run_bot() -> None:
         for rank, entry in enumerate(board, start=1):
             name = display_names.get(str(entry["uid"]), f"<@{entry['uid']}>")
             avg = f"{entry['avg']:.2f}" if entry["avg"] is not None else "—"
-            lines.append(f"{rank}. **{name}** — {avg} avg ({entry['gp']} GP)")
+            lines.append(
+                f"{rank}. **{name}** — {avg} avg "
+                f"({entry['complete']} complete, {entry['incomplete']} incomplete)"
+            )
         await inter.response.send_message("\n".join(lines))
 
     # One /<game> slash command per daily_games.GAMES entry, all sharing
