@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Card,
   CardAction,
@@ -19,7 +19,7 @@ import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { useSelectedTeam } from "@/lib/use-selected-team";
 import {
   getAverages,
-  getLeagueMeta,
+  getCareerBootstrap,
   getTotals,
   type AggregateRow,
   type LeagueMeta,
@@ -34,23 +34,30 @@ export default function CareerStatsPage() {
   const [rows, setRows] = useState<AggregateRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Bootstrap fetches meta + the default (everything-selected) totals in one
+  // round-trip; this flags that the next [filter, statMode] effect run is
+  // that same default, so it doesn't re-fetch what bootstrap already
+  // delivered. See web/src/app/page.tsx's matching comment.
+  const skipNextFetch = useRef(false);
 
   useEffect(() => {
-    getLeagueMeta().then((m) => {
-      setMeta(m);
-      const maxWeek = Math.max(...Object.values(m.total_matchup_count), 1);
-      setFilter({
-        years: m.years,
-        weeks: Array.from({ length: maxWeek }, (_, i) => i + 1),
-        teams: m.members,
-        rs: true,
-        po: true,
-      });
+    getCareerBootstrap().then((b) => {
+      setMeta(b.meta);
+      setFilter({ years: b.years, weeks: b.weeks, teams: b.teams, rs: true, po: true });
+      skipNextFetch.current = true;
+      const priorRanks = new Map(b.previous_rows.map((r) => [r.team, r.rank]));
+      setRows(b.rows.map((r) => ({ ...r, previousRank: priorRanks.get(r.team) ?? null })));
+      setError(null);
+      setLoading(false);
     });
   }, []);
 
   useEffect(() => {
     if (!filter) return;
+    if (skipNextFetch.current) {
+      skipNextFetch.current = false;
+      return;
+    }
     setLoading(true);
     const req = {
       years: filter.years,

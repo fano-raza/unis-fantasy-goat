@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Card,
   CardAction,
@@ -16,7 +16,7 @@ import { LabeledSelect, NO_FOCUS_TEAM } from "@/components/labeled-select";
 import { SteppableSelect } from "@/components/steppable-select";
 import { SourceLastUpdated } from "@/components/source-last-updated";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
-import { getAverages, getLeagueMeta, type AggregateRow, type LeagueMeta } from "@/lib/api";
+import { getAverages, getUltraBootstrap, type AggregateRow, type LeagueMeta } from "@/lib/api";
 import { useSelectedTeam } from "@/lib/use-selected-team";
 
 export default function UltraPage() {
@@ -27,11 +27,22 @@ export default function UltraPage() {
   const [rows, setRows] = useState<AggregateRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Bootstrap fetches meta + the default (current year, every week)
+  // averages in one round-trip; this flags that the next [year, weeks]
+  // effect run is that same default, so it doesn't re-fetch what bootstrap
+  // already delivered. Deliberately doesn't set `weeks` itself -- the
+  // existing "reset weeks to allWeeks on year change" effect below does
+  // that once meta/year land, same as it always has.
+  const skipNextFetch = useRef(false);
 
   useEffect(() => {
-    getLeagueMeta().then((m) => {
-      setMeta(m);
-      setYear(m.current_year);
+    getUltraBootstrap().then((b) => {
+      setMeta(b.meta);
+      setYear(b.year);
+      skipNextFetch.current = true;
+      setRows(b.rows);
+      setError(null);
+      setLoading(false);
     });
   }, []);
 
@@ -52,6 +63,10 @@ export default function UltraPage() {
 
   useEffect(() => {
     if (year == null || weeks.length === 0) return;
+    if (skipNextFetch.current) {
+      skipNextFetch.current = false;
+      return;
+    }
     setLoading(true);
     getAverages({ years: [year], weeks, RS: true, PO: true })
       .then((res) => {

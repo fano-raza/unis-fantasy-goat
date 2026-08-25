@@ -372,6 +372,34 @@ export const getTotals = (req: AggregateRequest = {}) =>
 export const getAverages = (req: AggregateRequest = {}) =>
   post<AggregateRow[]>("/league/averages", req);
 
+export interface CareerBootstrap {
+  meta: LeagueMeta;
+  years: number[];
+  weeks: number[];
+  teams: string[];
+  rows: AggregateRow[];
+  previous_rows: AggregateRow[];
+}
+
+// Combines meta + Career Stats' default (everything selected) totals into
+// one round-trip (see league_store.py's career_bootstrap()). Not a fit for
+// Analysis, which restores a persisted custom filter from localStorage
+// client-side rather than always defaulting to "everything."
+export const getCareerBootstrap = () =>
+  apiFetch<CareerBootstrap>("/league/career_bootstrap");
+
+export interface UltraBootstrap {
+  meta: LeagueMeta;
+  year: number | null;
+  weeks: number[];
+  rows: AggregateRow[];
+}
+
+// Combines meta + Ultra's default (current year, every week, averages) rows
+// into one round-trip (see league_store.py's ultra_bootstrap()).
+export const getUltraBootstrap = () =>
+  apiFetch<UltraBootstrap>("/league/ultra_bootstrap");
+
 export const getLeaders = (req: LeadersRequest = {}) =>
   post<LeadersResponse>("/league/leaders", req);
 
@@ -410,6 +438,37 @@ export const getStandings = (req: StandingsRequest) =>
 
 export const getStandingsHistory = (req: StandingsRequest) =>
   post<StandingsHistoryResponse>("/league/standings_history", req);
+
+export interface StandingsBootstrap {
+  meta: LeagueMeta;
+  year: number | null;
+  week_range: [number, number];
+  standings: StandingsResponse | null;
+  previous_standings: StandingsResponse | null;
+  history: StandingsHistoryResponse | null;
+}
+
+// Combines meta + the current year's default-range standings/history into
+// one round-trip, for the Standings and League Wins pages' initial load
+// (mirrors getWeeklyStatsBootstrap -- see dashboard_site/api/league_store.py's
+// standings_bootstrap()).
+export const getStandingsBootstrap = () =>
+  apiFetch<StandingsBootstrap>("/league/standings_bootstrap");
+
+export interface RatingsBootstrap {
+  meta: LeagueMeta;
+  year: number | null;
+  week_range: [number, number];
+  rows: AggregateRow[];
+  previous_rows: AggregateRow[];
+  leaders: SeasonLeadersResponse;
+  history: AnalysisRow[];
+}
+
+// Same combining trick as getStandingsBootstrap, for the Ratings page's
+// default filters (see league_store.py's ratings_bootstrap()).
+export const getRatingsBootstrap = () =>
+  apiFetch<RatingsBootstrap>("/league/ratings_bootstrap");
 
 export const getPlayoffBrackets = () =>
   apiFetch<PlayoffBracketsResponse>("/league/playoff_brackets");

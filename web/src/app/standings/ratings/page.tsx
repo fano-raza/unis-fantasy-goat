@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   CartesianGrid,
@@ -33,7 +33,7 @@ import { categoricalPalette } from "@/lib/palette";
 import {
   getAnalysisRows,
   getAverages,
-  getLeagueMeta,
+  getRatingsBootstrap,
   getSeasonLeaders,
   getTotals,
   MAIN_CATS,
@@ -113,12 +113,29 @@ function RatingsPageInner() {
   const [ratingsHistory, setRatingsHistory] = useState<AnalysisRow[]>([]);
 
   const searchParams = useSearchParams();
+  // See standings/page.tsx's matching comment -- same bootstrap/skip
+  // pattern. Bootstrap covers this page's default filters only (totals
+  // mode, full RS-week range, RS+PO both on); a ?year= override or any
+  // filter change afterward falls through to the normal fetch effect.
+  const skipNextFetch = useRef(false);
 
   useEffect(() => {
     const yearFromUrl = Number(searchParams.get("year"));
-    getLeagueMeta().then((m) => {
-      setMeta(m);
-      setYear(m.years.includes(yearFromUrl) ? yearFromUrl : m.current_year);
+    getRatingsBootstrap().then((b) => {
+      setMeta(b.meta);
+      const overrideYear = b.meta.years.includes(yearFromUrl) && yearFromUrl !== b.year;
+      if (overrideYear) {
+        setYear(yearFromUrl);
+        return;
+      }
+      setYear(b.year ?? b.meta.current_year);
+      skipNextFetch.current = true;
+      const priorRanks = new Map(b.previous_rows.map((r) => [r.team, r.rank]));
+      setRatingsRows(b.rows.map((r) => ({ ...r, previousRank: priorRanks.get(r.team) ?? null })));
+      setRatingsLeaders(b.leaders);
+      setRatingsHistory(b.history);
+      setError(null);
+      setIsLoading(false);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -145,6 +162,10 @@ function RatingsPageInner() {
   // Stats/Analysis' mobile filter drawer) would be unnecessary friction here.
   useEffect(() => {
     if (year == null || weeksInRange.length === 0) return;
+    if (skipNextFetch.current) {
+      skipNextFetch.current = false;
+      return;
+    }
     setIsLoading(true);
     setError(null);
     const timeout = setTimeout(() => {

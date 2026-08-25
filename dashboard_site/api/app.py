@@ -356,6 +356,26 @@ def league_standings_history(req: StandingsRequest) -> dict:
     return league_store.standings_history(req.year, req.min_week, req.max_week)
 
 
+@app.get("/league/standings_bootstrap")
+def league_standings_bootstrap() -> dict:
+    return league_store.standings_bootstrap()
+
+
+@app.get("/league/ratings_bootstrap")
+def league_ratings_bootstrap() -> dict:
+    return league_store.ratings_bootstrap()
+
+
+@app.get("/league/career_bootstrap")
+def league_career_bootstrap() -> dict:
+    return league_store.career_bootstrap()
+
+
+@app.get("/league/ultra_bootstrap")
+def league_ultra_bootstrap() -> dict:
+    return league_store.ultra_bootstrap()
+
+
 @app.post("/league/draft_picks")
 def league_draft_picks(req: DraftPicksRequest) -> list[dict]:
     return league_store.draft_picks(years=req.years, teams=req.teams)

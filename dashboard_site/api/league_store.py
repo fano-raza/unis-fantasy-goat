@@ -73,6 +73,7 @@ class LeagueStore:
         # see that method's docstring for why this mattered in practice.
         self._po_lookup_series = pd.Series(self._po_lookup, dtype=bool) if self._po_lookup else None
         self._weekly_leaderboard_cache: dict[tuple[int, int], list[dict]] = {}
+        self._standings_history_cache: dict[tuple[int, int, int], dict] = {}
 
     def _load_po_real_matchup_lookup(self) -> dict[tuple[int, int, str, str], bool]:
         """Count==True is a reliable "real matchup" proxy for regular-season
@@ -728,7 +729,14 @@ class LeagueStore:
         course of a season. Built by calling standings() once per week
         rather than re-deriving the ranking logic: _ensure_weekly_df() is
         cached after the first call, so this loop is cheap (filter + groupby
-        per week, no re-computation of the underlying per-week data)."""
+        per week, no re-computation of the underlying per-week data).
+        Bounded cache keyed by the exact (year, min_week, max_week) triple
+        mirrors _weekly_leaderboard_cache -- every visitor with the default
+        (full-season) week range hits the same triple."""
+        cache_key = (year, min_week, max_week)
+        cached = self._standings_history_cache.get(cache_key)
+        if cached is not None:
+            return cached
         result: dict[str, dict[str, list[dict]]] = {
             "wl": {},
             "cats": {},
@@ -745,7 +753,105 @@ class LeagueStore:
                     result[key].setdefault(row["team"], []).append(
                         {"week": w, "rank": row["rank"]}
                     )
+        self._standings_history_cache[cache_key] = result
         return result
+
+    def standings_bootstrap(self) -> dict:
+        """Combines meta + the current year's default-range standings +
+        standings history (+ the one-week-back "previous" snapshot used for
+        the Place column's movement arrow) into one response, so the
+        Standings/League Wins pages' initial load pays a single network
+        round-trip instead of the meta-then-standings chain both previously
+        had -- see /league/weekly_stats_bootstrap for the same fix applied
+        to Weekly Stats first."""
+        m = self.meta()
+        year = m.get("current_year")
+        max_week = m.get("rs_week_count", {}).get(year, 1) if year is not None else 1
+        standings = None
+        previous = None
+        history = None
+        if year is not None:
+            try:
+                standings = self.standings(year, 1, max_week)
+                history = self.standings_history(year, 1, max_week)
+                if max_week > 1:
+                    previous = self.standings(year, 1, max_week - 1)
+            except ValueError:
+                pass
+        return {
+            "meta": m,
+            "year": year,
+            "week_range": [1, max_week],
+            "standings": standings,
+            "previous_standings": previous,
+            "history": history,
+        }
+
+    def career_bootstrap(self) -> dict:
+        """Same combining trick as standings_bootstrap(), for Career Stats'
+        default filter (every year/week/team, totals mode, RS+PO both on --
+        Career Stats has no persisted custom filter to worry about, unlike
+        Analysis, which restores one from localStorage client-side and so
+        isn't a safe fit for a server-computed default)."""
+        m = self.meta()
+        years = m.get("years", [])
+        teams = m.get("members", [])
+        max_week = max(m.get("total_matchup_count", {}).values(), default=1) or 1
+        weeks = list(range(1, max_week + 1))
+        rows = self.totals(years=years, weeks=weeks, teams=teams, RS=True, PO=True)
+        previous_rows: list[dict] = []
+        if len(weeks) > 1:
+            previous_rows = self.totals(years=years, weeks=weeks[:-1], teams=teams, RS=True, PO=True)
+        return {
+            "meta": m,
+            "years": years,
+            "weeks": weeks,
+            "teams": teams,
+            "rows": rows,
+            "previous_rows": previous_rows,
+        }
+
+    def ultra_bootstrap(self) -> dict:
+        """Same combining trick as standings_bootstrap(), for Ultra's default
+        filter (current year, every week including playoffs, RS+PO both on,
+        averages mode)."""
+        m = self.meta()
+        year = m.get("current_year")
+        weeks: list[int] = []
+        rows: list[dict] = []
+        if year is not None:
+            max_week = m.get("total_matchup_count", {}).get(year, 1)
+            weeks = list(range(1, max_week + 1))
+            rows = self.averages(years=[year], weeks=weeks, RS=True, PO=True)
+        return {"meta": m, "year": year, "weeks": weeks, "rows": rows}
+
+    def ratings_bootstrap(self) -> dict:
+        """Same combining trick as standings_bootstrap(), for the Ratings
+        page's default filters (full RS-week range, both RS+PO included,
+        totals mode) -- see that method's docstring."""
+        m = self.meta()
+        year = m.get("current_year")
+        max_week = m.get("rs_week_count", {}).get(year, 1) if year is not None else 1
+        weeks = list(range(1, max_week + 1))
+        rows: list[dict] = []
+        previous_rows: list[dict] = []
+        leaders: dict = {}
+        history: list[dict] = []
+        if year is not None:
+            rows = self.totals(years=[year], weeks=weeks, RS=True, PO=True)
+            if len(weeks) > 1:
+                previous_rows = self.totals(years=[year], weeks=weeks[:-1], RS=True, PO=True)
+            leaders = self.season_leaders(years=[year], weeks=weeks, RS=True, PO=True, mode="totals")
+            history = self.analysis_rows(years=[year], weeks=weeks, RS=True, PO=True)
+        return {
+            "meta": m,
+            "year": year,
+            "week_range": [1, max_week],
+            "rows": rows,
+            "previous_rows": previous_rows,
+            "leaders": leaders,
+            "history": history,
+        }
 
     @staticmethod
     def _rank_standings(rows: list[dict]) -> list[dict]:

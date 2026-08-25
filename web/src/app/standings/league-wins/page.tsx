@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Card,
@@ -18,8 +18,8 @@ import { SeasonWeekRangeFilter } from "@/components/season-week-range-filter";
 import { PositionOverTimeChart, buildHistoryChartData } from "@/components/position-over-time-chart";
 import { categoricalPalette } from "@/lib/palette";
 import {
-  getLeagueMeta,
   getStandings,
+  getStandingsBootstrap,
   getStandingsHistory,
   type LeagueMeta,
   type StandingsHistoryResponse,
@@ -56,12 +56,29 @@ function LeagueWinsPageInner() {
   const [isLoading, setIsLoading] = useState(true);
 
   const searchParams = useSearchParams();
+  // See standings/page.tsx's matching comment -- same bootstrap/skip
+  // pattern, shared backend endpoint (both pages render the same
+  // StandingsResponse/StandingsHistoryResponse shape, just different fields).
+  const skipNextFetch = useRef(false);
 
   useEffect(() => {
     const yearFromUrl = Number(searchParams.get("year"));
-    getLeagueMeta().then((m) => {
-      setMeta(m);
-      setYear(m.years.includes(yearFromUrl) ? yearFromUrl : m.current_year);
+    getStandingsBootstrap().then((b) => {
+      setMeta(b.meta);
+      const overrideYear = b.meta.years.includes(yearFromUrl) && yearFromUrl !== b.year;
+      if (overrideYear) {
+        setYear(yearFromUrl);
+        return;
+      }
+      setYear(b.year ?? b.meta.current_year);
+      if (b.standings) {
+        skipNextFetch.current = true;
+        setStandings(b.standings);
+        setPreviousStandings(b.previous_standings);
+        setHistory(b.history);
+        setError(null);
+        setIsLoading(false);
+      }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -93,6 +110,10 @@ function LeagueWinsPageInner() {
   // would be unnecessary friction here.
   useEffect(() => {
     if (year == null || !weekRange) return;
+    if (skipNextFetch.current) {
+      skipNextFetch.current = false;
+      return;
+    }
     setIsLoading(true);
     setError(null);
     const [minWeek, maxWeekSel] = weekRange;

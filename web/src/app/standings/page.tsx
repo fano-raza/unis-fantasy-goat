@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Card,
@@ -20,9 +20,9 @@ import { SeasonWeekRangeFilter } from "@/components/season-week-range-filter";
 import { PositionOverTimeChart, buildHistoryChartData } from "@/components/position-over-time-chart";
 import { categoricalPalette } from "@/lib/palette";
 import {
-  getLeagueMeta,
   getPlayoffBrackets,
   getStandings,
+  getStandingsBootstrap,
   getStandingsHistory,
   type LeagueMeta,
   type PlayoffBracketsResponse,
@@ -63,6 +63,13 @@ function StandingsPageInner() {
   const [isLoading, setIsLoading] = useState(true);
 
   const searchParams = useSearchParams();
+  // Bootstrap fetches meta + the current year's default-range standings in
+  // one round-trip; this flags that the next [year, weekRange] effect run
+  // is that same default pair, so it doesn't re-fetch what bootstrap
+  // already delivered. Left false (and thus a no-op) when a ?year= deep
+  // link overrides the default year below, since bootstrap's rows are for
+  // the wrong year in that case.
+  const skipNextFetch = useRef(false);
 
   useEffect(() => {
     // A ?year= link (from a Profile stat-tile deep link) wins over the
@@ -71,9 +78,22 @@ function StandingsPageInner() {
     // Profile stat-tile links).
     const yearFromUrl = Number(searchParams.get("year"));
     if (searchParams.get("tree") === "1") setShowPlayoffTree(true);
-    getLeagueMeta().then((m) => {
-      setMeta(m);
-      setYear(m.years.includes(yearFromUrl) ? yearFromUrl : m.current_year);
+    getStandingsBootstrap().then((b) => {
+      setMeta(b.meta);
+      const overrideYear = b.meta.years.includes(yearFromUrl) && yearFromUrl !== b.year;
+      if (overrideYear) {
+        setYear(yearFromUrl);
+        return;
+      }
+      setYear(b.year ?? b.meta.current_year);
+      if (b.standings) {
+        skipNextFetch.current = true;
+        setStandings(b.standings);
+        setPreviousStandings(b.previous_standings);
+        setHistory(b.history);
+        setError(null);
+        setIsLoading(false);
+      }
     });
     // Deliberately only reads searchParams once, at mount -- see the
     // matching comment on Profile's ?team= handling for why.
@@ -113,6 +133,10 @@ function StandingsPageInner() {
   // would be unnecessary friction here.
   useEffect(() => {
     if (year == null || !weekRange) return;
+    if (skipNextFetch.current) {
+      skipNextFetch.current = false;
+      return;
+    }
     // Set immediately (not inside the debounced timeout below) so a filter
     // change shows the loading state right away instead of leaving the
     // previous year/week-range's stale standings (or a stale error from an
