@@ -213,6 +213,25 @@ def league_meta() -> dict:
     return league_store.meta()
 
 
+@app.get("/league/weekly_stats_bootstrap")
+def league_weekly_stats_bootstrap() -> dict:
+    # Combines /league/meta + /league/weekly_leaderboard (current year/week)
+    # into one response so the Weekly Stats page's initial load pays a single
+    # network round-trip to the droplet instead of two sequential ones --
+    # both underlying calls are already cheap/cached (see meta()'s and
+    # weekly_leaderboard()'s own caching), so RTT was the actual cost here,
+    # not computation.
+    m = league_store.meta()
+    year, week = m.get("current_year"), m.get("current_week")
+    rows: list[dict] = []
+    if year is not None and week is not None:
+        try:
+            rows = league_store.weekly_leaderboard(year, week)
+        except ValueError:
+            rows = []
+    return {"meta": m, "rows": rows}
+
+
 @app.get("/league/category_history")
 def league_category_history() -> dict:
     return league_store.category_history()

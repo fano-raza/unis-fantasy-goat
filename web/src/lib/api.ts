@@ -348,6 +348,18 @@ function post<T>(path: string, body: unknown): Promise<T> {
 
 export const getLeagueMeta = () => apiFetch<LeagueMeta>("/league/meta");
 
+export interface WeeklyStatsBootstrap {
+  meta: LeagueMeta;
+  rows: WeekRow[];
+}
+
+// Combines meta + the current week's leaderboard into one round-trip, for
+// the Weekly Stats page's initial load (see dashboard_site/api/app.py's
+// /league/weekly_stats_bootstrap for why this exists instead of the two
+// separate calls below).
+export const getWeeklyStatsBootstrap = () =>
+  apiFetch<WeeklyStatsBootstrap>("/league/weekly_stats_bootstrap");
+
 export const getWeeklyTeam = (req: WeeklyTeamRequest) =>
   post<WeekRow>("/league/weekly_team", req);
 

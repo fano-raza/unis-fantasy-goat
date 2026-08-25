@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Card,
   CardAction,
@@ -18,8 +18,8 @@ import { useSelectedTeam } from "@/lib/use-selected-team";
 import { SourceLastUpdated } from "@/components/source-last-updated";
 import {
   API_BASE_URL,
-  getLeagueMeta,
   getWeeklyLeaderboard,
+  getWeeklyStatsBootstrap,
   type LeagueMeta,
   type WeekRow,
 } from "@/lib/api";
@@ -55,11 +55,19 @@ export default function WeeklyStatsPage() {
   const [rows, setRows] = useState<WeekRow[]>([]);
   const [rowsError, setRowsError] = useState<string | null>(null);
   const [rowsLoading, setRowsLoading] = useState(true);
+  // Bootstrap fetches meta + the current week's rows in one round-trip; this
+  // flags that the next [year, week] effect run is that same initial pair,
+  // so it doesn't re-fetch what bootstrap already delivered.
+  const skipNextLeaderboardFetch = useRef(false);
 
   useEffect(() => {
-    getLeagueMeta()
-      .then((m) => {
+    getWeeklyStatsBootstrap()
+      .then(({ meta: m, rows: r }) => {
         setMeta(m);
+        skipNextLeaderboardFetch.current = true;
+        setRows(r);
+        setRowsError(null);
+        setRowsLoading(false);
         setYear(m.current_year);
         setWeek(m.current_week);
       })
@@ -68,6 +76,10 @@ export default function WeeklyStatsPage() {
 
   useEffect(() => {
     if (year == null || week == null) return;
+    if (skipNextLeaderboardFetch.current) {
+      skipNextLeaderboardFetch.current = false;
+      return;
+    }
     setRowsLoading(true);
     getWeeklyLeaderboard({ year, week })
       .then((r) => {
