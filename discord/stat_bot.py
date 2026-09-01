@@ -169,7 +169,8 @@ def run_bot() -> None:
             "`/trophy-case [user]` — career trophy summary\n"
             "`/goat-check` — who's the league GOAT?\n\n"
             "**Daily Games Commands:**\n" + game_lines + "\n"
-            "`/dg-update` — force an immediate #daily-games stats update"
+            "`/dg-update` — force an immediate #daily-games stats update\n"
+            "_(leaderboards auto-refresh if data is over 10 min stale)_"
         )
 
     @bot.slash_command(name="standings-check", description="Show league standings for a season.", **slash_kwargs)
@@ -372,10 +373,23 @@ def run_bot() -> None:
             await inter.response.send_message(f"⚠️ {e}", ephemeral=True)
             return
 
+        # Deferred because ensure_fresh() may do a live channel scan (only
+        # when stale -- see FRESHNESS_WINDOW), which can outrun Discord's
+        # 3-second initial-response window.
+        await inter.response.defer()
+        try:
+            channel = bot.get_channel(daily_games.CHANNEL_ID) or await bot.fetch_channel(daily_games.CHANNEL_ID)
+            last_synced = await daily_games.ensure_fresh(channel)
+        except Exception as exc:
+            # Fall back to whatever's already on disk rather than failing
+            # the whole command over a transient channel-fetch/scan error.
+            print(f"Daily games freshness check failed, showing cached data: {exc}")
+            last_synced = daily_games.read_last_synced_at()
+
         board = daily_games.build_leaderboard(game, days_back)
         label = daily_games.GAME_LABELS[game]
         if not board:
-            await inter.response.send_message(f"No {label} data for {range_label} yet.")
+            await inter.followup.send(f"No {label} data for {range_label} yet.")
             return
 
         display_names = daily_games.load_display_names()
@@ -385,13 +399,13 @@ def run_bot() -> None:
             name = display_names.get(str(entry["uid"]), f"<@{entry['uid']}>")
             avg = f"{entry['avg']:.2f}" if entry["avg"] is not None else "—"
             if can_be_incomplete:
-                lines.append(
-                    f"{rank}. **{name}** — Average Tries: {avg}, "
-                    f"{entry['complete']}/{entry['gp']} Completed"
-                )
+                pct = (entry["complete"] / entry["gp"] * 100) if entry["gp"] else 0.0
+                lines.append(f"{rank}. **{name}** — Average Tries: {avg}, {pct:.0f}% Completed")
             else:
                 lines.append(f"{rank}. **{name}** — Score: {avg} ({entry['gp']} games)")
-        await inter.response.send_message("\n".join(lines))
+        if last_synced is not None:
+            lines.append(f"\n*Last updated: <t:{int(last_synced.timestamp())}:R>*")
+        await inter.followup.send("\n".join(lines))
 
     # One /<game> slash command per daily_games.GAMES entry, all sharing
     # _game_leaderboard -- default last 7 days, optional `days` free-text

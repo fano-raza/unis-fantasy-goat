@@ -22,10 +22,18 @@ from typing import Optional
 
 import disnake
 
-from shared.runtime_config import daily_games_cursor_path, daily_games_history_path
+from shared.runtime_config import (
+    daily_games_cursor_path,
+    daily_games_history_path,
+    daily_games_last_synced_at_path,
+)
 
 CHANNEL_ID = 1142189924544696321
 DISCORD_NAMES_CSV = Path(__file__).resolve().parent / "discord_names.csv"
+
+# How stale the last scan can be before a leaderboard command triggers a
+# fresh one itself, instead of relying solely on the hourly/4am loop.
+FRESHNESS_WINDOW = timedelta(minutes=10)
 
 CSV_FIELDS = ["message_id", "discord_user_id", "game", "date", "timestamp", "score", "solved"]
 
@@ -204,6 +212,24 @@ def _write_cursor(message_id: int) -> None:
     path.write_text(str(message_id))
 
 
+def read_last_synced_at() -> Optional[datetime]:
+    """UTC timestamp of the last successful scan_and_record() call, or None
+    if it's never run."""
+    path = daily_games_last_synced_at_path()
+    if not path.exists():
+        return None
+    try:
+        return datetime.fromisoformat(path.read_text().strip())
+    except (ValueError, OSError):
+        return None
+
+
+def _write_last_synced_at(when: datetime) -> None:
+    path = daily_games_last_synced_at_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(when.isoformat())
+
+
 def _ensure_csv(path: Path) -> None:
     if path.exists():
         return
@@ -248,7 +274,23 @@ async def scan_and_record(channel: disnake.abc.Messageable) -> int:
     if last_seen_id is not None:
         _write_cursor(last_seen_id)
 
+    _write_last_synced_at(datetime.now(timezone.utc))
+
     return len(new_rows)
+
+
+async def ensure_fresh(channel: disnake.abc.Messageable) -> datetime:
+    """Scans for new #daily-games posts only if the last scan is missing or
+    older than FRESHNESS_WINDOW -- called from leaderboard commands so they
+    stay reasonably live without re-scanning the channel on every call (the
+    4am/hourly loop in stat_bot.py still runs independently of this).
+    Returns the resulting last-synced-at UTC timestamp, for display."""
+    last_synced = read_last_synced_at()
+    now = datetime.now(timezone.utc)
+    if last_synced is None or now - last_synced > FRESHNESS_WINDOW:
+        await scan_and_record(channel)
+        return read_last_synced_at() or now
+    return last_synced
 
 
 def parse_days_arg(raw: Optional[str]) -> tuple[Optional[int], str]:

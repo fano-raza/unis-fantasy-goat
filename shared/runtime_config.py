@@ -59,3 +59,13 @@ def daily_games_last_run_path() -> Path:
     """Last-run date for StatBot's daily #daily-games sync -- same
     restart/missed-tick reasoning as weekly_role_sync_state_path()."""
     return DATA_ROOT / "daily_games_last_run.txt"
+
+
+def daily_games_last_synced_at_path() -> Path:
+    """Last-synced-at UTC timestamp (ISO 8601), written on every successful
+    scan_and_record() call regardless of caller. Distinct from
+    daily_games_last_run_path(), which only tracks a once-per-day date for
+    gating the 4am scheduled sync -- this one has real precision, so it can
+    back a "stale after N minutes" freshness check and a "Last updated"
+    display line on leaderboard commands."""
+    return DATA_ROOT / "daily_games_last_synced_at.txt"
