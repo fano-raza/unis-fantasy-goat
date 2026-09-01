@@ -400,7 +400,7 @@ def run_bot() -> None:
             avg = f"{entry['avg']:.2f}" if entry["avg"] is not None else "—"
             if can_be_incomplete:
                 pct = (entry["complete"] / entry["gp"] * 100) if entry["gp"] else 0.0
-                lines.append(f"{rank}. **{name}** — Average Tries: {avg}, {pct:.0f}% Completed")
+                lines.append(f"{rank}. **{name}** — Average Tries: {avg}, {pct:.0f}% Comp. ({entry['gp']} games)")
             else:
                 lines.append(f"{rank}. **{name}** — Score: {avg} ({entry['gp']} games)")
         if last_synced is not None:
