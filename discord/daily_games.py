@@ -238,15 +238,27 @@ def _ensure_csv(path: Path) -> None:
         csv.DictWriter(f, fieldnames=CSV_FIELDS).writeheader()
 
 
+def _existing_play_keys(csv_path: Path) -> set[tuple[str, str, str]]:
+    """(discord_user_id, game, date) for every play already on disk -- used
+    to drop duplicate same-day posts (a resubmit, an edit-and-repost, etc.),
+    keeping only whichever one was recorded first."""
+    with csv_path.open(newline="", encoding="utf-8") as f:
+        return {(row["discord_user_id"], row["game"], row["date"]) for row in csv.DictReader(f)}
+
+
 async def scan_and_record(channel: disnake.abc.Messageable) -> int:
     """Scans for new score posts since the last recorded message id and
     appends them to daily_games_history.csv. Returns rows added. Safe to
-    call repeatedly -- incremental after the first (full-backfill) call."""
+    call repeatedly -- incremental after the first (full-backfill) call.
+    If a user posts more than one score for the same game+date (across this
+    scan or a past one), only the first one recorded is kept -- later ones
+    for that same (user, game, date) are dropped."""
     cursor = _read_cursor()
     after = disnake.Object(id=cursor) if cursor else None
 
     csv_path = daily_games_history_path()
     _ensure_csv(csv_path)
+    seen_keys = _existing_play_keys(csv_path)
 
     new_rows: list[dict] = []
     last_seen_id = cursor
@@ -255,12 +267,17 @@ async def scan_and_record(channel: disnake.abc.Messageable) -> int:
         last_seen_id = message.id
         posted_date = message.created_at.date()
         for game, score, solved, explicit_date in parse_message(message.content, posted_date):
+            play_date = (explicit_date or posted_date).isoformat()
+            key = (str(message.author.id), game, play_date)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
             new_rows.append(
                 {
                     "message_id": message.id,
                     "discord_user_id": message.author.id,
                     "game": game,
-                    "date": (explicit_date or posted_date).isoformat(),
+                    "date": play_date,
                     "timestamp": message.created_at.isoformat(),
                     "score": "" if score is None else score,
                     "solved": int(solved),
