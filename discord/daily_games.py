@@ -338,6 +338,56 @@ async def scan_and_record(channel: disnake.abc.Messageable) -> int:
     return len(new_rows)
 
 
+async def backfill_maptap_raw_scores(channel: disnake.abc.Messageable) -> int:
+    """One-off backfill for raw_score on MapTap rows recorded before that
+    column existed (or before this file's parser could extract it). Unlike
+    scan_and_record, this ignores the cursor and walks the whole channel
+    from the beginning -- but only far enough to resolve every currently-
+    missing row, then stops early. Only ever fills raw_score on an existing
+    row by message_id; never touches score/solved/date, never adds rows.
+    Safe to re-run -- a no-op once nothing's missing. Returns rows updated."""
+    csv_path = daily_games_history_path()
+    if not csv_path.exists():
+        return 0
+    with csv_path.open(newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+
+    missing_ids = {row["message_id"] for row in rows if row["game"] == "maptap" and not row.get("raw_score")}
+    if not missing_ids:
+        return 0
+
+    raw_by_message_id: dict[str, float] = {}
+    async for message in channel.history(limit=None, oldest_first=True):
+        mid = str(message.id)
+        if mid not in missing_ids:
+            continue
+        posted_date = message.created_at.date()
+        for game, _score, _solved, _explicit_date, raw_score in parse_message(message.content, posted_date):
+            if game == "maptap" and raw_score is not None:
+                raw_by_message_id[mid] = raw_score
+        missing_ids.discard(mid)
+        if not missing_ids:
+            break
+
+    if not raw_by_message_id:
+        return 0
+
+    updated = 0
+    for row in rows:
+        found = raw_by_message_id.get(row["message_id"])
+        if row["game"] == "maptap" and found is not None and not row.get("raw_score"):
+            row["raw_score"] = found
+            updated += 1
+
+    if updated:
+        with csv_path.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
+            writer.writeheader()
+            writer.writerows(rows)
+
+    return updated
+
+
 async def ensure_fresh(channel: disnake.abc.Messageable) -> datetime:
     """Scans for new #daily-games posts only if the last scan is missing or
     older than FRESHNESS_WINDOW -- called from leaderboard commands so they
