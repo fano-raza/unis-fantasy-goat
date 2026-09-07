@@ -154,7 +154,9 @@ def run_bot() -> None:
         if bot.user not in message.mentions:
             return
         game_lines = "\n".join(
-            f"`/{game} [days]` — {daily_games.GAME_LABELS[game]} leaderboard (default: last 7 days, or \"ever\" for all-time)"
+            f"`/{game} [days]" + (" [raw]" if game == "maptap" else "") + "`"
+            f" — {daily_games.GAME_LABELS[game]} leaderboard (default: last 7 days, or \"ever\" for all-time)"
+            + (" -- raw=True averages the pre-multiplier round-score total instead" if game == "maptap" else "")
             for game in daily_games.GAMES
         )
         await message.channel.send(
@@ -366,6 +368,7 @@ def run_bot() -> None:
         inter: disnake.ApplicationCommandInteraction,
         game: str,
         days: Optional[str],
+        raw: bool = False,
     ) -> None:
         try:
             days_back, range_label = daily_games.parse_days_arg(days)
@@ -386,23 +389,26 @@ def run_bot() -> None:
             print(f"Daily games freshness check failed, showing cached data: {exc}")
             last_synced = daily_games.read_last_synced_at()
 
-        board = daily_games.build_leaderboard(game, days_back)
+        board = daily_games.build_leaderboard(game, days_back, raw=raw)
         label = daily_games.GAME_LABELS[game]
+        if raw:
+            label = f"{label} (Raw)"
         if not board:
             await inter.followup.send(f"No {label} data for {range_label} yet.")
             return
 
         display_names = daily_games.load_display_names()
         can_be_incomplete = daily_games.CAN_BE_INCOMPLETE[game]
+        score_label = "Raw Score" if raw else "Average Tries" if can_be_incomplete else "Score"
         lines = [f"🏆 **{label}** — {range_label}"]
         for rank, entry in enumerate(board, start=1):
             name = display_names.get(str(entry["uid"]), f"<@{entry['uid']}>")
             avg = f"{entry['avg']:.2f}" if entry["avg"] is not None else "—"
-            if can_be_incomplete:
+            if can_be_incomplete and not raw:
                 pct = (entry["complete"] / entry["gp"] * 100) if entry["gp"] else 0.0
-                lines.append(f"{rank}. **{name}** — Average Tries: {avg}, {pct:.0f}% Comp. ({entry['gp']} games)")
+                lines.append(f"{rank}. **{name}** — {score_label}: {avg}, {pct:.0f}% Comp. ({entry['gp']} games)")
             else:
-                lines.append(f"{rank}. **{name}** — Score: {avg} ({entry['gp']} games)")
+                lines.append(f"{rank}. **{name}** — {score_label}: {avg} ({entry['gp']} games)")
         if last_synced is not None:
             lines.append(f"\n*Last updated: <t:{int(last_synced.timestamp())}:R>*")
         await inter.followup.send("\n".join(lines))
@@ -413,16 +419,31 @@ def run_bot() -> None:
     for _game in daily_games.GAMES:
 
         def _register(game: str = _game) -> None:
-            @bot.slash_command(
-                name=game,
-                description=f"{daily_games.GAME_LABELS[game]} leaderboard (default: last 7 days).",
-                **slash_kwargs,
-            )
-            async def _game_command(
-                inter: disnake.ApplicationCommandInteraction,
-                days: Optional[str] = None,
-            ):
-                await _game_leaderboard(inter, game, days)
+            if game == "maptap":
+                @bot.slash_command(
+                    name=game,
+                    description=(
+                        f"{daily_games.GAME_LABELS[game]} leaderboard (default: last 7 days)."
+                    ),
+                    **slash_kwargs,
+                )
+                async def _game_command(
+                    inter: disnake.ApplicationCommandInteraction,
+                    days: Optional[str] = None,
+                    raw: bool = False,
+                ):
+                    await _game_leaderboard(inter, game, days, raw)
+            else:
+                @bot.slash_command(
+                    name=game,
+                    description=f"{daily_games.GAME_LABELS[game]} leaderboard (default: last 7 days).",
+                    **slash_kwargs,
+                )
+                async def _game_command(
+                    inter: disnake.ApplicationCommandInteraction,
+                    days: Optional[str] = None,
+                ):
+                    await _game_leaderboard(inter, game, days)
 
         _register()
 

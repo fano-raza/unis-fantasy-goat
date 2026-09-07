@@ -9,7 +9,11 @@ Storage: one row per game-play, appended to daily_games_history.csv
 daily_games_cursor_path() stores the last-processed message id so a daily
 refresh only walks new messages, not the whole channel (currently ~2900
 messages and growing) each time. First-ever call has no cursor, so it
-naturally does a full backfill.
+naturally does a full backfill. raw_score (MapTap-only: the pre-multiplier
+sum of its 5 round scores) is empty for every other game and for rows
+recorded before that column existed -- _ensure_csv migrates an old-format
+file's header in place the first time it's touched, backfilling "" for
+those rows rather than requiring a one-off migration script.
 """
 
 from __future__ import annotations
@@ -35,7 +39,7 @@ DISCORD_NAMES_CSV = Path(__file__).resolve().parent / "discord_names.csv"
 # fresh one itself, instead of relying solely on the hourly/4am loop.
 FRESHNESS_WINDOW = timedelta(minutes=10)
 
-CSV_FIELDS = ["message_id", "discord_user_id", "game", "date", "timestamp", "score", "solved"]
+CSV_FIELDS = ["message_id", "discord_user_id", "game", "date", "timestamp", "score", "solved", "raw_score"]
 
 # "www.maptap.gg July 15\n98\U0001f525 94\U0001f3c5 58\U0001f92b 93\U0001f3c6 90\U0001f451\nFinal score: 857"
 # -- deliberately requires "<Month> <day>" right after the bare domain, NOT
@@ -65,6 +69,15 @@ MAPTAP_MARKER = re.compile(
     rf"www\.maptap\.gg\s+({'|'.join(_MAPTAP_MONTH_NAMES)})\s+(\d{{1,2}})", re.IGNORECASE
 )
 MAPTAP_SCORE_RE = re.compile(r"final score:\s*([\d,]+)", re.IGNORECASE)
+# The round-scores line sits between the marker and "Final score:", e.g.
+# "98\U0001f525 94\U0001f3c5 58\U0001f92b 93\U0001f3c6 90\U0001f451" -- one
+# 0-100 score per round, each followed by a rank emoji, always 5 rounds
+# (max total 500). Extracted by just pulling every number out of that span
+# rather than trying to match the emojis themselves (they vary by rank/
+# medal and aren't worth pinning down). Only trusted when exactly 5 numbers
+# turn up -- anything else means the format didn't match what's confirmed
+# here and the raw total is left out rather than risking a wrong sum.
+MAPTAP_ROUND_SCORE_RE = re.compile(r"\d{1,3}")
 
 # "#Worldle #1673 (21.08.2026) 3/6 (100%)" -- the "(date)" group is optional:
 # the earliest (2023-08-18) posts were "#Worldle #574 6/6 (100%)", no date.
@@ -128,18 +141,23 @@ CAN_BE_INCOMPLETE = {
 DEFAULT_DAYS_BACK = 7
 
 
-def parse_message(content: str, posted_date: date) -> list[tuple[str, Optional[float], bool, Optional[date]]]:
-    """(game, score, solved, explicit_date) for every game marker found in
-    a message. score is None for a failed/incomplete play (still counts as
-    a game played -- solved=False); normally 0 or 1 result per message.
-    explicit_date is the puzzle date parsed out of the message text itself
-    (Worldle/Flagle/WhenTaken carry a full DD.MM.YYYY; MapTap carries
+def parse_message(
+    content: str, posted_date: date
+) -> list[tuple[str, Optional[float], bool, Optional[date], Optional[float]]]:
+    """(game, score, solved, explicit_date, raw_score) for every game marker
+    found in a message. score is None for a failed/incomplete play (still
+    counts as a game played -- solved=False); normally 0 or 1 result per
+    message. explicit_date is the puzzle date parsed out of the message text
+    itself (Worldle/Flagle/WhenTaken carry a full DD.MM.YYYY; MapTap carries
     "<Month> <day>" with no year, so posted_date's year fills the gap --
     except right at a year boundary (posted in January about a December
     puzzle), where posted_date's year would be off by one; Travle carries
     no date at all) -- None means "fall back to the message's own post
-    date", which the caller (scan_and_record) does."""
-    results: list[tuple[str, Optional[float], bool, Optional[date]]] = []
+    date", which the caller (scan_and_record) does. raw_score is MapTap-only
+    (sum of its 5 per-round scores, before the game's multipliers are
+    applied to produce the final "score") -- always None for every other
+    game."""
+    results: list[tuple[str, Optional[float], bool, Optional[date], Optional[float]]] = []
 
     m = MAPTAP_MARKER.search(content)
     if m:
@@ -163,35 +181,40 @@ def parse_message(content: str, posted_date: date) -> list[tuple[str, Optional[f
                 explicit_date = date(year, month_num, int(m.group(2)))
             except ValueError:
                 explicit_date = None
-            results.append(("maptap", float(score_m.group(1).replace(",", "")), True, explicit_date))
+            rounds_text = content[m.end():score_m.start()]
+            round_scores = [int(n) for n in MAPTAP_ROUND_SCORE_RE.findall(rounds_text)]
+            raw_score = float(sum(round_scores)) if len(round_scores) == 5 else None
+            results.append(
+                ("maptap", float(score_m.group(1).replace(",", "")), True, explicit_date, raw_score)
+            )
 
     if WORLDLE_MARKER_RE.search(content):
         m = WORLDLE_RE.search(content)
         if m:
             failed = m.group(2).upper() == "X"
             explicit_date = _parse_ddmmyyyy(m.group(1)) if m.group(1) else None
-            results.append(("worldle", None if failed else float(m.group(2)), not failed, explicit_date))
+            results.append(("worldle", None if failed else float(m.group(2)), not failed, explicit_date, None))
 
     if FLAGLE_MARKER_RE.search(content):
         m = FLAGLE_RE.search(content)
         if m:
             failed = m.group(2).upper() == "X"
             explicit_date = _parse_ddmmyyyy(m.group(1)) if m.group(1) else None
-            results.append(("flagle", None if failed else float(m.group(2)), not failed, explicit_date))
+            results.append(("flagle", None if failed else float(m.group(2)), not failed, explicit_date, None))
 
     if WHENTAKEN_MARKER_RE.search(content):
         m = WHENTAKEN_SCORE_RE.search(content)
         if m:
             date_m = WHENTAKEN_DATE_RE.search(content)
             explicit_date = _parse_ddmmyyyy(date_m.group(1)) if date_m else None
-            results.append(("whentaken", float(m.group(1)), True, explicit_date))
+            results.append(("whentaken", float(m.group(1)), True, explicit_date, None))
 
     if TRAVLE_MARKER_RE.search(content):
         m = TRAVLE_SOLVED_RE.search(content)
         if m:
-            results.append(("travle", float(m.group(1)), True, None))
+            results.append(("travle", float(m.group(1)), True, None, None))
         elif TRAVLE_AWAY_RE.search(content):
-            results.append(("travle", None, False, None))
+            results.append(("travle", None, False, None, None))
 
     return results
 
@@ -231,11 +254,29 @@ def _write_last_synced_at(when: datetime) -> None:
 
 
 def _ensure_csv(path: Path) -> None:
-    if path.exists():
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", newline="", encoding="utf-8") as f:
+            csv.DictWriter(f, fieldnames=CSV_FIELDS).writeheader()
         return
-    path.parent.mkdir(parents=True, exist_ok=True)
+    _migrate_csv_if_needed(path)
+
+
+def _migrate_csv_if_needed(path: Path) -> None:
+    """Adds the raw_score column to a pre-existing CSV written before it
+    existed -- backfilled empty for every already-recorded row. A no-op once
+    the file's header already matches CSV_FIELDS."""
+    with path.open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames == CSV_FIELDS:
+            return
+        rows = list(reader)
     with path.open("w", newline="", encoding="utf-8") as f:
-        csv.DictWriter(f, fieldnames=CSV_FIELDS).writeheader()
+        writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
+        writer.writeheader()
+        for row in rows:
+            row.setdefault("raw_score", "")
+            writer.writerow(row)
 
 
 def _existing_play_keys(csv_path: Path) -> set[tuple[str, str, str]]:
@@ -266,7 +307,7 @@ async def scan_and_record(channel: disnake.abc.Messageable) -> int:
     async for message in channel.history(limit=None, after=after, oldest_first=True):
         last_seen_id = message.id
         posted_date = message.created_at.date()
-        for game, score, solved, explicit_date in parse_message(message.content, posted_date):
+        for game, score, solved, explicit_date, raw_score in parse_message(message.content, posted_date):
             play_date = (explicit_date or posted_date).isoformat()
             key = (str(message.author.id), game, play_date)
             if key in seen_keys:
@@ -281,6 +322,7 @@ async def scan_and_record(channel: disnake.abc.Messageable) -> int:
                     "timestamp": message.created_at.isoformat(),
                     "score": "" if score is None else score,
                     "solved": int(solved),
+                    "raw_score": "" if raw_score is None else raw_score,
                 }
             )
 
@@ -336,12 +378,17 @@ def load_history_rows(game: str) -> list[dict]:
         return [row for row in csv.DictReader(f) if row["game"] == game]
 
 
-def build_leaderboard(game: str, days_back: Optional[int]) -> list[dict]:
+def build_leaderboard(game: str, days_back: Optional[int], raw: bool = False) -> list[dict]:
     """[{uid, gp, complete, incomplete, avg}], sorted best-first per the
     game's lower/higher-is-better convention. gp = complete + incomplete
     (total games played). avg is over complete plays only -- None (and
     sorted last) if the user has zero complete plays in range, even if
-    incomplete > 0."""
+    incomplete > 0.
+
+    raw=True averages raw_score (MapTap's pre-multiplier sum of its 5
+    round scores, max 500) instead of score (the final, multiplied score).
+    Only meaningful for game="maptap" -- every other game has raw_score
+    empty on every row, so raw=True there just yields avg=None for everyone."""
     rows = load_history_rows(game)
     if days_back is not None:
         # Calendar-date arithmetic, not a raw timestamp subtraction: `date`
@@ -352,10 +399,11 @@ def build_leaderboard(game: str, days_back: Optional[int]) -> list[dict]:
         cutoff = datetime.now(timezone.utc).date() - timedelta(days=days_back - 1)
         rows = [r for r in rows if date.fromisoformat(r["date"]) >= cutoff]
 
+    score_field = "raw_score" if raw else "score"
     by_uid: dict[int, list[Optional[float]]] = {}
     for r in rows:
         uid = int(r["discord_user_id"])
-        score = float(r["score"]) if r["score"] not in ("", None) else None
+        score = float(r[score_field]) if r.get(score_field) not in ("", None) else None
         by_uid.setdefault(uid, []).append(score)
 
     lower_better = LOWER_IS_BETTER[game]
