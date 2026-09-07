@@ -352,19 +352,27 @@ async def ensure_fresh(channel: disnake.abc.Messageable) -> datetime:
     return last_synced
 
 
+# Every spelling of "all-time" this accepts, compared case-insensitively
+# after stripping spaces/hyphens -- "ever", "alltime", "all-time", "all time"
+# all normalize to the same "alltime" key.
+ALL_TIME_ARG_VALUES = ("ever", "alltime")
+
+
 def parse_days_arg(raw: Optional[str]) -> tuple[Optional[int], str]:
-    """Returns (days_back, human label). days_back is None for "ever"
-    (no date cutoff -- full history), otherwise a positive int. Raises
-    ValueError on unparseable input, message meant to be shown to the user."""
+    """Returns (days_back, human label). days_back is None for "ever"/
+    "all-time" (no date cutoff -- full history), otherwise a positive int.
+    Raises ValueError on unparseable input, message meant to be shown to
+    the user."""
     if raw is None or not raw.strip():
         return DEFAULT_DAYS_BACK, f"last {DEFAULT_DAYS_BACK} days"
     val = raw.strip()
-    if val.lower() == "ever":
+    normalized = val.lower().replace("-", "").replace(" ", "")
+    if normalized in ALL_TIME_ARG_VALUES:
         return None, "all-time"
     try:
         n = int(val)
     except ValueError:
-        raise ValueError(f'Invalid value "{raw}" -- use a number of days, or "ever" for all-time.')
+        raise ValueError(f'Invalid value "{raw}" -- use a number of days, or "ever"/"all-time" for all-time.')
     if n <= 0:
         raise ValueError("Days must be a positive number.")
     return n, f"last {n} day{'s' if n != 1 else ''}"
