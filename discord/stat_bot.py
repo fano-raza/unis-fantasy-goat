@@ -156,7 +156,7 @@ def run_bot() -> None:
         game_lines = "\n".join(
             f"`/{game} [days]" + (" [raw]" if game == "maptap" else "") + "`"
             f" — {daily_games.GAME_LABELS[game]} leaderboard (default: last 7 days, or \"ever\" for all-time)"
-            + (" -- raw=True averages the pre-multiplier round-score total instead" if game == "maptap" else "")
+            + (' -- raw:true (or raw:raw, case-insensitive) averages the pre-multiplier round-score total instead' if game == "maptap" else "")
             for game in daily_games.GAMES
         )
         await message.channel.send(
@@ -368,13 +368,14 @@ def run_bot() -> None:
         inter: disnake.ApplicationCommandInteraction,
         game: str,
         days: Optional[str],
-        raw: bool = False,
+        raw: Optional[str] = None,
     ) -> None:
         try:
             days_back, range_label = daily_games.parse_days_arg(days)
         except ValueError as e:
             await inter.response.send_message(f"⚠️ {e}", ephemeral=True)
             return
+        raw = daily_games.parse_raw_arg(raw)
 
         # Deferred because ensure_fresh() may do a live channel scan (only
         # when stale -- see FRESHNESS_WINDOW), which can outrun Discord's
@@ -430,7 +431,7 @@ def run_bot() -> None:
                 async def _game_command(
                     inter: disnake.ApplicationCommandInteraction,
                     days: Optional[str] = None,
-                    raw: bool = False,
+                    raw: Optional[str] = None,
                 ):
                     await _game_leaderboard(inter, game, days, raw)
             else:

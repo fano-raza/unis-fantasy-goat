@@ -370,6 +370,20 @@ def parse_days_arg(raw: Optional[str]) -> tuple[Optional[int], str]:
     return n, f"last {n} day{'s' if n != 1 else ''}"
 
 
+# Free-text rather than a boolean option so /maptap raw:<anything> stays
+# forgiving -- "true" or "raw" in any case ("True", "RAW", "TRUE", ...) both
+# mean the same thing; anything else (including not passing it) means False.
+RAW_ARG_TRUE_VALUES = ("true", "raw")
+
+
+def parse_raw_arg(value: Optional[str]) -> bool:
+    """True if the user's raw argument case-insensitively matches "true" or
+    "raw"; False for anything else, including None/empty."""
+    if value is None:
+        return False
+    return value.strip().lower() in RAW_ARG_TRUE_VALUES
+
+
 def load_history_rows(game: str) -> list[dict]:
     path = daily_games_history_path()
     if not path.exists():
