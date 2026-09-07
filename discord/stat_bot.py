@@ -156,7 +156,7 @@ def run_bot() -> None:
         game_lines = "\n".join(
             f"`/{game} [days]" + (" [raw]" if game == "maptap" else "") + "`"
             f" — {daily_games.GAME_LABELS[game]} leaderboard (default: last 7 days, or \"ever\" for all-time)"
-            + (' -- raw:true (or raw:raw, case-insensitive) averages the pre-multiplier round-score total instead' if game == "maptap" else "")
+            + (' -- raw:<anything but "no"/"false"> averages the pre-multiplier round-score total instead' if game == "maptap" else "")
             for game in daily_games.GAMES
         )
         await message.channel.send(

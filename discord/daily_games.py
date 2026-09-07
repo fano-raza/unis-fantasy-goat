@@ -379,17 +379,19 @@ def parse_days_arg(raw: Optional[str]) -> tuple[Optional[int], str]:
 
 
 # Free-text rather than a boolean option so /maptap raw:<anything> stays
-# forgiving -- "true" or "raw" in any case ("True", "RAW", "TRUE", ...) both
-# mean the same thing; anything else (including not passing it) means False.
-RAW_ARG_TRUE_VALUES = ("true", "raw")
+# forgiving. Opt-out rather than opt-in: any non-empty text means True
+# *except* the two explicit "off" spellings below (case-insensitive) --
+# so "true", "raw", "yes", "y", "1", etc. all work without needing to be
+# enumerated individually.
+RAW_ARG_FALSE_VALUES = ("no", "false")
 
 
 def parse_raw_arg(value: Optional[str]) -> bool:
-    """True if the user's raw argument case-insensitively matches "true" or
-    "raw"; False for anything else, including None/empty."""
-    if value is None:
+    """True for any non-empty raw argument except (case-insensitively)
+    "no" or "false"; False for those two, and for None/empty (not passed)."""
+    if value is None or not value.strip():
         return False
-    return value.strip().lower() in RAW_ARG_TRUE_VALUES
+    return value.strip().lower() not in RAW_ARG_FALSE_VALUES
 
 
 def load_history_rows(game: str) -> list[dict]:
