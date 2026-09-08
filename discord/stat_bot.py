@@ -400,14 +400,18 @@ def run_bot() -> None:
 
         display_names = daily_games.load_display_names()
         can_be_incomplete = daily_games.CAN_BE_INCOMPLETE[game]
-        score_label = "Raw Score" if raw else "Average Tries" if can_be_incomplete else "Score"
+        score_label = "Raw Score" if raw else "Score"
         lines = [f"🏆 **{label}** — {range_label}"]
         for rank, entry in enumerate(board, start=1):
             name = display_names.get(str(entry["uid"]), f"<@{entry['uid']}>")
             avg = f"{entry['avg']:.2f}" if entry["avg"] is not None else "—"
             if can_be_incomplete and not raw:
                 pct = (entry["complete"] / entry["gp"] * 100) if entry["gp"] else 0.0
-                lines.append(f"{rank}. **{name}** — {score_label}: {avg}, {pct:.0f}% Comp. ({entry['gp']} games)")
+                rank_score = f"{entry['rank_score']:.2f}" if entry["rank_score"] is not None else "—"
+                lines.append(
+                    f"{rank}. **{name}** — Rank Score: {rank_score} — "
+                    f"Avg Tries: {avg}, {pct:.0f}% Comp. Rate ({entry['gp']} games)"
+                )
             else:
                 lines.append(f"{rank}. **{name}** — {score_label}: {avg} ({entry['gp']} games)")
         if last_synced is not None:

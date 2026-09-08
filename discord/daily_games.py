@@ -518,14 +518,18 @@ def build_leaderboard(game: str, days_back: Optional[int], raw: bool = False) ->
     only -- None if the user has zero complete plays in range, even if
     incomplete > 0.
 
-    For games where CAN_BE_INCOMPLETE (Worldle/Flagle/Travle), sorting is
-    two-tiered: players with gp >= COMPLETION_SCORE_MIN_GAMES are ranked by
-    _completion_score (best first, None last within this tier), then every
-    player below that games-played floor ranks below all of them, sorted
-    by completion rate (best first) then avg tries per the game's
-    lower/higher-is-better convention (None avg last within this tier).
-    For every other game (MapTap/WhenTaken, which can't be incomplete),
-    sorting is unchanged: plain avg-tries order, best first, None last.
+    For games where CAN_BE_INCOMPLETE (Worldle/Flagle/Travle), each entry
+    also carries rate (complete/gp) and rank_score (_completion_score(),
+    or None if avg is None) -- computed for every entry regardless of tier,
+    for display purposes, even though it isn't what determines a below-
+    the-games-floor player's position (see below). Sorting is two-tiered:
+    players with gp >= COMPLETION_SCORE_MIN_GAMES are ranked by rank_score
+    (best first, None last within this tier), then every player below that
+    games-played floor ranks below all of them, sorted by rate (best
+    first) then avg tries per the game's lower/higher-is-better convention
+    (None avg last within this tier). For every other game (MapTap/
+    WhenTaken, which can't be incomplete), sorting is unchanged: plain
+    avg-tries order, best first, None last -- no rate/rank_score keys.
 
     raw=True averages raw_score (MapTap's pre-multiplier sum of its 5
     round scores, max 500) instead of score (the final, multiplied score).
@@ -564,17 +568,23 @@ def build_leaderboard(game: str, days_back: Optional[int], raw: bool = False) ->
         )
 
     if CAN_BE_INCOMPLETE[game]:
+        for item in result:
+            item["rate"] = item["complete"] / item["gp"] if item["gp"] else 0.0
+            item["rank_score"] = (
+                _completion_score(item["rate"], item["complete"], item["avg"])
+                if item["avg"] is not None
+                else None
+            )
+
         def tiered_sort_key(item: dict):
-            rate = item["complete"] / item["gp"] if item["gp"] else 0.0
             if item["gp"] >= COMPLETION_SCORE_MIN_GAMES:
-                if item["avg"] is None:
+                if item["rank_score"] is None:
                     return (0, 1, 0.0, 0.0)
-                score = _completion_score(rate, item["complete"], item["avg"])
-                return (0, 0, -score, 0.0)
+                return (0, 0, -item["rank_score"], 0.0)
             if item["avg"] is None:
                 return (1, 1, 0.0, 0.0)
             avg_component = item["avg"] if lower_better else -item["avg"]
-            return (1, 0, -rate, avg_component)
+            return (1, 0, -item["rate"], avg_component)
 
         result.sort(key=tiered_sort_key)
     else:
