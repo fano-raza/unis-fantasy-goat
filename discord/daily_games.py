@@ -104,14 +104,17 @@ WHENTAKEN_SCORE_RE = re.compile(r"scored\s+(\d+)\s*/\s*1000", re.IGNORECASE)
 # "#travle #1346 +1" (solved, 1 extra guess over par) / "#travle #1346 -2
 # (Super Perfect)" (claims to beat par) / "#travle #1346 (1 away) (1 hint)"
 # (didn't finish). No date in the text -- always falls back to the message's
-# own post date. A negative value is filtered out below (see TRAVLE_MIN_SCORE)
-# -- despite Travle's own "Super Perfect" label implying it's possible,
-# confirmed by the user this can't legitimately happen and every negative
-# value seen so far has traced back to a joke post, not a real result.
+# own post date. A value outside [TRAVLE_MIN_SCORE, TRAVLE_MAX_SCORE] is
+# filtered out below -- a negative value despite Travle's own "Super Perfect"
+# label implying it's possible (confirmed by the user this can't
+# legitimately happen; every negative value seen so far traced back to a
+# joke post, not a real result), and an unreasonably high extra-guesses
+# count (confirmed by the user: can't exceed 10 for a real result either).
 TRAVLE_MARKER_RE = re.compile(r"#travle\b", re.IGNORECASE)
 TRAVLE_SOLVED_RE = re.compile(r"#travle\s+#\d+\s*([+-]\d+)", re.IGNORECASE)
 TRAVLE_AWAY_RE = re.compile(r"#travle\s+#\d+\s*\(\d+\s*away\)", re.IGNORECASE)
 TRAVLE_MIN_SCORE = 0
+TRAVLE_MAX_SCORE = 10
 
 
 def _parse_ddmmyyyy(raw: str) -> Optional[date]:
@@ -169,10 +172,10 @@ def parse_message(
     game.
 
     Sanity bounds are applied before a result is ever appended -- a message
-    with an out-of-range MapTap final score (>1000) or Travle score (<0) is
-    filtered out entirely (no result for that game at all, same as if no
-    marker had matched), rather than recording an obviously-fake play. This
-    runs before the caller's same-day dedup, so a rejected joke/fake post
+    with an out-of-range MapTap final score (>1000) or Travle score (outside
+    [0, 10]) is filtered out entirely (no result for that game at all, same
+    as if no marker had matched), rather than recording an obviously-fake
+    play. This runs before the caller's same-day dedup, so a rejected joke/fake post
     can never occupy the "first message of the day" slot ahead of a real
     one posted later that day."""
     results: list[tuple[str, Optional[float], bool, Optional[date], Optional[float]]] = []
@@ -236,9 +239,9 @@ def parse_message(
         m = TRAVLE_SOLVED_RE.search(content)
         if m:
             travle_score = float(m.group(1))
-            if travle_score >= TRAVLE_MIN_SCORE:
+            if TRAVLE_MIN_SCORE <= travle_score <= TRAVLE_MAX_SCORE:
                 results.append(("travle", travle_score, True, None, None))
-            # else: negative score -- not a real play, filtered out
+            # else: out of bounds -- not a real play, filtered out
             # entirely (doesn't fall through to the "away" check below,
             # since a signed number already matched here).
         elif TRAVLE_AWAY_RE.search(content):
