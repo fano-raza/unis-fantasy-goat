@@ -483,12 +483,49 @@ def load_history_rows(game: str) -> list[dict]:
         return [row for row in csv.DictReader(f) if row["game"] == game]
 
 
+# For the 3 games that can be incomplete (Worldle/Flagle/Travle), a plain
+# avg-tries sort has a real blind spot: a player who's completed 1 of 11
+# games can outrank someone with a genuine track record, purely because
+# their tiny sample happened to be good. Fixed with a two-tier ranking:
+# players with >= COMPLETION_SCORE_MIN_GAMES games played are ranked by a
+# composite score that rewards completion rate primarily and games
+# completed secondarily; everyone below that games-played floor ranks
+# below every qualifying player, sorted among themselves by completion
+# rate then avg tries (not the composite score -- their sample is too
+# small to trust the volume term).
+COMPLETION_SCORE_MIN_GAMES = 4
+# score = rate * (complete+1) ** (k / avg^m) -- k/m tuned against real
+# history so a ~3.5x games-played gap moves the score by a proportionate
+# amount (see session log). avg is floored before the exponent since
+# Travle's avg tries can legitimately be exactly 0 (a perfect run every
+# time) -- without the floor that's a division by zero, and even close to
+# zero it explodes the exponent out of proportion to how much better that
+# player's results actually are.
+COMPLETION_SCORE_K = 1.0
+COMPLETION_SCORE_M = 0.5
+COMPLETION_SCORE_AVG_FLOOR = 0.25
+
+
+def _completion_score(rate: float, complete: int, avg: float) -> float:
+    avg_for_calc = max(avg, COMPLETION_SCORE_AVG_FLOOR)
+    exponent = COMPLETION_SCORE_K / (avg_for_calc ** COMPLETION_SCORE_M)
+    return rate * (complete + 1) ** exponent
+
+
 def build_leaderboard(game: str, days_back: Optional[int], raw: bool = False) -> list[dict]:
-    """[{uid, gp, complete, incomplete, avg}], sorted best-first per the
-    game's lower/higher-is-better convention. gp = complete + incomplete
-    (total games played). avg is over complete plays only -- None (and
-    sorted last) if the user has zero complete plays in range, even if
+    """[{uid, gp, complete, incomplete, avg}], sorted best-first. gp =
+    complete + incomplete (total games played). avg is over complete plays
+    only -- None if the user has zero complete plays in range, even if
     incomplete > 0.
+
+    For games where CAN_BE_INCOMPLETE (Worldle/Flagle/Travle), sorting is
+    two-tiered: players with gp >= COMPLETION_SCORE_MIN_GAMES are ranked by
+    _completion_score (best first, None last within this tier), then every
+    player below that games-played floor ranks below all of them, sorted
+    by completion rate (best first) then avg tries per the game's
+    lower/higher-is-better convention (None avg last within this tier).
+    For every other game (MapTap/WhenTaken, which can't be incomplete),
+    sorting is unchanged: plain avg-tries order, best first, None last.
 
     raw=True averages raw_score (MapTap's pre-multiplier sum of its 5
     round scores, max 500) instead of score (the final, multiplied score).
@@ -526,12 +563,28 @@ def build_leaderboard(game: str, days_back: Optional[int], raw: bool = False) ->
             }
         )
 
-    def sort_key(item: dict):
-        if item["avg"] is None:
-            return (1, 0.0)
-        return (0, item["avg"] if lower_better else -item["avg"])
+    if CAN_BE_INCOMPLETE[game]:
+        def tiered_sort_key(item: dict):
+            rate = item["complete"] / item["gp"] if item["gp"] else 0.0
+            if item["gp"] >= COMPLETION_SCORE_MIN_GAMES:
+                if item["avg"] is None:
+                    return (0, 1, 0.0, 0.0)
+                score = _completion_score(rate, item["complete"], item["avg"])
+                return (0, 0, -score, 0.0)
+            if item["avg"] is None:
+                return (1, 1, 0.0, 0.0)
+            avg_component = item["avg"] if lower_better else -item["avg"]
+            return (1, 0, -rate, avg_component)
 
-    result.sort(key=sort_key)
+        result.sort(key=tiered_sort_key)
+    else:
+        def sort_key(item: dict):
+            if item["avg"] is None:
+                return (1, 0.0)
+            return (0, item["avg"] if lower_better else -item["avg"])
+
+        result.sort(key=sort_key)
+
     return result
 
 
