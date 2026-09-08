@@ -78,6 +78,12 @@ MAPTAP_SCORE_RE = re.compile(r"final score:\s*([\d,]+)", re.IGNORECASE)
 # turn up -- anything else means the format didn't match what's confirmed
 # here and the raw total is left out rather than risking a wrong sum.
 MAPTAP_ROUND_SCORE_RE = re.compile(r"\d{1,3}")
+# Sanity bounds -- a real MapTap final score (post-multiplier) tops out at
+# 1000, and each of the 5 individual round scores tops out at 100. A message
+# violating either isn't a real MapTap play (e.g. a joke/fake share-text
+# post) and gets filtered out entirely rather than recorded as a play.
+MAPTAP_MAX_FINAL_SCORE = 1000
+MAPTAP_MAX_ROUND_SCORE = 100
 
 # "#Worldle #1673 (21.08.2026) 3/6 (100%)" -- the "(date)" group is optional:
 # the earliest (2023-08-18) posts were "#Worldle #574 6/6 (100%)", no date.
@@ -96,12 +102,16 @@ WHENTAKEN_DATE_RE = re.compile(r"#WhenTaken\s+#\d+\s*\((\d{1,2}\.\d{1,2}\.\d{4})
 WHENTAKEN_SCORE_RE = re.compile(r"scored\s+(\d+)\s*/\s*1000", re.IGNORECASE)
 
 # "#travle #1346 +1" (solved, 1 extra guess over par) / "#travle #1346 -2
-# (Super Perfect)" (beat par -- negative is a real, better-than-0 result) /
-# "#travle #1346 (1 away) (1 hint)" (didn't finish). No date in the text --
-# always falls back to the message's own post date.
+# (Super Perfect)" (claims to beat par) / "#travle #1346 (1 away) (1 hint)"
+# (didn't finish). No date in the text -- always falls back to the message's
+# own post date. A negative value is filtered out below (see TRAVLE_MIN_SCORE)
+# -- despite Travle's own "Super Perfect" label implying it's possible,
+# confirmed by the user this can't legitimately happen and every negative
+# value seen so far has traced back to a joke post, not a real result.
 TRAVLE_MARKER_RE = re.compile(r"#travle\b", re.IGNORECASE)
 TRAVLE_SOLVED_RE = re.compile(r"#travle\s+#\d+\s*([+-]\d+)", re.IGNORECASE)
 TRAVLE_AWAY_RE = re.compile(r"#travle\s+#\d+\s*\(\d+\s*away\)", re.IGNORECASE)
+TRAVLE_MIN_SCORE = 0
 
 
 def _parse_ddmmyyyy(raw: str) -> Optional[date]:
@@ -156,7 +166,15 @@ def parse_message(
     date", which the caller (scan_and_record) does. raw_score is MapTap-only
     (sum of its 5 per-round scores, before the game's multipliers are
     applied to produce the final "score") -- always None for every other
-    game."""
+    game.
+
+    Sanity bounds are applied before a result is ever appended -- a message
+    with an out-of-range MapTap final score (>1000) or Travle score (<0) is
+    filtered out entirely (no result for that game at all, same as if no
+    marker had matched), rather than recording an obviously-fake play. This
+    runs before the caller's same-day dedup, so a rejected joke/fake post
+    can never occupy the "first message of the day" slot ahead of a real
+    one posted later that day."""
     results: list[tuple[str, Optional[float], bool, Optional[date], Optional[float]]] = []
 
     m = MAPTAP_MARKER.search(content)
@@ -177,16 +195,21 @@ def parse_message(
                 year -= 1
             elif month_num == 1 and posted_date.month == 12:
                 year += 1
-            try:
-                explicit_date = date(year, month_num, int(m.group(2)))
-            except ValueError:
-                explicit_date = None
-            rounds_text = content[m.end():score_m.start()]
-            round_scores = [int(n) for n in MAPTAP_ROUND_SCORE_RE.findall(rounds_text)]
-            raw_score = float(sum(round_scores)) if len(round_scores) == 5 else None
-            results.append(
-                ("maptap", float(score_m.group(1).replace(",", "")), True, explicit_date, raw_score)
-            )
+            final_score = float(score_m.group(1).replace(",", ""))
+            if 0 <= final_score <= MAPTAP_MAX_FINAL_SCORE:
+                try:
+                    explicit_date = date(year, month_num, int(m.group(2)))
+                except ValueError:
+                    explicit_date = None
+                rounds_text = content[m.end():score_m.start()]
+                round_scores = [int(n) for n in MAPTAP_ROUND_SCORE_RE.findall(rounds_text)]
+                valid_rounds = len(round_scores) == 5 and all(
+                    0 <= n <= MAPTAP_MAX_ROUND_SCORE for n in round_scores
+                )
+                raw_score = float(sum(round_scores)) if valid_rounds else None
+                results.append(("maptap", final_score, True, explicit_date, raw_score))
+            # else: final_score out of bounds -- not a real play, filtered
+            # out entirely (no result appended for this message at all).
 
     if WORLDLE_MARKER_RE.search(content):
         m = WORLDLE_RE.search(content)
@@ -212,7 +235,12 @@ def parse_message(
     if TRAVLE_MARKER_RE.search(content):
         m = TRAVLE_SOLVED_RE.search(content)
         if m:
-            results.append(("travle", float(m.group(1)), True, None, None))
+            travle_score = float(m.group(1))
+            if travle_score >= TRAVLE_MIN_SCORE:
+                results.append(("travle", travle_score, True, None, None))
+            # else: negative score -- not a real play, filtered out
+            # entirely (doesn't fall through to the "away" check below,
+            # since a signed number already matched here).
         elif TRAVLE_AWAY_RE.search(content):
             results.append(("travle", None, False, None, None))
 
