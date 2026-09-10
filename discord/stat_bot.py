@@ -409,7 +409,7 @@ def run_bot() -> None:
                 pct = (entry["complete"] / entry["gp"] * 100) if entry["gp"] else 0.0
                 rank_score = f"{entry['rank_score']:.2f}" if entry["rank_score"] is not None else "—"
                 lines.append(
-                    f"{rank}. **{name}** — Rank Score: {rank_score} — "
+                    f"{rank}. **{name}** — Rating: {rank_score} — "
                     f"Avg Tries: {avg}, {pct:.0f}% Comp. Rate ({entry['gp']} games)"
                 )
             else:
