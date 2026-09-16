@@ -159,6 +159,10 @@ def run_bot() -> None:
             + (' -- raw:<anything but "no"/"false"> averages the pre-multiplier round-score total instead' if game == "maptap" else "")
             for game in daily_games.GAMES
         )
+        top_score_lines = "\n".join(
+            f"`/top-{game} [count]` — top {daily_games.GAME_LABELS[game]} scores of all time (default: top 10)"
+            for game in daily_games.TOP_SCORE_GAMES
+        )
         await message.channel.send(
             "🤖 **StatBot commands:**\n\n"
             "**Fantasy Commands:**\n"
@@ -170,7 +174,7 @@ def run_bot() -> None:
             "`/rival-check <user>` — career head-to-head record\n"
             "`/trophy-case [user]` — career trophy summary\n"
             "`/goat-check` — who's the league GOAT?\n\n"
-            "**Daily Games Commands:**\n" + game_lines + "\n"
+            "**Daily Games Commands:**\n" + game_lines + "\n" + top_score_lines + "\n"
             "`/dg-update` — force an immediate #daily-games stats update\n"
             "_(leaderboards auto-refresh if data is over 10 min stale)_"
         )
@@ -451,6 +455,61 @@ def run_bot() -> None:
                     await _game_leaderboard(inter, game, days)
 
         _register()
+
+    async def _top_scores_leaderboard(
+        inter: disnake.ApplicationCommandInteraction,
+        game: str,
+        count: Optional[int],
+    ) -> None:
+        try:
+            n = daily_games.parse_top_count_arg(count)
+        except ValueError as e:
+            await inter.response.send_message(f"⚠️ {e}", ephemeral=True)
+            return
+
+        # Deferred for the same reason as _game_leaderboard -- ensure_fresh()
+        # may do a live channel scan that can outrun Discord's 3-second
+        # initial-response window.
+        await inter.response.defer()
+        try:
+            channel = bot.get_channel(daily_games.CHANNEL_ID) or await bot.fetch_channel(daily_games.CHANNEL_ID)
+            await daily_games.ensure_fresh(channel)
+        except Exception as exc:
+            print(f"Daily games freshness check failed, showing cached data: {exc}")
+
+        plays = daily_games.top_scores(game, n)
+        label = daily_games.GAME_LABELS[game]
+        if not plays:
+            await inter.followup.send(f"No {label} scores recorded yet.")
+            return
+
+        display_names = daily_games.load_display_names()
+        lines = [f"🏆 **Top {len(plays)} {label} Scores**"]
+        for play in plays:
+            name = display_names.get(str(play["uid"]), f"<@{play['uid']}>")
+            play_date = date.fromisoformat(play["date"])
+            lines.append(f"{name} - {play_date.strftime('%m/%d/%y')} - {play['score']:.0f}")
+        await inter.followup.send("\n".join(lines))
+
+    # One /top-<game> slash command per daily_games.TOP_SCORE_GAMES entry
+    # (only the games with a real "score", not a number-of-tries count --
+    # see TOP_SCORE_GAMES) -- default top 10, optional `count` (capped at
+    # MAX_TOP_SCORES_COUNT to keep the message under Discord's length limit).
+    for _top_game in daily_games.TOP_SCORE_GAMES:
+
+        def _register_top(game: str = _top_game) -> None:
+            @bot.slash_command(
+                name=f"top-{game}",
+                description=f"Top {daily_games.GAME_LABELS[game]} scores of all time (default: top 10).",
+                **slash_kwargs,
+            )
+            async def _top_scores_command(
+                inter: disnake.ApplicationCommandInteraction,
+                count: Optional[int] = None,
+            ):
+                await _top_scores_leaderboard(inter, game, count)
+
+        _register_top()
 
     @bot.slash_command(
         name="dg-update",

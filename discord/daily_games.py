@@ -151,6 +151,16 @@ CAN_BE_INCOMPLETE = {
     "whentaken": False,
     "travle": True,
 }
+# Games with a "score" (own point total, higher is better) rather than a
+# "number of tries" (Worldle/Flagle guess count, Travle extra guesses) --
+# only these support a meaningful all-time "top scores" list, since a tries
+# count doesn't have the same "personal best" framing (a 1/6 is the best
+# possible tries count, but plenty of players have one).
+TOP_SCORE_GAMES = tuple(g for g in GAMES if not LOWER_IS_BETTER[g])
+DEFAULT_TOP_SCORES_COUNT = 10
+# Caps how many rows /top-<game> can list -- unbounded would risk a
+# message that exceeds Discord's per-message length limit.
+MAX_TOP_SCORES_COUNT = 50
 DEFAULT_DAYS_BACK = 7
 
 
@@ -481,6 +491,39 @@ def load_history_rows(game: str) -> list[dict]:
         return []
     with path.open(newline="", encoding="utf-8") as f:
         return [row for row in csv.DictReader(f) if row["game"] == game]
+
+
+def parse_top_count_arg(raw: Optional[int]) -> int:
+    """Returns a validated count for /top-<game>, defaulting to
+    DEFAULT_TOP_SCORES_COUNT and capped at MAX_TOP_SCORES_COUNT. Raises
+    ValueError on a non-positive input, message meant to be shown to the
+    user."""
+    if raw is None:
+        return DEFAULT_TOP_SCORES_COUNT
+    if raw <= 0:
+        raise ValueError("Count must be a positive number.")
+    return min(raw, MAX_TOP_SCORES_COUNT)
+
+
+def top_scores(game: str, n: int) -> list[dict]:
+    """[{uid, date, score}] for the top n individual plays (not per-player
+    averages -- the same player can appear more than once if they hold
+    multiple of the top scores), sorted best (highest) first, across all
+    recorded history (no time-range filter). Only valid for TOP_SCORE_GAMES
+    (a higher score is better) -- raises ValueError for any other game,
+    which tracks a number of tries rather than a score."""
+    if game not in TOP_SCORE_GAMES:
+        raise ValueError(
+            f'"{GAME_LABELS.get(game, game)}" tracks number of tries, not a score -- no top-scores list for it.'
+        )
+    rows = load_history_rows(game)
+    plays = [
+        {"uid": int(r["discord_user_id"]), "date": r["date"], "score": float(r["score"])}
+        for r in rows
+        if r["score"] not in ("", None)
+    ]
+    plays.sort(key=lambda p: -p["score"])
+    return plays[:n]
 
 
 # For the 3 games that can be incomplete (Worldle/Flagle/Travle), a plain
