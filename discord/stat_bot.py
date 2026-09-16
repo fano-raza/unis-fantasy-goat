@@ -460,12 +460,14 @@ def run_bot() -> None:
         inter: disnake.ApplicationCommandInteraction,
         game: str,
         count: Optional[int],
+        raw: Optional[str] = None,
     ) -> None:
         try:
             n = daily_games.parse_top_count_arg(count)
         except ValueError as e:
             await inter.response.send_message(f"⚠️ {e}", ephemeral=True)
             return
+        raw = daily_games.parse_raw_arg(raw)
 
         # Deferred for the same reason as _game_leaderboard -- ensure_fresh()
         # may do a live channel scan that can outrun Discord's 3-second
@@ -477,8 +479,10 @@ def run_bot() -> None:
         except Exception as exc:
             print(f"Daily games freshness check failed, showing cached data: {exc}")
 
-        plays = daily_games.top_scores(game, n)
+        plays = daily_games.top_scores(game, n, raw=raw)
         label = daily_games.GAME_LABELS[game]
+        if raw:
+            label = f"{label} (Raw)"
         if not plays:
             await inter.followup.send(f"No {label} scores recorded yet.")
             return
@@ -495,19 +499,36 @@ def run_bot() -> None:
     # (only the games with a real "score", not a number-of-tries count --
     # see TOP_SCORE_GAMES) -- default top 10, optional `count` (capped at
     # MAX_TOP_SCORES_COUNT to keep the message under Discord's length limit).
+    # MapTap alone also gets `raw` (same free-text opt-out semantics as
+    # /maptap's raw -- see daily_games.parse_raw_arg): any non-empty value
+    # except "no"/"false" ranks by raw_score (pre-multiplier round-score
+    # sum) instead of the final score.
     for _top_game in daily_games.TOP_SCORE_GAMES:
 
         def _register_top(game: str = _top_game) -> None:
-            @bot.slash_command(
-                name=f"top-{game}",
-                description=f"Top {daily_games.GAME_LABELS[game]} scores of all time (default: top 10).",
-                **slash_kwargs,
-            )
-            async def _top_scores_command(
-                inter: disnake.ApplicationCommandInteraction,
-                count: Optional[int] = None,
-            ):
-                await _top_scores_leaderboard(inter, game, count)
+            if game == "maptap":
+                @bot.slash_command(
+                    name=f"top-{game}",
+                    description=f"Top {daily_games.GAME_LABELS[game]} scores of all time (default: top 10).",
+                    **slash_kwargs,
+                )
+                async def _top_scores_command(
+                    inter: disnake.ApplicationCommandInteraction,
+                    count: Optional[int] = None,
+                    raw: Optional[str] = None,
+                ):
+                    await _top_scores_leaderboard(inter, game, count, raw)
+            else:
+                @bot.slash_command(
+                    name=f"top-{game}",
+                    description=f"Top {daily_games.GAME_LABELS[game]} scores of all time (default: top 10).",
+                    **slash_kwargs,
+                )
+                async def _top_scores_command(
+                    inter: disnake.ApplicationCommandInteraction,
+                    count: Optional[int] = None,
+                ):
+                    await _top_scores_leaderboard(inter, game, count)
 
         _register_top()
 

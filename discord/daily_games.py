@@ -96,10 +96,20 @@ WORLDLE_RE = re.compile(
 FLAGLE_MARKER_RE = re.compile(r"#Flagle\b", re.IGNORECASE)
 FLAGLE_RE = re.compile(r"#Flagle\s+#\d+\s*(?:\((\d{1,2}\.\d{1,2}\.\d{4})\)\s*)?(\d|X)/6", re.IGNORECASE)
 
-# "#WhenTaken #906 (21.08.2026)\n\nI scored 669/1000\U0001f397️\n..."
+# "#WhenTaken #906 (21.08.2026)\n\nI scored 669/1000\U0001f397️\n\n
+# 1️⃣\U0001F4CD5.8K km - \U0001F5D36 yrs - \U0001F949110/200\n..."
+# (5 numbered rounds, each with its own "N/200" score -- the leading emoji
+# before that varies over time and was confirmed NOT worth pinning down:
+# early (2024) posts use ⚡ for every round regardless of how well it
+# went, later (2026) posts use a medal (\U0001F949/\U0001F948/\U0001F947)
+# that varies by rank instead, plus formatting drift in the surrounding
+# text ("166 / 200" with spaces vs "110/200" without). WHENTAKEN_ROUND_SCORE_RE
+# below deliberately matches only the "N/200" shape itself, the same way
+# MAPTAP_ROUND_SCORE_RE ignores its own varying rank emoji.
 WHENTAKEN_MARKER_RE = re.compile(r"#WhenTaken\b", re.IGNORECASE)
 WHENTAKEN_DATE_RE = re.compile(r"#WhenTaken\s+#\d+\s*\((\d{1,2}\.\d{1,2}\.\d{4})\)", re.IGNORECASE)
 WHENTAKEN_SCORE_RE = re.compile(r"scored\s+(\d+)\s*/\s*1000", re.IGNORECASE)
+WHENTAKEN_ROUND_SCORE_RE = re.compile(r"(\d{1,3})\s*/\s*200")
 
 # "#travle #1346 +1" (solved, 1 extra guess over par) / "#travle #1346 -2
 # (Super Perfect)" (claims to beat par) / "#travle #1346 (1 away) (1 hint)"
@@ -182,12 +192,13 @@ def parse_message(
     game.
 
     Sanity bounds are applied before a result is ever appended -- a message
-    with an out-of-range MapTap final score (>1000) or Travle score (outside
-    [0, 10]) is filtered out entirely (no result for that game at all, same
-    as if no marker had matched), rather than recording an obviously-fake
-    play. This runs before the caller's same-day dedup, so a rejected joke/fake post
-    can never occupy the "first message of the day" slot ahead of a real
-    one posted later that day."""
+    with an out-of-range MapTap final score (>1000), a Travle score (outside
+    [0, 10]), or a WhenTaken score whose 5 round scores don't sum to exactly
+    the claimed total is filtered out entirely (no result for that game at
+    all, same as if no marker had matched), rather than recording an
+    obviously-fake play. This runs before the caller's same-day dedup, so a
+    rejected joke/fake post can never occupy the "first message of the day"
+    slot ahead of a real one posted later that day."""
     results: list[tuple[str, Optional[float], bool, Optional[date], Optional[float]]] = []
 
     m = MAPTAP_MARKER.search(content)
@@ -241,9 +252,15 @@ def parse_message(
     if WHENTAKEN_MARKER_RE.search(content):
         m = WHENTAKEN_SCORE_RE.search(content)
         if m:
-            date_m = WHENTAKEN_DATE_RE.search(content)
-            explicit_date = _parse_ddmmyyyy(date_m.group(1)) if date_m else None
-            results.append(("whentaken", float(m.group(1)), True, explicit_date, None))
+            claimed_score = float(m.group(1))
+            round_scores = [int(n) for n in WHENTAKEN_ROUND_SCORE_RE.findall(content)]
+            if len(round_scores) == 5 and sum(round_scores) == claimed_score:
+                date_m = WHENTAKEN_DATE_RE.search(content)
+                explicit_date = _parse_ddmmyyyy(date_m.group(1)) if date_m else None
+                results.append(("whentaken", claimed_score, True, explicit_date, None))
+            # else: the 5 round scores don't add up to the claimed total
+            # (or weren't found in the expected shape) -- not a real play,
+            # filtered out entirely.
 
     if TRAVLE_MARKER_RE.search(content):
         m = TRAVLE_SOLVED_RE.search(content)
@@ -505,22 +522,29 @@ def parse_top_count_arg(raw: Optional[int]) -> int:
     return min(raw, MAX_TOP_SCORES_COUNT)
 
 
-def top_scores(game: str, n: int) -> list[dict]:
+def top_scores(game: str, n: int, raw: bool = False) -> list[dict]:
     """[{uid, date, score}] for the top n individual plays (not per-player
     averages -- the same player can appear more than once if they hold
     multiple of the top scores), sorted best (highest) first, across all
     recorded history (no time-range filter). Only valid for TOP_SCORE_GAMES
     (a higher score is better) -- raises ValueError for any other game,
-    which tracks a number of tries rather than a score."""
+    which tracks a number of tries rather than a score.
+
+    raw=True uses raw_score (MapTap's pre-multiplier sum of its 5 round
+    scores) instead of score (the final, multiplied score). Only
+    meaningful for game="maptap" -- every other TOP_SCORE_GAMES entry
+    (WhenTaken) has raw_score empty on every row, so raw=True there just
+    yields an empty list."""
     if game not in TOP_SCORE_GAMES:
         raise ValueError(
             f'"{GAME_LABELS.get(game, game)}" tracks number of tries, not a score -- no top-scores list for it.'
         )
+    score_field = "raw_score" if raw else "score"
     rows = load_history_rows(game)
     plays = [
-        {"uid": int(r["discord_user_id"]), "date": r["date"], "score": float(r["score"])}
+        {"uid": int(r["discord_user_id"]), "date": r["date"], "score": float(r[score_field])}
         for r in rows
-        if r["score"] not in ("", None)
+        if r.get(score_field) not in ("", None)
     ]
     plays.sort(key=lambda p: -p["score"])
     return plays[:n]
