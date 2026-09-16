@@ -523,23 +523,28 @@ def parse_top_count_arg(raw: Optional[int]) -> int:
 
 
 def _parse_mmddyyyy_arg(raw: Optional[str], field_name: str) -> Optional[date]:
-    """Parses a user-supplied MM/DD/YYYY date for /top-<game>'s
-    min_date/max_date args. Returns None if raw is empty/not given. Raises
-    ValueError (message meant to be shown to the user) on an unparseable
-    or invalid date."""
+    """Parses a user-supplied MM/DD/YYYY (or MM/DD/YY) date for
+    /top-<game>'s min_date/max_date args. Returns None if raw is
+    empty/not given. Raises ValueError (message meant to be shown to the
+    user) on an unparseable or invalid date."""
     if raw is None or not raw.strip():
         return None
     val = raw.strip()
     try:
         month_s, day_s, year_s = val.split("/")
-        # Require a full 4-digit year -- a bare int() would silently accept
-        # "1/1/26" as the year 26 AD instead of 2026, which wouldn't error,
-        # just quietly return zero results.
-        if len(year_s) != 4:
+        # A bare int() would accept a year of any digit count (e.g. "26"
+        # as literally 26 AD) without erroring -- only 2-digit (assumed
+        # 2000s, the only years this data spans) or full 4-digit years
+        # are accepted; anything else is rejected rather than guessed at.
+        if len(year_s) == 2:
+            year = 2000 + int(year_s)
+        elif len(year_s) == 4:
+            year = int(year_s)
+        else:
             raise ValueError
-        return date(int(year_s), int(month_s), int(day_s))
+        return date(year, int(month_s), int(day_s))
     except ValueError:
-        raise ValueError(f'Invalid {field_name} "{raw}" -- use MM/DD/YYYY (4-digit year).')
+        raise ValueError(f'Invalid {field_name} "{raw}" -- use MM/DD/YYYY or MM/DD/YY.')
 
 
 def parse_top_date_range_args(
