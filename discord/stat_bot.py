@@ -461,9 +461,12 @@ def run_bot() -> None:
         game: str,
         count: Optional[int],
         raw: Optional[str] = None,
+        min_date: Optional[str] = None,
+        max_date: Optional[str] = None,
     ) -> None:
         try:
             n = daily_games.parse_top_count_arg(count)
+            min_d, max_d = daily_games.parse_top_date_range_args(min_date, max_date)
         except ValueError as e:
             await inter.response.send_message(f"⚠️ {e}", ephemeral=True)
             return
@@ -479,10 +482,14 @@ def run_bot() -> None:
         except Exception as exc:
             print(f"Daily games freshness check failed, showing cached data: {exc}")
 
-        plays = daily_games.top_scores(game, n, raw=raw)
+        plays = daily_games.top_scores(game, n, raw=raw, min_date=min_d, max_date=max_d)
         label = daily_games.GAME_LABELS[game]
         if raw:
             label = f"{label} (Raw)"
+        if min_d is not None or max_d is not None:
+            min_s = min_d.strftime("%m/%d/%Y") if min_d is not None else "the beginning"
+            max_s = max_d.strftime("%m/%d/%Y") if max_d is not None else "today"
+            label = f"{label} ({min_s} to {max_s})"
         if not plays:
             await inter.followup.send(f"No {label} scores recorded yet.")
             return
@@ -498,7 +505,9 @@ def run_bot() -> None:
     # One /top-<game> slash command per daily_games.TOP_SCORE_GAMES entry
     # (only the games with a real "score", not a number-of-tries count --
     # see TOP_SCORE_GAMES) -- default top 10, optional `count` (capped at
-    # MAX_TOP_SCORES_COUNT to keep the message under Discord's length limit).
+    # MAX_TOP_SCORES_COUNT to keep the message under Discord's length limit),
+    # optional `min_date`/`max_date` (MM/DD/YYYY, inclusive, either/both
+    # omittable) to restrict which plays are considered before ranking.
     # MapTap alone also gets `raw` (same free-text opt-out semantics as
     # /maptap's raw -- see daily_games.parse_raw_arg): any non-empty value
     # except "no"/"false" ranks by raw_score (pre-multiplier round-score
@@ -516,8 +525,10 @@ def run_bot() -> None:
                     inter: disnake.ApplicationCommandInteraction,
                     count: Optional[int] = None,
                     raw: Optional[str] = None,
+                    min_date: Optional[str] = None,
+                    max_date: Optional[str] = None,
                 ):
-                    await _top_scores_leaderboard(inter, game, count, raw)
+                    await _top_scores_leaderboard(inter, game, count, raw, min_date, max_date)
             else:
                 @bot.slash_command(
                     name=f"top-{game}",
@@ -527,8 +538,10 @@ def run_bot() -> None:
                 async def _top_scores_command(
                     inter: disnake.ApplicationCommandInteraction,
                     count: Optional[int] = None,
+                    min_date: Optional[str] = None,
+                    max_date: Optional[str] = None,
                 ):
-                    await _top_scores_leaderboard(inter, game, count)
+                    await _top_scores_leaderboard(inter, game, count, min_date=min_date, max_date=max_date)
 
         _register_top()
 

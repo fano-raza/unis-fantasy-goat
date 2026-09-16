@@ -522,13 +522,53 @@ def parse_top_count_arg(raw: Optional[int]) -> int:
     return min(raw, MAX_TOP_SCORES_COUNT)
 
 
-def top_scores(game: str, n: int, raw: bool = False) -> list[dict]:
+def _parse_mmddyyyy_arg(raw: Optional[str], field_name: str) -> Optional[date]:
+    """Parses a user-supplied MM/DD/YYYY date for /top-<game>'s
+    min_date/max_date args. Returns None if raw is empty/not given. Raises
+    ValueError (message meant to be shown to the user) on an unparseable
+    or invalid date."""
+    if raw is None or not raw.strip():
+        return None
+    val = raw.strip()
+    try:
+        month_s, day_s, year_s = val.split("/")
+        return date(int(year_s), int(month_s), int(day_s))
+    except ValueError:
+        raise ValueError(f'Invalid {field_name} "{raw}" -- use MM/DD/YYYY.')
+
+
+def parse_top_date_range_args(
+    min_date_raw: Optional[str], max_date_raw: Optional[str]
+) -> tuple[Optional[date], Optional[date]]:
+    """Returns (min_date, max_date), each None if not given. Raises
+    ValueError (message meant to be shown to the user) on an unparseable
+    date, or if min_date is after max_date."""
+    min_date = _parse_mmddyyyy_arg(min_date_raw, "min_date")
+    max_date = _parse_mmddyyyy_arg(max_date_raw, "max_date")
+    if min_date is not None and max_date is not None and min_date > max_date:
+        raise ValueError(
+            f"min_date ({min_date.strftime('%m/%d/%Y')}) must be on or before "
+            f"max_date ({max_date.strftime('%m/%d/%Y')})."
+        )
+    return min_date, max_date
+
+
+def top_scores(
+    game: str,
+    n: int,
+    raw: bool = False,
+    min_date: Optional[date] = None,
+    max_date: Optional[date] = None,
+) -> list[dict]:
     """[{uid, date, score}] for the top n individual plays (not per-player
     averages -- the same player can appear more than once if they hold
-    multiple of the top scores), sorted best (highest) first, across all
-    recorded history (no time-range filter). Only valid for TOP_SCORE_GAMES
-    (a higher score is better) -- raises ValueError for any other game,
-    which tracks a number of tries rather than a score.
+    multiple of the top scores), sorted best (highest) first. Only valid
+    for TOP_SCORE_GAMES (a higher score is better) -- raises ValueError for
+    any other game, which tracks a number of tries rather than a score.
+
+    min_date/max_date (inclusive) restrict which plays' dates are
+    considered before ranking -- either or both may be None for no bound
+    on that side (the default: all recorded history).
 
     raw=True uses raw_score (MapTap's pre-multiplier sum of its 5 round
     scores) instead of score (the final, multiplied score). Only
@@ -546,6 +586,10 @@ def top_scores(game: str, n: int, raw: bool = False) -> list[dict]:
         for r in rows
         if r.get(score_field) not in ("", None)
     ]
+    if min_date is not None:
+        plays = [p for p in plays if date.fromisoformat(p["date"]) >= min_date]
+    if max_date is not None:
+        plays = [p for p in plays if date.fromisoformat(p["date"]) <= max_date]
     plays.sort(key=lambda p: -p["score"])
     return plays[:n]
 
