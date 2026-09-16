@@ -532,9 +532,14 @@ def _parse_mmddyyyy_arg(raw: Optional[str], field_name: str) -> Optional[date]:
     val = raw.strip()
     try:
         month_s, day_s, year_s = val.split("/")
+        # Require a full 4-digit year -- a bare int() would silently accept
+        # "1/1/26" as the year 26 AD instead of 2026, which wouldn't error,
+        # just quietly return zero results.
+        if len(year_s) != 4:
+            raise ValueError
         return date(int(year_s), int(month_s), int(day_s))
     except ValueError:
-        raise ValueError(f'Invalid {field_name} "{raw}" -- use MM/DD/YYYY.')
+        raise ValueError(f'Invalid {field_name} "{raw}" -- use MM/DD/YYYY (4-digit year).')
 
 
 def parse_top_date_range_args(
