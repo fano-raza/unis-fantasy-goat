@@ -94,17 +94,32 @@ function formatStat(cat: Category, value: number | null): string {
   return value.toFixed(1);
 }
 
-// Direct (not inverted) coloring: the Net column is Team A's own value
+// Direct (not inverted) coloring: `comparison` is Team A's own value
 // relative to Team B, so Team A being "better" should read green here.
 // `highlight.ts`'s `comparisonClass` is deliberately inverted for
 // StatTable's different use case (a row colored relative to a separate
 // focus-team baseline, not the row's own comparison) -- reusing it here
-// was backwards, per the user's report.
-const netClass: Record<Comparison, string> = {
+// was backwards, per the user's report. Applied directly to the Team A/
+// Team B value cells (there's no separate Net column anymore).
+const highlightClass: Record<Comparison, string> = {
   better: "bg-win/15 text-win",
   worse: "bg-loss/15 text-loss",
   neutral: "",
 };
+
+// Team B's cell colors from Team A's flipped perspective -- Team A "better"
+// means Team B is "worse" in the same category, and vice versa.
+function flip(comparison: Comparison): Comparison {
+  if (comparison === "better") return "worse";
+  if (comparison === "worse") return "better";
+  return "neutral";
+}
+
+function formatSignedStat(cat: Category, value: number | null): string {
+  if (value === null) return "—";
+  const formatted = formatStat(cat, value);
+  return value >= 0 ? `+${formatted}` : formatted;
+}
 
 // FGM/FGA and FTM/FTA -- informational volume rows (made/attempted for the
 // group). Rendered directly after their matching percentage row (FG% / FT%),
@@ -258,6 +273,7 @@ export function TradeHub() {
   // statWindow default would open on an empty table.
   const [statWindow, setWindow] = useState<StatWindow>("season");
   const [mode, setMode] = useState<"totals" | "averages">("averages");
+  const [view, setView] = useState<"stats" | "net">("stats");
 
   useEffect(() => {
     getPlayerStats()
@@ -310,6 +326,11 @@ export function TradeHub() {
               <Switch checked={mode === "averages"} onCheckedChange={(c) => setMode(c ? "averages" : "totals")} />
               <span className="text-muted-foreground">Averages</span>
             </label>
+            <label className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
+              <span className="text-muted-foreground">Stats</span>
+              <Switch checked={view === "net"} onCheckedChange={(c) => setView(c ? "net" : "stats")} />
+              <span className="text-muted-foreground">Net</span>
+            </label>
           </div>
         </CardContent>
       </Card>
@@ -323,25 +344,27 @@ export function TradeHub() {
                   <TableHead>Category</TableHead>
                   <TableHead className="text-right">Team A</TableHead>
                   <TableHead className="text-right">Team B</TableHead>
-                  <TableHead className="text-right">Team A Net</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {MAIN_CATS.flatMap((cat) => {
                   const a = aggA[cat];
                   const b = aggB[cat];
-                  const diff = a !== null && b !== null ? a - b : null;
                   const comparison = a !== null && b !== null ? compareCell(a, b, cat) : "neutral";
+                  const valueA = view === "stats" ? formatStat(cat, a) : formatSignedStat(cat, a !== null && b !== null ? a - b : null);
+                  const valueB = view === "stats" ? formatStat(cat, b) : formatSignedStat(cat, a !== null && b !== null ? b - a : null);
                   const rows = [
                     <TableRow key={cat}>
                       <TableCell className="font-sans font-medium text-muted-foreground">{cat}</TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">{formatStat(cat, a)}</TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">{formatStat(cat, b)}</TableCell>
                       <TableCell
-                        className={cn("text-right font-mono font-extrabold tabular-nums", netClass[comparison])}
+                        className={cn("text-right font-mono font-extrabold tabular-nums", highlightClass[comparison])}
                       >
-                        {diff !== null && diff >= 0 ? "+" : ""}
-                        {formatStat(cat, diff)}
+                        {valueA}
+                      </TableCell>
+                      <TableCell
+                        className={cn("text-right font-mono font-extrabold tabular-nums", highlightClass[flip(comparison)])}
+                      >
+                        {valueB}
                       </TableCell>
                     </TableRow>,
                   ];
@@ -357,17 +380,14 @@ export function TradeHub() {
                         <TableCell className="font-sans font-medium text-muted-foreground">
                           {madeAttRow.label}
                         </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">
-                          {formatMadeAttempted(aVal, mode)}
-                        </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">
-                          {formatMadeAttempted(bVal, mode)}
-                        </TableCell>
-                        {/* No red/green here (unlike the other Net cells) -- a
+                        {/* No red/green here (unlike the other rows) -- a
                             made/attempted pair has no single "better"
                             direction to highlight. */}
-                        <TableCell className="text-right font-mono font-extrabold tabular-nums">
-                          {formatMadeAttemptedNet(aVal, bVal, mode)}
+                        <TableCell className="text-right font-mono tabular-nums">
+                          {view === "stats" ? formatMadeAttempted(aVal, mode) : formatMadeAttemptedNet(aVal, bVal, mode)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono tabular-nums">
+                          {view === "stats" ? formatMadeAttempted(bVal, mode) : formatMadeAttemptedNet(bVal, aVal, mode)}
                         </TableCell>
                       </TableRow>,
                     );
