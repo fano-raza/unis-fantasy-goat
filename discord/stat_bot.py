@@ -153,6 +153,17 @@ def run_bot() -> None:
             return
         if bot.user not in message.mentions:
             return
+        # Discord's reply-ping (the default "mention author" toggle on a
+        # reply) adds the replied-to author to message.mentions WITHOUT any
+        # literal "<@id>" text in the content -- so replying to a StatBot
+        # message pings the bot the same way an explicit @StatBot would,
+        # and was silently re-showing this command menu (feature request,
+        # 2026-09-16). Only treat this as a real mention if the bot's
+        # mention token actually appears in the text; a reply-only ping
+        # never does.
+        bot_mention_tokens = (f"<@{bot.user.id}>", f"<@!{bot.user.id}>")
+        if not any(token in message.content for token in bot_mention_tokens):
+            return
         game_lines = "\n".join(
             f"`/{game} [days]" + (" [raw]" if game == "maptap" else "") + "`"
             f" — {daily_games.GAME_LABELS[game]} leaderboard (default: last 7 days, or \"ever\" for all-time)"
