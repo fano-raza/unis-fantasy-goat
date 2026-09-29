@@ -34,12 +34,14 @@ the 2023-24 season (started Oct 24, 2023) -- consistent with the
 "year = season's ending year" convention used everywhere else in this
 app (matches the ESPN years and year 2026's already-correct file).
 Fixed at the source: 2025_matchup_cal.csv now holds what was
-2024_matchup_cal.csv's real (and correctly-labeled-for-2025) content,
-and 2024_matchup_cal.csv was regenerated via this same heuristic (real
-Oct 24, 2023 opening night; 21 weeks of 1 calendar week each, matching
-the real week-length structure confirmed in the neighboring, exact 2025
-season) since Yahoo's API is currently blocked and can't be re-queried
-to regenerate it exactly.
+2024_matchup_cal.csv's real (and correctly-labeled-for-2025) content.
+2024_matchup_cal.csv itself was first patched via a heuristic reconstruction
+(Yahoo's API was blocked -- an app-verification issue, not a rate limit --
+at the time), then replaced once Yahoo access was restored with a real
+`get_game_weeks_by_game_id(428)` pull: 24 real rows, not the heuristic's
+guessed 21 (the heuristic wrongly assumed one calendar week per fantasy
+week; the real season has a 14-day All-Star-break week, same irregular
+shape the neighboring 2025/2026 files already show).
 
 Usage:
   python -m scripts.export_week_calendar
@@ -67,22 +69,14 @@ COLUMNS = ["Year", "Week", "StartDate", "EndDate"]
 
 # Real, publicly-confirmed NBA season opening nights for the ESPN-era
 # fantasy years (year = the season's ending year, e.g. 2022 -> the
-# 2021-22 season). Also covers fantasy year 2024 (2023-24 season),
-# needed to regenerate its calendar since Yahoo's API is blocked -- see
-# module docstring.
+# 2021-22 season).
 SEASON_OPEN: dict[int, datetime.date] = {
     2019: datetime.date(2018, 10, 16),
     2020: datetime.date(2019, 10, 22),
     2021: datetime.date(2020, 12, 22),
     2022: datetime.date(2021, 10, 19),
     2023: datetime.date(2022, 10, 18),
-    2024: datetime.date(2023, 10, 24),
 }
-# Fantasy year 2024's real per-week structure can't be fetched live
-# (Yahoo blocked), so it borrows the confirmed-real structure of the
-# immediately-adjacent 2025 season (21 weeks, 1 calendar week each) --
-# see module docstring.
-YAHOO_2024_WEEK_LENGTHS = [1] * 21
 
 
 def _week_bounds_from_lengths(open_date: datetime.date, lengths: list[int]) -> list[tuple[int, datetime.date, datetime.date]]:
@@ -106,11 +100,6 @@ def _espn_week_calendar(year: int) -> list[dict]:
     return [{"Year": year, "Week": wk, "StartDate": s.isoformat(), "EndDate": e.isoformat()} for wk, s, e in bounds]
 
 
-def _yahoo_2024_week_calendar() -> list[dict]:
-    bounds = _week_bounds_from_lengths(SEASON_OPEN[2024], YAHOO_2024_WEEK_LENGTHS)
-    return [{"Year": 2024, "Week": wk, "StartDate": s.isoformat(), "EndDate": e.isoformat()} for wk, s, e in bounds]
-
-
 def _yahoo_week_calendar_from_file(year: int) -> list[dict]:
     path = calendar_csv_path(year)
     rows: list[dict] = []
@@ -128,8 +117,6 @@ def rows_for_year(year: int) -> list[dict]:
     is_espn = seasonInfo[year][1]
     if is_espn:
         return _espn_week_calendar(year)
-    if year == 2024:
-        return _yahoo_2024_week_calendar()
     return _yahoo_week_calendar_from_file(year)
 
 
