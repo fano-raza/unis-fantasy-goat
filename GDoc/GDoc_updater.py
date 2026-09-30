@@ -19,7 +19,7 @@ from scripts.export_real_matchup_flags import main as export_real_matchup_flags
 from scripts.export_team_summary import main as export_team_summary
 from scripts.export_playoff_brackets import main as export_playoff_brackets
 from scripts.export_player_stats import main as export_player_stats
-from scripts.export_roster_ranks import main as export_roster_ranks
+from scripts.export_roster_ranks import append_roster_rank_history, main as export_roster_ranks
 from scripts.export_nba_schedule import main as export_nba_schedule
 
 app = Flask(__name__)
@@ -117,16 +117,27 @@ def run_updater():
                     print(f"player_stats export warning: {player_stats_exc}")
 
                 # Team page's Roster sub-view: current-season roster/rank
-                # snapshot (ESPN years only for now -- Yahoo is blocked
-                # pending an API access application on Yahoo's end, see
-                # scripts/export_roster_ranks.py's docstring; this call is a
-                # no-op for the current Yahoo season until that clears) plus
-                # the real NBA schedule (grows daily as ESPN publishes more
-                # of the season -- see scripts/export_nba_schedule.py).
+                # snapshot, plus the real NBA schedule (grows daily as
+                # ESPN publishes more of the season -- see
+                # scripts/export_nba_schedule.py).
                 try:
                     export_roster_ranks([year])
                 except Exception as roster_ranks_exc:
                     print(f"roster_ranks export warning: {roster_ranks_exc}")
+
+                # Feature request (2026-09-29): at least once a week, snapshot
+                # every player's live rank with the date recorded, for a later
+                # season-long rank-vs-performance correlation. append_roster_
+                # rank_history() itself no-ops (no Yahoo/ESPN call at all) once
+                # this (year, currentWeek) is already recorded, so calling it
+                # every daily cycle is cheap and correctly fires exactly once
+                # per week -- no separate cursor file needed.
+                try:
+                    added = append_roster_rank_history(year, currentWeek)
+                    if added:
+                        print(f"roster_rank_history: snapshotted {added} player rows for week {currentWeek}")
+                except Exception as roster_history_exc:
+                    print(f"roster_rank_history export warning: {roster_history_exc}")
 
                 try:
                     export_nba_schedule()

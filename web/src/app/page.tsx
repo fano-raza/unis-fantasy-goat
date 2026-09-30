@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Card,
   CardAction,
@@ -19,9 +20,11 @@ import { SourceLastUpdated } from "@/components/source-last-updated";
 import {
   API_BASE_URL,
   getWeeklyLeaderboard,
+  getWeeklyRecap,
   getWeeklyStatsBootstrap,
   type LeagueMeta,
   type WeekRow,
+  type WeeklyRecap,
 } from "@/lib/api";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { cn } from "@/lib/utils";
@@ -46,6 +49,17 @@ function computeDisplayRanks(rows: WeekRow[]): Map<string, number> {
 }
 
 export default function WeeklyStatsPage() {
+  return (
+    <Suspense fallback={<LoadingBasketballs label="Loading" />}>
+      <WeeklyStatsPageInner />
+    </Suspense>
+  );
+}
+
+// useSearchParams() (for the ?year=&week= deep link -- StatBot's Monday
+// "Week N Rankings" post links here) requires a Suspense boundary around
+// whatever calls it, per Next.js.
+function WeeklyStatsPageInner() {
   const [meta, setMeta] = useState<LeagueMeta | null>(null);
   const [metaError, setMetaError] = useState<unknown>(null);
   const [year, setYear] = useState<number | null>(null);
@@ -55,15 +69,31 @@ export default function WeeklyStatsPage() {
   const [rows, setRows] = useState<WeekRow[]>([]);
   const [rowsError, setRowsError] = useState<string | null>(null);
   const [rowsLoading, setRowsLoading] = useState(true);
+  const [recap, setRecap] = useState<WeeklyRecap | null>(null);
   // Bootstrap fetches meta + the current week's rows in one round-trip; this
   // flags that the next [year, week] effect run is that same initial pair,
   // so it doesn't re-fetch what bootstrap already delivered.
   const skipNextLeaderboardFetch = useRef(false);
 
+  const searchParams = useSearchParams();
+
   useEffect(() => {
+    const yearFromUrl = Number(searchParams.get("year"));
+    const weekFromUrl = Number(searchParams.get("week"));
     getWeeklyStatsBootstrap()
       .then(({ meta: m, rows: r }) => {
         setMeta(m);
+        // A deep link (e.g. StatBot's weekly rankings post) always names a
+        // real, already-completed week -- fall through to the normal
+        // [year, week] fetch effect below instead of using bootstrap's
+        // current-week rows.
+        const hasOverride = m.years.includes(yearFromUrl) && weekFromUrl >= 1;
+        if (hasOverride) {
+          setYear(yearFromUrl);
+          setWeek(weekFromUrl);
+          setRowsError(null);
+          return;
+        }
         skipNextLeaderboardFetch.current = true;
         setRows(r);
         setRowsError(null);
@@ -72,7 +102,15 @@ export default function WeeklyStatsPage() {
         setWeek(m.current_week);
       })
       .catch(setMetaError);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (year == null || week == null) return;
+    getWeeklyRecap({ year, week })
+      .then(setRecap)
+      .catch(() => setRecap(null));
+  }, [year, week]);
 
   useEffect(() => {
     if (year == null || week == null) return;
@@ -182,6 +220,27 @@ export default function WeeklyStatsPage() {
           </label>
         </CardContent>
       </Card>
+
+      {recap && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Week {recap.week} Rankings Recap</CardTitle>
+            <CardDescription>{recap.top_team} finished #1, {recap.bottom_team} finished last</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-sm sm:grid-cols-5">
+              {recap.rank_table.map((r) => (
+                <span key={r.team} className="font-mono tabular-nums">
+                  {r.rank}. <span className="font-sans">{r.team}</span>
+                </span>
+              ))}
+            </div>
+            {recap.commentary && (
+              <p className="whitespace-pre-line text-sm text-muted-foreground">{recap.commentary}</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardContent>

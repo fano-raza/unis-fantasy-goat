@@ -271,6 +271,11 @@ def league_weekly_leaderboard(req: WeeklyLeaderboardRequest) -> list[dict]:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@app.post("/league/weekly_recap")
+def league_weekly_recap(req: WeeklyLeaderboardRequest) -> dict | None:
+    return league_store.weekly_recap(req.year, req.week)
+
+
 @app.post("/league/totals")
 def league_totals(req: AggregateRequest) -> list[dict]:
     return league_store.totals(years=req.years, weeks=req.weeks, teams=req.teams, RS=req.RS, PO=req.PO)

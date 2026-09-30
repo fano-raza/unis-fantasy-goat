@@ -25,24 +25,20 @@ mapped through the existing constants.espnTeamIDs). onTeamId=0 (or any
 id with no entry in espnTeamIDs, e.g. a team that left the league) maps
 to an empty FantasyTeam.
 
-Yahoo seasons (is_espn=False, 2024+) are implemented but UNTESTED end to
-end: Yahoo's Fantasy Sports API currently rejects every request for this
-app pending a manual application/approval process on Yahoo's end (see the
-plan file this was built from, and _planning/web-app-build-plan.md's
-session log, for the full story -- this isn't a bug in this codebase,
-it's an external account-level gate). The rank+NBA-team scan
-(_yahoo_player_ranks) is the same already-proven live call in
+Yahoo seasons (is_espn=False, 2024+): now VERIFIED end-to-end live (see
+_planning/web-app-build-plan.md's 2026-09-29 session log) -- ran
+_yahoo_roster_ranks_for_year(2026) for real: 719 players, 135 correctly
+owned (real names/teams, e.g. Nikola Jokić -> Rohil, SGA -> Fano). This
+was blocked for a long stretch by a Yahoo app-verification issue on this
+app's developer account (not a code bug), since resolved. The rank+NBA-
+team scan (_yahoo_player_ranks) is the same already-proven live call in
 Models/Draft.py::makeRankDict (sort=AR, NOT the misleading static
 preseason "OR" sort yfpy_fr.query.YahooFantasySportsQuery.get_player_rank()
 uses), extended to also read editorial_team_abbr out of the same response
 (no extra call needed) -- this scan has no status filter, so it already
-covers the full player pool the same way ESPN's does. Ownership
-(_yahoo_roster_ranks_for_year's teams;out=roster call) is separate and
-best-effort, not yet run against a real response -- see that function's
-docstring for exactly what's proven vs. not. A year that fails (whether
-from the access block or a parsing surprise once access clears) is
-logged and skipped by main()'s per-year loop below, not silently dropped
-and not allowed to crash a multi-year run.
+covers the full player pool the same way ESPN's does. A year that fails
+is logged and skipped by main()'s per-year loop below, not silently
+dropped and not allowed to crash a multi-year run.
 
 Historical (closed) seasons are frozen snapshots -- only need to run once
 per season, not daily. The CURRENT season is what the daily pipeline
@@ -159,35 +155,29 @@ def _yahoo_player_ranks(league_key: str) -> dict[str, dict]:
 
 
 def _yahoo_roster_ranks_for_year(year: int) -> list[dict]:
-    """UNTESTED end-to-end -- Yahoo Fantasy Sports API access is blocked
-    for this app pending Yahoo's own application/approval process (see the
-    plan file's Phase 0 writeup), so none of this could be run against a
-    real response. Two different confidence levels here:
+    """VERIFIED end-to-end live (2026-09-29, against the real 2026 season
+    once the Yahoo app-verification block cleared): 719 players, 135
+    correctly owned (real names/teams, e.g. Nikola Jokić -> Rohil, SGA ->
+    Fano). Two pieces:
 
     - Rank + NBA team (_yahoo_player_ranks above): the rank half is the
       exact call already proven live in Models/Draft.py::makeRankDict;
       the NBA-team read is new but pulls from a field already present in
       that same proven response.
-    - Ownership (which player is on which fantasy team, if any): never
-      used anywhere in this codebase before. Built on the SAME
-      already-proven auth mechanism (yfpy_fr.YahooQuery's raw
+    - Ownership (which player is on which fantasy team, if any): built on
+      the SAME already-proven auth mechanism (yfpy_fr.YahooQuery's raw
       construct_endpoint/make_yahoo_api_request) rather than the separate
       yfpy_fr.query.YahooFantasySportsQuery class, which needs a
       private.json file (see constants.py's Yahoo credentials section) --
       via Yahoo's documented `league/{league_key}/teams;out=roster`
-      endpoint (returns every team + its current roster in one call). The
-      response parsing below is best-effort based on Yahoo's typical
-      nested-JSON shape (same numbered-string-key convention already
-      proven in _yahoo_player_ranks' player-list parsing above), not
-      independently verified against a real response. A player found in
-      the rank scan but NOT in this ownership map is written with an
-      empty FantasyTeam (free agent).
+      endpoint (returns every team + its current roster in one call). A
+      player found in the rank scan but NOT in this ownership map is
+      written with an empty FantasyTeam (free agent) -- confirmed live,
+      e.g. Tyrese Maxey correctly unowned in the 2026 test run.
 
-    Deliberately does NOT catch KeyError/IndexError here -- if the
-    parsing assumptions below are wrong, this must fail loudly the first
-    time it actually runs against real data, not silently write wrong
-    rosters. Spot-check the first real run by hand before trusting it,
-    same standard as everything else built this session.
+    Deliberately does NOT catch KeyError/IndexError here -- if Yahoo ever
+    changes this response shape, this must fail loudly, not silently
+    write wrong rosters.
     """
     from yfpy_fr.YahooQuery import construct_endpoint, make_yahoo_api_request, league_keys
 
@@ -237,6 +227,55 @@ def rows_for_year(year: int) -> list[dict]:
     if is_espn:
         return _espn_roster_ranks_for_year(year)
     return _yahoo_roster_ranks_for_year(year)
+
+
+HISTORY_COLUMNS = ["Year", "Week", "SnapshotDate", "Player", "NBATeam", "FantasyTeam", "Rank"]
+
+
+def append_roster_rank_history(year: int, week: int) -> int:
+    """Snapshots the CURRENT season's live player ranks, dated, into
+    Ref/roster_rank_history.csv -- append-only (never overwrites a prior
+    week's rows, matching discord/daily_games.py's convention), kept
+    entirely separate from roster_ranks.csv above (which stays a single
+    current-season snapshot for the Roster page's swap simulator -- an
+    unrelated purpose). Feature request (2026-09-29): "at least once a
+    week... note all player rankings and the date... eventually... track
+    player rankings over the course of the season." A no-op (returns 0)
+    if this exact (year, week) was already snapshotted, so a retried run
+    can't write duplicate rows. Reuses rows_for_year()'s already-proven
+    fetch functions as-is -- no new Yahoo/ESPN call logic.
+    """
+    from datetime import date
+
+    from shared.runtime_config import roster_rank_history_csv_path
+
+    path = roster_rank_history_csv_path()
+    if path.exists():
+        existing = pd.read_csv(path)
+        if ((existing["Year"] == year) & (existing["Week"] == week)).any():
+            return 0
+    else:
+        existing = pd.DataFrame(columns=HISTORY_COLUMNS)
+
+    year_rows = rows_for_year(year)
+    snapshot_date = date.today().isoformat()
+    new_rows = [
+        {
+            "Year": year,
+            "Week": week,
+            "SnapshotDate": snapshot_date,
+            "Player": r["Player"],
+            "NBATeam": r["NBATeam"],
+            "FantasyTeam": r["FantasyTeam"],
+            "Rank": r["Rank"],
+        }
+        for r in year_rows
+    ]
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    combined = pd.concat([existing, pd.DataFrame(new_rows, columns=HISTORY_COLUMNS)], ignore_index=True)
+    atomic_write(path, lambda f: combined.to_csv(f, index=False))
+    return len(new_rows)
 
 
 def main(years: list[int]) -> None:

@@ -20,14 +20,15 @@ import aiohttp
 import disnake
 from disnake.ext import commands, tasks
 
-from discord import daily_games
+from discord import daily_games, weekly_rankings
 from discord.bot_env import build_ssl_connector, ensure_ssl_ca_bundle, load_local_env, parse_test_guild_ids
-from shared.runtime_config import daily_games_last_run_path
+from shared.runtime_config import daily_games_last_run_path, weekly_rankings_last_run_path
 
 API_BASE_URL = os.getenv("DASHBOARD_API_BASE_URL", "http://dashboard-api:8090")
 
 EASTERN = ZoneInfo("America/New_York")
 DAILY_GAMES_SYNC_HOUR = 4  # local (America/New_York) hour to run the daily #daily-games scan
+WEEKLY_RANKINGS_RUN_HOUR = 12  # local hour to run the Monday "Week N Rankings" post (target ~12:30PM)
 
 
 def _load_user_team_maps() -> tuple[dict[str, str], dict[str, list[str]]]:
@@ -91,6 +92,28 @@ def _write_last_daily_games_sync_date(d: date) -> None:
     path.write_text(d.isoformat())
 
 
+def _read_last_weekly_rankings_run() -> tuple[int, int] | None:
+    """(year, week) already posted -- keyed on the fantasy week rather than
+    a calendar date (unlike the daily-games/role-sync cursors) since this
+    only needs to fire once per (year, week), and a season's calendar can
+    pin at its last week indefinitely once the season ends (see
+    weekly_rankings.determine_last_completed_week's docstring)."""
+    path = weekly_rankings_last_run_path()
+    if not path.exists():
+        return None
+    try:
+        year_str, week_str = path.read_text().strip().split("-", 1)
+        return int(year_str), int(week_str)
+    except (ValueError, OSError):
+        return None
+
+
+def _write_last_weekly_rankings_run(year: int, week: int) -> None:
+    path = weekly_rankings_last_run_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"{year}-{week}")
+
+
 def run_bot() -> None:
     load_local_env()
     ensure_ssl_ca_bundle()
@@ -132,6 +155,34 @@ def run_bot() -> None:
         except Exception as exc:
             print(f"Daily games sync failed, will retry next hour: {exc}")
 
+    @tasks.loop(hours=1)
+    async def _weekly_rankings_loop() -> None:
+        now_eastern = datetime.now(EASTERN)
+        if now_eastern.weekday() != 0 or now_eastern.hour < WEEKLY_RANKINGS_RUN_HOUR:
+            return
+        try:
+            meta = await _api_get("/league/meta")
+            year = meta.get("current_year")
+            if year is None:
+                return
+            week = await weekly_rankings.determine_last_completed_week(_api_post, year)
+            if week is None:
+                return
+            rs_week_count = meta["rs_week_count"].get(str(year))
+            # Request is explicitly scoped to regular-season weeks only --
+            # also the guard that keeps this from firing forever once a
+            # season's calendar pins at its last (offseason) row.
+            if rs_week_count is None or week > rs_week_count:
+                return
+            if _read_last_weekly_rankings_run() == (year, week):
+                return
+            posted = await weekly_rankings.post_weekly_rankings(bot, _api_post, year, week)
+            if posted:
+                _write_last_weekly_rankings_run(year, week)
+                print(f"Weekly rankings posted for {year} week {week}")
+        except Exception as exc:
+            print(f"Weekly rankings post failed, will retry next hour: {exc}")
+
     def _resolve_team(user: disnake.User | disnake.Member) -> Optional[str]:
         return by_user_id.get(str(user.id))
 
@@ -146,6 +197,8 @@ def run_bot() -> None:
         # starting a second concurrent copy of the hourly loop.
         if not _daily_games_sync_loop.is_running():
             _daily_games_sync_loop.start()
+        if not _weekly_rankings_loop.is_running():
+            _weekly_rankings_loop.start()
 
     @bot.event
     async def on_message(message: disnake.Message):

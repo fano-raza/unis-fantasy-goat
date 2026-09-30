@@ -61,6 +61,31 @@ def daily_games_last_run_path() -> Path:
     return DATA_ROOT / "daily_games_last_run.txt"
 
 
+def weekly_rankings_last_run_path() -> Path:
+    """Last-run (year, week) for StatBot's Monday weekly-rankings post --
+    same restart/missed-tick reasoning as weekly_role_sync_state_path(),
+    but keyed on the fantasy week rather than a calendar date since this
+    only needs to fire once per (year, week), not once per Monday."""
+    return DATA_ROOT / "weekly_rankings_last_run.txt"
+
+
+def weekly_recaps_csv_path() -> Path:
+    """One row per (year, week) StatBot has posted a rankings recap for --
+    see discord/weekly_rankings.py. Surfaced on the web app's Weekly Stats
+    page via LeagueStore.weekly_recap()."""
+    return REF_DIR / "weekly_recaps.csv"
+
+
+def roster_rank_history_csv_path() -> Path:
+    """One row per (year, week, player) snapshot of that player's live
+    fantasy rank, dated -- see scripts/export_roster_ranks.py's
+    append_roster_rank_history(). Distinct from roster_ranks.csv, which
+    stays a single current-season snapshot for the Roster page's swap
+    simulator. No separate "last run" cursor needed -- the function
+    itself no-ops once a (year, week) pair is already in the file."""
+    return REF_DIR / "roster_rank_history.csv"
+
+
 def daily_games_last_synced_at_path() -> Path:
     """Last-synced-at UTC timestamp (ISO 8601), written on every successful
     scan_and_record() call regardless of caller. Distinct from

@@ -60,6 +60,7 @@ class LeagueStore:
         self._roster_ranks_df: pd.DataFrame | None = None
         self._nba_schedule_df: pd.DataFrame | None = None
         self._week_calendar_df: pd.DataFrame | None = None
+        self._weekly_recaps_df: pd.DataFrame | None = None
         self._category_history: dict | None = None
         self._rs_finish_history: dict | None = None
         self._po_lookup = self._load_po_real_matchup_lookup()
@@ -525,6 +526,42 @@ class LeagueStore:
             )
         self._week_calendar_df = pd.read_csv(path)
         return self._week_calendar_df
+
+    def weekly_recap(self, year: int, week: int) -> dict | None:
+        """The Monday "Week N Rankings" post's content (rank table +
+        top/bottom team commentary), for the Weekly Stats page to show
+        alongside a completed week. Reads discord/weekly_rankings.py's
+        precomputed Ref/weekly_recaps.csv. Unlike week_calendar()/
+        roster_ranks() (which raise if their export was never run), a
+        missing file OR a missing row for this specific (year, week) is a
+        normal "not posted yet" case -- returns None, not an error, so the
+        frontend can treat it the same way either way (hide the card)."""
+        df = self._ensure_weekly_recaps_df()
+        if df is None:
+            return None
+        row = df[(df["year"] == year) & (df["week"] == week)]
+        if row.empty:
+            return None
+        r = row.iloc[-1]  # last write wins if ever somehow duplicated
+        return {
+            "year": int(r["year"]),
+            "week": int(r["week"]),
+            "rank_table": json.loads(r["rank_table_json"]),
+            "top_team": str(r["top_team"]),
+            "bottom_team": str(r["bottom_team"]),
+            "commentary": r["commentary"] if pd.notna(r["commentary"]) and r["commentary"] else None,
+            "posted_at": str(r["posted_at"]),
+        }
+
+    def _ensure_weekly_recaps_df(self) -> pd.DataFrame | None:
+        if self._weekly_recaps_df is not None:
+            return self._weekly_recaps_df
+        ref_dir = getattr(self.store, "ref_dir", None)
+        path = Path(ref_dir) / "weekly_recaps.csv" if ref_dir else None
+        if path is None or not path.exists():
+            return None
+        self._weekly_recaps_df = pd.read_csv(path)
+        return self._weekly_recaps_df
 
     def nba_schedule(self, start_date: str, end_date: str) -> list[dict]:
         """Real NBA games (date/time, home/away team) in [start_date,
