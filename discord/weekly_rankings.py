@@ -42,11 +42,38 @@ WEB_APP_BASE_URL = os.getenv("WEB_APP_BASE_URL", "https://unis-fantasy-goat.verc
 ApiPost = Callable[[str, dict], Awaitable[tuple[int, dict]]]
 
 SYSTEM_PROMPT = (
-    "You write short, lightly humorous fantasy-basketball weekly recap blurbs for a Discord league. "
+    "You write short, trash-talking fantasy-basketball weekly recap blurbs for a Discord league of guys "
+    "who talk shit to each other. Every team is owned and managed by a man -- always refer to team owners "
+    "with he/him/his pronouns, never they/them/theirs. "
     "You will be given JSON facts about the TOP-ranked team and BOTTOM-ranked team for this week only. "
     "Write exactly two short paragraphs (2-3 sentences each, ~40-70 words), separated by a blank line: "
-    "the first about the top team (positive/celebratory tone), the second about the bottom team "
-    "(playful/disparaging tone, still good-natured). "
+    "the first about the top team (hype, celebratory), the second about the bottom team (mocking, "
+    "disparaging) -- still good-natured trash talk between friends, not genuinely cruel. "
+    "Use blunt, colloquial trash-talk phrasing instead of generic sports-recap language. Examples of the "
+    "style to hit (don't just reuse these verbatim every time -- vary it, invent similar ones): "
+    "'beat the fuck out of him' instead of 'beat him'; 'ran him out of the gym' or 'put a beating on him' "
+    "instead of 'won convincingly'; 'got smoked' or 'got run off the court' instead of 'lost badly'; "
+    "'is balling out' or 'is on a heater' instead of 'is playing well'; 'is a fucking mess' or 'can't buy "
+    "a win' instead of 'is struggling'; 'is running the league' instead of 'is the best team'. "
+    "Separately: you may replace an intensifier like 'very'/'really' with 'fucking' (e.g. 'fucking "
+    "dominant', 'fucking brutal') -- at most ONCE across the whole message, not once per paragraph. That "
+    "cap is only for the very/really-replacement use -- it doesn't limit profanity used inside a colloquial "
+    "phrase like the examples above. Don't reach for any other profanity beyond what's shown here. "
+    "The facts include more than just this week's result -- use whichever of these are actually notable "
+    "(don't force all of them into two short paragraphs): matchup_win_streak/matchup_loss_streak (his real "
+    "head-to-head streak RIGHT NOW, separate from his weekly ranking); top_rank_streak_this_season/"
+    "bottom_rank_streak_this_season and the _count_this_season versions (how long/how often he's held that "
+    "exact position); weekly_rank_history plus is_season_best_week_rank/is_season_worst_week_rank (has he "
+    "been consistently near this spot all year, or is this a season-high/season-low outlier); "
+    "season_rank_last_week vs. season_rank plus passed_in_standings_this_week/"
+    "passed_by_in_standings_this_week (name-drop who he specifically passed or got passed by, if anyone); "
+    "and career_record/career_best_win_streak/career_worst_losing_streak (each team's OWN career numbers). "
+    "league_record_win_streak is DIFFERENT from all of those -- it is the single best win streak ever "
+    "posted by ANY team in league history, which usually belongs to some OTHER team entirely, not "
+    "necessarily the one you're writing about. Never state it as if it were this team's own streak. Only "
+    "mention it at all when sets_new_league_record_win_streak is true, meaning THIS team's current "
+    "matchup_win_streak just tied or broke that outright all-time record -- that's a huge deal and "
+    "deserves a real callout when it happens; otherwise ignore league_record_win_streak completely. "
     "Use ONLY the facts provided -- never invent injuries, trades, player performances, or other context "
     "not present in the JSON. Refer to teams by their team/owner name. Do not include a title or header, "
     "just the two paragraphs."
@@ -136,50 +163,134 @@ def _result_label(row: dict) -> str | None:
     return None
 
 
-async def _season_rank_history(
-    api_post: ApiPost, year: int, week: int, top_team: str, bottom_team: str
-) -> tuple[int, int, int, int]:
-    """Walks backward from `week` to week 1, ONE /weekly_leaderboard call per
-    week (shared between both teams, not one call per team), computing for
-    each team both a consecutive streak (stops counting the moment the
-    position breaks, walking backward from `week`) and a season-total count
-    (keeps counting for every earlier week that position was held, even
-    after a gap) -- both concepts show up in the real historical "Week N
-    Rankings" posts ("third top rank of the season" vs. "third week in a
-    row"), so both are computed and left for the commentary prompt to
-    choose between.
-
-    Returns (top_streak, top_total, bottom_streak, bottom_total).
-    """
-    top_streak = top_total = bottom_streak = bottom_total = 0
-    top_streak_active = bottom_streak_active = True
-
+async def _fetch_weeks_desc(api_post: ApiPost, year: int, week: int) -> list[tuple[int, list[dict]]]:
+    """[(week_num, ranked_rows), ...] for week, week-1, ..., 1 (skipping any
+    week with no data), newest-first. Fetched once and shared across both
+    teams' history walks below rather than re-fetched per team."""
+    out: list[tuple[int, list[dict]]] = []
     for w in range(week, 0, -1):
         status, rows = await api_post("/league/weekly_leaderboard", {"year": year, "week": w})
         if status != 200:
             break
         ranked = [r for r in rows if r.get("rank") is not None]
-        if not ranked:
+        if ranked:
+            out.append((w, ranked))
+    return out
+
+
+def _team_history_from_weeks(weeks_desc: list[tuple[int, list[dict]]], team: str, target: str) -> dict:
+    """target: "top" (this team holds rank 1) or "bottom" (this team holds
+    the worst rank that week). Both a consecutive streak (stops counting
+    the moment it breaks, walking backward from the most recent week) and
+    a season-total count (keeps counting every earlier week that position
+    was held, even after a gap) are computed -- both concepts show up in
+    the real historical "Week N Rankings" posts ("third top rank of the
+    season" vs. "third week in a row"), left for the prompt to choose
+    between. matchup_win_streak/matchup_loss_streak are the team's real
+    head-to-head result streak (independent of rank), same "stop at the
+    first break" logic -- only one of the two is ever nonzero, since which
+    one is active flips permanently the moment the other type appears.
+    weekly_rank_history is this team's performance rank for every week
+    seen, oldest-first, for describing season-long consistency without a
+    rigid pre-computed tier system."""
+    rank_streak = rank_total = win_streak = loss_streak = 0
+    rank_active = win_active = loss_active = True
+    weekly_ranks_desc: list[int] = []
+
+    for _, ranked in weeks_desc:
+        row = next((r for r in ranked if r["team"] == team), None)
+        if row is None:
             continue
-        bottom_rank = len(ranked)
+        weekly_ranks_desc.append(row["rank"])
 
-        top_row = next((r for r in ranked if r["team"] == top_team), None)
-        if top_row is not None and top_row["rank"] == 1:
-            top_total += 1
-            if top_streak_active:
-                top_streak += 1
+        target_rank = 1 if target == "top" else len(ranked)
+        if row["rank"] == target_rank:
+            rank_total += 1
+            if rank_active:
+                rank_streak += 1
         else:
-            top_streak_active = False
+            rank_active = False
 
-        bottom_row = next((r for r in ranked if r["team"] == bottom_team), None)
-        if bottom_row is not None and bottom_row["rank"] == bottom_rank:
-            bottom_total += 1
-            if bottom_streak_active:
-                bottom_streak += 1
+        if row.get("matchup_win"):
+            if win_active:
+                win_streak += 1
+            loss_active = False
+        elif row.get("matchup_loss"):
+            if loss_active:
+                loss_streak += 1
+            win_active = False
         else:
-            bottom_streak_active = False
+            win_active = loss_active = False
 
-    return top_streak, top_total, bottom_streak, bottom_total
+    return {
+        "rank_streak": rank_streak,
+        "rank_total": rank_total,
+        "matchup_win_streak": win_streak,
+        "matchup_loss_streak": loss_streak,
+        "weekly_rank_history": list(reversed(weekly_ranks_desc)),
+    }
+
+
+def _passed_teams(team: str, this_week_ranks: dict[str, int], last_week_ranks: dict[str, int]) -> tuple[list[str], list[str]]:
+    """Which team(s) `team` passed in the season standings this week (was
+    behind last week, now ahead), and which passed `team` (the mirror) --
+    from two already-fetched {team: season_rank} snapshots, no extra API
+    calls. Empty lists (not an error) if either snapshot is missing this
+    team, or on week 1 (no "last week" to compare against)."""
+    this_rank = this_week_ranks.get(team)
+    last_rank = last_week_ranks.get(team)
+    if this_rank is None or last_rank is None:
+        return [], []
+
+    passed, passed_by = [], []
+    for other, other_last in last_week_ranks.items():
+        if other == team:
+            continue
+        other_now = this_week_ranks.get(other)
+        if other_now is None:
+            continue
+        if other_last < last_rank and other_now > this_rank:
+            passed.append(other)
+        elif other_last > last_rank and other_now < this_rank:
+            passed_by.append(other)
+    return passed, passed_by
+
+
+async def _standings_snapshot(api_post: ApiPost, year: int, week: int) -> dict[str, int]:
+    status, standings = await api_post("/league/standings", {"year": year, "min_week": 1, "max_week": week})
+    if status != 200:
+        return {}
+    return {r["team"]: r["rank"] for r in standings.get("wl", [])}
+
+
+async def _career_facts(api_post: ApiPost, top_team: str, bottom_team: str) -> dict[str, dict]:
+    """Career/league-history facts, per the user's explicit request to
+    include these (career record, personal-best/-worst streaks, and
+    whether an in-progress streak ties or breaks the outright all-time
+    league record) -- all read from data that already exists
+    (Ref/team_summary.csv via /league/team_summary, and /league/records'
+    already-computed cross-team win-streak leaderboard), nothing new
+    computed here."""
+    status, summary_rows = await api_post("/league/team_summary", {"teams": [top_team, bottom_team]})
+    summary_by_team = {r["Team"]: r for r in summary_rows} if status == 200 else {}
+
+    status2, records = await api_post("/league/records", {})
+    league_best_win_streak = None
+    if status2 == 200:
+        streaks = records.get("longest_win_streaks", [])
+        if streaks:
+            league_best_win_streak = streaks[0]["longest_win_streak"]
+
+    def facts_for(team: str) -> dict:
+        row = summary_by_team.get(team, {})
+        return {
+            "career_record": row.get("Career W/L"),
+            "career_best_win_streak": row.get("Best Win Streak"),
+            "career_worst_losing_streak": row.get("Worst Losing Streak"),
+            "league_record_win_streak": league_best_win_streak,
+        }
+
+    return {top_team: facts_for(top_team), bottom_team: facts_for(bottom_team)}
 
 
 async def build_commentary_facts(api_post: ApiPost, year: int, week: int, ranked_rows: list[dict]) -> dict | None:
@@ -192,44 +303,84 @@ async def build_commentary_facts(api_post: ApiPost, year: int, week: int, ranked
         # compare, so skip commentary rather than write a facts blob that
         # would just describe one team as both best and worst.
         return None
+    top_team, bottom_team = top["team"], bottom["team"]
 
-    top_streak, top_total, bottom_streak, bottom_total = await _season_rank_history(
-        api_post, year, week, top["team"], bottom["team"]
-    )
+    weeks_desc = await _fetch_weeks_desc(api_post, year, week)
+    top_hist = _team_history_from_weeks(weeks_desc, top_team, "top")
+    bottom_hist = _team_history_from_weeks(weeks_desc, bottom_team, "bottom")
 
+    this_week_ranks = await _standings_snapshot(api_post, year, week)
+    last_week_ranks = await _standings_snapshot(api_post, year, week - 1) if week > 1 else {}
     status, standings = await api_post("/league/standings", {"year": year, "min_week": 1, "max_week": week})
     wl_rows = standings.get("wl", []) if status == 200 else []
 
+    career = await _career_facts(api_post, top_team, bottom_team)
+
     def season_info(team: str) -> dict:
         row = next((r for r in wl_rows if r["team"] == team), None)
-        if row is None:
-            return {"season_rank": None, "season_record": None}
+        record = f"{row['wins']}-{row['losses']}-{row['ties']}" if row else None
+        passed, passed_by = _passed_teams(team, this_week_ranks, last_week_ranks)
         return {
-            "season_rank": row["rank"],
-            "season_record": f"{row['wins']}-{row['losses']}-{row['ties']}",
+            "season_rank": row["rank"] if row else None,
+            "season_rank_last_week": last_week_ranks.get(team),
+            "season_record": record,
+            "passed_in_standings_this_week": passed,
+            "passed_by_in_standings_this_week": passed_by,
+        }
+
+    def consistency_info(hist: dict) -> dict:
+        history = hist["weekly_rank_history"]
+        current = history[-1] if history else None
+        return {
+            "weekly_rank_history": history,
+            "season_best_week_rank": min(history) if history else None,
+            "season_worst_week_rank": max(history) if history else None,
+            "is_season_best_week_rank": bool(history) and current == min(history),
+            "is_season_worst_week_rank": bool(history) and current == max(history),
+        }
+
+    def streak_info(hist: dict, career_row: dict) -> dict:
+        win_streak = hist["matchup_win_streak"]
+        career_best = career_row.get("career_best_win_streak")
+        league_best = career_row.get("league_record_win_streak")
+        return {
+            "matchup_win_streak": win_streak,
+            "matchup_loss_streak": hist["matchup_loss_streak"],
+            "ties_or_breaks_career_best_win_streak": (
+                win_streak > 0 and career_best is not None and win_streak >= career_best
+            ),
+            "sets_new_league_record_win_streak": (
+                win_streak > 0 and league_best is not None and win_streak > league_best
+            ),
         }
 
     return {
         "week": week,
         "top_team": {
-            "name": top["team"],
+            "name": top_team,
             "week_rank": top["rank"],
             "week_rating": top["rating"],
-            "top_rank_streak_this_season": top_streak,
-            "top_rank_count_this_season": top_total,
+            "top_rank_streak_this_season": top_hist["rank_streak"],
+            "top_rank_count_this_season": top_hist["rank_total"],
             "opponent": top["opponent"],
             "matchup_result": _result_label(top),
-            **season_info(top["team"]),
+            **streak_info(top_hist, career[top_team]),
+            **consistency_info(top_hist),
+            **season_info(top_team),
+            **career[top_team],
         },
         "bottom_team": {
-            "name": bottom["team"],
+            "name": bottom_team,
             "week_rank": bottom["rank"],
             "week_rating": bottom["rating"],
-            "bottom_rank_streak_this_season": bottom_streak,
-            "bottom_rank_count_this_season": bottom_total,
+            "bottom_rank_streak_this_season": bottom_hist["rank_streak"],
+            "bottom_rank_count_this_season": bottom_hist["rank_total"],
             "opponent": bottom["opponent"],
             "matchup_result": _result_label(bottom),
-            **season_info(bottom["team"]),
+            **streak_info(bottom_hist, career[bottom_team]),
+            **consistency_info(bottom_hist),
+            **season_info(bottom_team),
+            **career[bottom_team],
         },
     }
 
