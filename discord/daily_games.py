@@ -1,8 +1,9 @@
 """Parses and persists #daily-games score posts (MapTap, Worldle, Flagle,
-WhenTaken, Travle). Share-text formats were confirmed against real channel
-history, not documentation -- see each regex's comment for the exact sample
-that justified it (formats have drifted over time, e.g. Worldle's early
-2023 posts didn't include the "(date)" field later posts have).
+WhenTaken, Travle, Krillion). Share-text formats were confirmed against
+real channel history, not documentation -- see each regex's comment for
+the exact sample that justified it (formats have drifted over time, e.g.
+Worldle's early 2023 posts didn't include the "(date)" field later posts
+have).
 
 Storage: one row per game-play, appended to daily_games_history.csv
 (shared.runtime_config.daily_games_history_path()). Scans are incremental --
@@ -10,10 +11,12 @@ daily_games_cursor_path() stores the last-processed message id so a daily
 refresh only walks new messages, not the whole channel (currently ~2900
 messages and growing) each time. First-ever call has no cursor, so it
 naturally does a full backfill. raw_score (MapTap-only: the pre-multiplier
-sum of its 5 round scores) is empty for every other game and for rows
-recorded before that column existed -- _ensure_csv migrates an old-format
-file's header in place the first time it's touched, backfilling "" for
-those rows rather than requiring a one-off migration script.
+sum of its 5 round scores) and puzzle_num (Krillion-only: see
+KRILLION_SOURCE_OF_TRUTH_USER_ID/reconcile_krillion_dates()) are empty for
+every other game and for rows recorded before those columns existed --
+_ensure_csv migrates an old-format file's header in place the first time
+it's touched, backfilling "" for those rows rather than requiring a
+one-off migration script.
 """
 
 from __future__ import annotations
@@ -39,7 +42,7 @@ DISCORD_NAMES_CSV = Path(__file__).resolve().parent / "discord_names.csv"
 # fresh one itself, instead of relying solely on the hourly/4am loop.
 FRESHNESS_WINDOW = timedelta(minutes=10)
 
-CSV_FIELDS = ["message_id", "discord_user_id", "game", "date", "timestamp", "score", "solved", "raw_score"]
+CSV_FIELDS = ["message_id", "discord_user_id", "game", "date", "timestamp", "score", "solved", "raw_score", "puzzle_num"]
 
 # "www.maptap.gg July 15\n98\U0001f525 94\U0001f3c5 58\U0001f92b 93\U0001f3c6 90\U0001f451\nFinal score: 857"
 # -- deliberately requires "<Month> <day>" right after the bare domain, NOT
@@ -126,6 +129,23 @@ TRAVLE_AWAY_RE = re.compile(r"#travle\s+#\d+\s*\(\d+\s*away\)", re.IGNORECASE)
 TRAVLE_MIN_SCORE = 0
 TRAVLE_MAX_SCORE = 10
 
+# "Krillion #76 \U0001F990\n160\n\n\U0001FAE7\U0001F41F\U0001F41F\U0001FAE7\U0001F991\U0001FAE7\U0001FAE7"
+# -- unlike every other game here, the message carries NO date at all, only
+# a puzzle number shared by everyone who played that day's puzzle (confirmed
+# real via channel history: "Krillion #75"/"#76" posts from different users
+# on the same real calendar day, no per-message date field anywhere in the
+# text). So a puzzle number's date can't be read out of any single message
+# the way every other game's can -- it has to be resolved by comparing
+# messages that share the same puzzle number (see KRILLION_SOURCE_OF_TRUTH_USER_ID
+# and reconcile_krillion_dates() below). The trailing 7-symbol row is a
+# decorative result grid (varies per play, no per-symbol point values to
+# sum, unlike MapTap/WhenTaken's round breakdowns) -- only the marker and
+# the bare score number on the next line are parsed.
+KRILLION_RE = re.compile(r"Krillion\s*#(\d+)[^\n]*\n\s*(\d+)", re.IGNORECASE)
+# Fano (lezapatu) -- user-designated source of truth for a Krillion puzzle
+# number's real date, since the game's own share text never states one.
+KRILLION_SOURCE_OF_TRUTH_USER_ID = 975574472927084615
+
 
 def _parse_ddmmyyyy(raw: str) -> Optional[date]:
     day_s, month_s, year_s = raw.split(".")
@@ -134,32 +154,39 @@ def _parse_ddmmyyyy(raw: str) -> Optional[date]:
     except ValueError:
         return None
 
-GAMES = ("maptap", "worldle", "flagle", "whentaken", "travle")
+GAMES = ("maptap", "worldle", "flagle", "whentaken", "travle", "krillion")
 GAME_LABELS = {
     "maptap": "MapTap",
     "worldle": "Worldle",
     "flagle": "Flagle",
     "whentaken": "WhenTaken",
     "travle": "Travle",
+    "krillion": "Krillion",
 }
 # True = lower average is better (guess count / extra guesses over par).
-# False = higher average is better (score out of 1000).
+# False = higher average is better (score out of 1000, or -- Krillion --
+# no known fixed max, but still higher-is-better: real channel discussion
+# treats a higher number as a better run, e.g. "i think 450+ is a 900+"
+# comparing it to MapTap's scale).
 LOWER_IS_BETTER = {
     "maptap": False,
     "worldle": True,
     "flagle": True,
     "whentaken": False,
     "travle": True,
+    "krillion": False,
 }
 # True = the game has a fail state (Worldle/Flagle "X/6", Travle "(N away)"),
-# so a play can be incomplete. MapTap and WhenTaken only ever post a score --
-# there's no failure format for either -- so every play is complete.
+# so a play can be incomplete. MapTap, WhenTaken, and Krillion only ever
+# post a score -- no failure format observed for any of the three -- so
+# every play is complete.
 CAN_BE_INCOMPLETE = {
     "maptap": False,
     "worldle": True,
     "flagle": True,
     "whentaken": False,
     "travle": True,
+    "krillion": False,
 }
 # Games with a "score" (own point total, higher is better) rather than a
 # "number of tries" (Worldle/Flagle guess count, Travle extra guesses) --
@@ -176,20 +203,27 @@ DEFAULT_DAYS_BACK = 7
 
 def parse_message(
     content: str, posted_date: date
-) -> list[tuple[str, Optional[float], bool, Optional[date], Optional[float]]]:
-    """(game, score, solved, explicit_date, raw_score) for every game marker
-    found in a message. score is None for a failed/incomplete play (still
-    counts as a game played -- solved=False); normally 0 or 1 result per
-    message. explicit_date is the puzzle date parsed out of the message text
-    itself (Worldle/Flagle/WhenTaken carry a full DD.MM.YYYY; MapTap carries
-    "<Month> <day>" with no year, so posted_date's year fills the gap --
-    except right at a year boundary (posted in January about a December
-    puzzle), where posted_date's year would be off by one; Travle carries
-    no date at all) -- None means "fall back to the message's own post
-    date", which the caller (scan_and_record) does. raw_score is MapTap-only
-    (sum of its 5 per-round scores, before the game's multipliers are
-    applied to produce the final "score") -- always None for every other
-    game.
+) -> list[tuple[str, Optional[float], bool, Optional[date], Optional[float], Optional[str]]]:
+    """(game, score, solved, explicit_date, raw_score, puzzle_num) for every
+    game marker found in a message. score is None for a failed/incomplete
+    play (still counts as a game played -- solved=False); normally 0 or 1
+    result per message. explicit_date is the puzzle date parsed out of the
+    message text itself (Worldle/Flagle/WhenTaken carry a full DD.MM.YYYY;
+    MapTap carries "<Month> <day>" with no year, so posted_date's year
+    fills the gap -- except right at a year boundary (posted in January
+    about a December puzzle), where posted_date's year would be off by
+    one; Travle carries no date at all) -- None means "fall back to the
+    message's own post date", which the caller (scan_and_record) does.
+    raw_score is MapTap-only (sum of its 5 per-round scores, before the
+    game's multipliers are applied to produce the final "score") -- always
+    None for every other game. puzzle_num is Krillion-only (its puzzle
+    number as a string, e.g. "76") -- always None for every other game;
+    Krillion's explicit_date is always None too (its share text carries no
+    date at all, not even the message's own post date can be trusted as
+    canonical -- see KRILLION_SOURCE_OF_TRUTH_USER_ID and
+    reconcile_krillion_dates(), which resolves the real date for a given
+    puzzle_num across every message that shares it, after this function
+    returns).
 
     Sanity bounds are applied before a result is ever appended -- a message
     with an out-of-range MapTap final score (>1000), a Travle score (outside
@@ -199,7 +233,7 @@ def parse_message(
     obviously-fake play. This runs before the caller's same-day dedup, so a
     rejected joke/fake post can never occupy the "first message of the day"
     slot ahead of a real one posted later that day."""
-    results: list[tuple[str, Optional[float], bool, Optional[date], Optional[float]]] = []
+    results: list[tuple[str, Optional[float], bool, Optional[date], Optional[float], Optional[str]]] = []
 
     m = MAPTAP_MARKER.search(content)
     if m:
@@ -231,7 +265,7 @@ def parse_message(
                     0 <= n <= MAPTAP_MAX_ROUND_SCORE for n in round_scores
                 )
                 raw_score = float(sum(round_scores)) if valid_rounds else None
-                results.append(("maptap", final_score, True, explicit_date, raw_score))
+                results.append(("maptap", final_score, True, explicit_date, raw_score, None))
             # else: final_score out of bounds -- not a real play, filtered
             # out entirely (no result appended for this message at all).
 
@@ -240,14 +274,14 @@ def parse_message(
         if m:
             failed = m.group(2).upper() == "X"
             explicit_date = _parse_ddmmyyyy(m.group(1)) if m.group(1) else None
-            results.append(("worldle", None if failed else float(m.group(2)), not failed, explicit_date, None))
+            results.append(("worldle", None if failed else float(m.group(2)), not failed, explicit_date, None, None))
 
     if FLAGLE_MARKER_RE.search(content):
         m = FLAGLE_RE.search(content)
         if m:
             failed = m.group(2).upper() == "X"
             explicit_date = _parse_ddmmyyyy(m.group(1)) if m.group(1) else None
-            results.append(("flagle", None if failed else float(m.group(2)), not failed, explicit_date, None))
+            results.append(("flagle", None if failed else float(m.group(2)), not failed, explicit_date, None, None))
 
     if WHENTAKEN_MARKER_RE.search(content):
         m = WHENTAKEN_SCORE_RE.search(content)
@@ -257,7 +291,7 @@ def parse_message(
             if len(round_scores) == 5 and sum(round_scores) == claimed_score:
                 date_m = WHENTAKEN_DATE_RE.search(content)
                 explicit_date = _parse_ddmmyyyy(date_m.group(1)) if date_m else None
-                results.append(("whentaken", claimed_score, True, explicit_date, None))
+                results.append(("whentaken", claimed_score, True, explicit_date, None, None))
             # else: the 5 round scores don't add up to the claimed total
             # (or weren't found in the expected shape) -- not a real play,
             # filtered out entirely.
@@ -267,12 +301,16 @@ def parse_message(
         if m:
             travle_score = float(m.group(1))
             if TRAVLE_MIN_SCORE <= travle_score <= TRAVLE_MAX_SCORE:
-                results.append(("travle", travle_score, True, None, None))
+                results.append(("travle", travle_score, True, None, None, None))
             # else: out of bounds -- not a real play, filtered out
             # entirely (doesn't fall through to the "away" check below,
             # since a signed number already matched here).
         elif TRAVLE_AWAY_RE.search(content):
-            results.append(("travle", None, False, None, None))
+            results.append(("travle", None, False, None, None, None))
+
+    m = KRILLION_RE.search(content)
+    if m:
+        results.append(("krillion", float(m.group(2)), True, None, None, m.group(1)))
 
     return results
 
@@ -321,9 +359,10 @@ def _ensure_csv(path: Path) -> None:
 
 
 def _migrate_csv_if_needed(path: Path) -> None:
-    """Adds the raw_score column to a pre-existing CSV written before it
-    existed -- backfilled empty for every already-recorded row. A no-op once
-    the file's header already matches CSV_FIELDS."""
+    """Adds any column(s) in CSV_FIELDS missing from a pre-existing CSV
+    written before they existed -- backfilled empty for every
+    already-recorded row. A no-op once the file's header already matches
+    CSV_FIELDS."""
     with path.open(newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         if reader.fieldnames == CSV_FIELDS:
@@ -333,7 +372,8 @@ def _migrate_csv_if_needed(path: Path) -> None:
         writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
         writer.writeheader()
         for row in rows:
-            row.setdefault("raw_score", "")
+            for field in CSV_FIELDS:
+                row.setdefault(field, "")
             writer.writerow(row)
 
 
@@ -365,7 +405,12 @@ async def scan_and_record(channel: disnake.abc.Messageable) -> int:
     async for message in channel.history(limit=None, after=after, oldest_first=True):
         last_seen_id = message.id
         posted_date = message.created_at.date()
-        for game, score, solved, explicit_date, raw_score in parse_message(message.content, posted_date):
+        for game, score, solved, explicit_date, raw_score, puzzle_num in parse_message(message.content, posted_date):
+            # Krillion's date is never trustworthy at this point -- its
+            # messages carry no date at all, so this is only ever a
+            # provisional placeholder (this message's own post date) until
+            # reconcile_krillion_dates() (called below) resolves the real,
+            # shared-per-puzzle-number date afterward.
             play_date = (explicit_date or posted_date).isoformat()
             key = (str(message.author.id), game, play_date)
             if key in seen_keys:
@@ -381,6 +426,7 @@ async def scan_and_record(channel: disnake.abc.Messageable) -> int:
                     "score": "" if score is None else score,
                     "solved": int(solved),
                     "raw_score": "" if raw_score is None else raw_score,
+                    "puzzle_num": puzzle_num or "",
                 }
             )
 
@@ -393,7 +439,79 @@ async def scan_and_record(channel: disnake.abc.Messageable) -> int:
 
     _write_last_synced_at(datetime.now(timezone.utc))
 
+    reconcile_krillion_dates()
+
     return len(new_rows)
+
+
+def reconcile_krillion_dates() -> tuple[int, int]:
+    """Assigns a single canonical date to every recorded Krillion row per
+    puzzle number, overwriting whatever provisional per-message post date
+    scan_and_record() used at insert time (Krillion's share text carries no
+    date at all -- see KRILLION_RE/parse_message). Canonical date =
+    KRILLION_SOURCE_OF_TRUTH_USER_ID's row for that puzzle number, if they
+    have one; else the earliest-timestamped row for that puzzle number.
+
+    Idempotent and safe to call every time (called at the end of every
+    scan_and_record()) -- correctly retroactively fixes already-recorded
+    rows if the source-of-truth user's message for a puzzle number arrives
+    in a later scan than other players' (e.g. they post hours after
+    everyone else, possibly not until the next hourly sync).
+
+    After unifying dates, the same user's own two rows for the same puzzle
+    number can end up sharing a date that scan_and_record's insert-time
+    dedup never saw as identical (their own provisional post-dates
+    differed at insert time) -- resolved the same way as any other same-
+    day duplicate, keeping only the earliest.
+
+    Returns (rows whose date changed, duplicate rows removed)."""
+    csv_path = daily_games_history_path()
+    if not csv_path.exists():
+        return 0, 0
+    with csv_path.open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames
+        rows = list(reader)
+
+    by_puzzle: dict[str, list[dict]] = {}
+    for row in rows:
+        if row["game"] == "krillion" and row.get("puzzle_num"):
+            by_puzzle.setdefault(row["puzzle_num"], []).append(row)
+
+    dates_changed = 0
+    rows_to_drop: set[int] = set()
+    for group in by_puzzle.values():
+        source_row = next(
+            (r for r in group if r["discord_user_id"] == str(KRILLION_SOURCE_OF_TRUTH_USER_ID)),
+            None,
+        )
+        if source_row is None:
+            source_row = min(group, key=lambda r: r["timestamp"])
+        canonical_date = source_row["date"]
+        for r in group:
+            if r["date"] != canonical_date:
+                r["date"] = canonical_date
+                dates_changed += 1
+
+        by_user: dict[str, dict] = {}
+        for r in group:
+            existing = by_user.get(r["discord_user_id"])
+            if existing is None:
+                by_user[r["discord_user_id"]] = r
+            elif r["timestamp"] < existing["timestamp"]:
+                rows_to_drop.add(id(existing))
+                by_user[r["discord_user_id"]] = r
+            else:
+                rows_to_drop.add(id(r))
+
+    if dates_changed or rows_to_drop:
+        final_rows = [r for r in rows if id(r) not in rows_to_drop]
+        with csv_path.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(final_rows)
+
+    return dates_changed, len(rows_to_drop)
 
 
 async def backfill_maptap_raw_scores(channel: disnake.abc.Messageable) -> int:
@@ -420,7 +538,7 @@ async def backfill_maptap_raw_scores(channel: disnake.abc.Messageable) -> int:
         if mid not in missing_ids:
             continue
         posted_date = message.created_at.date()
-        for game, _score, _solved, _explicit_date, raw_score in parse_message(message.content, posted_date):
+        for game, _score, _solved, _explicit_date, raw_score, _puzzle_num in parse_message(message.content, posted_date):
             if game == "maptap" and raw_score is not None:
                 raw_by_message_id[mid] = raw_score
         missing_ids.discard(mid)
@@ -444,6 +562,55 @@ async def backfill_maptap_raw_scores(channel: disnake.abc.Messageable) -> int:
             writer.writerows(rows)
 
     return updated
+
+
+async def backfill_krillion_history(channel: disnake.abc.Messageable) -> int:
+    """One-off backfill for Krillion plays posted before this file knew how
+    to recognize the game -- scan_and_record()'s cursor has already
+    advanced past those messages, so a normal incremental scan will never
+    see them again. Ignores the cursor and walks the whole channel from
+    the beginning looking only for Krillion messages not already recorded,
+    respecting the same same-day dedup as scan_and_record(). Calls
+    reconcile_krillion_dates() afterward. Safe to re-run -- a no-op once
+    nothing's missing. Returns rows added."""
+    csv_path = daily_games_history_path()
+    _ensure_csv(csv_path)
+    seen_keys = _existing_play_keys(csv_path)
+
+    new_rows: list[dict] = []
+    async for message in channel.history(limit=None, oldest_first=True):
+        if "krillion" not in message.content.lower():
+            continue
+        posted_date = message.created_at.date()
+        for game, score, solved, explicit_date, raw_score, puzzle_num in parse_message(message.content, posted_date):
+            if game != "krillion":
+                continue
+            play_date = (explicit_date or posted_date).isoformat()
+            key = (str(message.author.id), game, play_date)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            new_rows.append(
+                {
+                    "message_id": message.id,
+                    "discord_user_id": message.author.id,
+                    "game": game,
+                    "date": play_date,
+                    "timestamp": message.created_at.isoformat(),
+                    "score": "" if score is None else score,
+                    "solved": int(solved),
+                    "raw_score": "",
+                    "puzzle_num": puzzle_num or "",
+                }
+            )
+
+    if new_rows:
+        with csv_path.open("a", newline="", encoding="utf-8") as f:
+            csv.DictWriter(f, fieldnames=CSV_FIELDS).writerows(new_rows)
+
+    reconcile_krillion_dates()
+
+    return len(new_rows)
 
 
 async def ensure_fresh(channel: disnake.abc.Messageable) -> datetime:
