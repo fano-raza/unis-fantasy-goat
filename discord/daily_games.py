@@ -145,6 +145,8 @@ KRILLION_RE = re.compile(r"Krillion\s*#(\d+)[^\n]*\n\s*(\d+)", re.IGNORECASE)
 # Fano (lezapatu) -- user-designated source of truth for a Krillion puzzle
 # number's real date, since the game's own share text never states one.
 KRILLION_SOURCE_OF_TRUTH_USER_ID = 975574472927084615
+KRILLION_MIN_SCORE = 0
+KRILLION_MAX_SCORE = 700
 
 
 def _parse_ddmmyyyy(raw: str) -> Optional[date]:
@@ -227,11 +229,12 @@ def parse_message(
 
     Sanity bounds are applied before a result is ever appended -- a message
     with an out-of-range MapTap final score (>1000), a Travle score (outside
-    [0, 10]), or a WhenTaken score whose 5 round scores don't sum to exactly
-    the claimed total is filtered out entirely (no result for that game at
-    all, same as if no marker had matched), rather than recording an
-    obviously-fake play. This runs before the caller's same-day dedup, so a
-    rejected joke/fake post can never occupy the "first message of the day"
+    [0, 10]), a Krillion score (outside [0, 700]), or a WhenTaken score
+    whose 5 round scores don't sum to exactly the claimed total is filtered
+    out entirely (no result for that game at all, same as if no marker had
+    matched), rather than recording an obviously-fake play. This runs
+    before the caller's same-day dedup, so a rejected joke/fake post can
+    never occupy the "first message of the day"
     slot ahead of a real one posted later that day."""
     results: list[tuple[str, Optional[float], bool, Optional[date], Optional[float], Optional[str]]] = []
 
@@ -310,7 +313,10 @@ def parse_message(
 
     m = KRILLION_RE.search(content)
     if m:
-        results.append(("krillion", float(m.group(2)), True, None, None, m.group(1)))
+        krillion_score = float(m.group(2))
+        if KRILLION_MIN_SCORE <= krillion_score <= KRILLION_MAX_SCORE:
+            results.append(("krillion", krillion_score, True, None, None, m.group(1)))
+        # else: out of bounds -- not a real play, filtered out entirely.
 
     return results
 
