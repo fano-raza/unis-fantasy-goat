@@ -28,16 +28,18 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <head>
+      <body className="min-h-full flex flex-col">
         {/* Opens the DNS+TCP+TLS connection to the backend while the page's
             JS is still downloading/parsing, instead of only starting once
             hydration triggers the first fetch -- that handshake measured
             ~550ms alone against the droplet, previously fully serial with
-            bundle load. */}
+            bundle load. React/Next auto-hoist <link> tags rendered anywhere
+            in the tree into the real document <head> -- no manual <head>
+            element needed (and a literal one here was the likely cause of a
+            hydration mismatch specifically on "/", the one route whose
+            Suspense fallback forces a static/dynamic split at this level). */}
         <link rel="preconnect" href={API_BASE_URL} crossOrigin="anonymous" />
         <link rel="dns-prefetch" href={API_BASE_URL} />
-      </head>
-      <body className="min-h-full flex flex-col">
         <header className="border-b border-border">
           <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 py-4 sm:px-6">
             <div className="flex items-center justify-between gap-3">
