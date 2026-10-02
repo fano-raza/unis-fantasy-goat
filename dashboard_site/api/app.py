@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -42,6 +42,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# GET /league/* endpoints are read-only snapshots of in-memory data that's
+# only ever as fresh as the last _refresh_data() pass anyway (every 5 min,
+# see below) -- letting the browser reuse a response for a short window
+# costs at most a few seconds of extra staleness on top of that, in
+# exchange for skipping a full round trip to the droplet on repeat
+# navigation/back-forward/multi-tab. Scoped to GET only; POST endpoints
+# (user-driven queries with arbitrary filters) are left alone since
+# browsers don't cache non-GET responses regardless.
+@app.middleware("http")
+async def add_short_cache_header(request: Request, call_next):
+    response = await call_next(request)
+    if request.method == "GET" and request.url.path.startswith(("/league/", "/meta", "/refresh_status")):
+        response.headers["Cache-Control"] = "public, max-age=30, stale-while-revalidate=60"
+    return response
 
 store = StatsStore()
 league_store = get_league_store(store)

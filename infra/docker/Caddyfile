@@ -5,5 +5,6 @@
 # below, point its DNS A record at this droplet's IP, restart caddy --
 # nothing else in this file or the compose setup needs to change.
 134-209-168-108.sslip.io {
+	encode gzip
 	reverse_proxy dashboard-api:8090
 }

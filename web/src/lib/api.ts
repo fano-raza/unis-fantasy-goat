@@ -325,9 +325,17 @@ async function apiFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
+  // GET bootstrap/meta endpoints now send a short (30s) Cache-Control from
+  // the backend (see app.py's add_short_cache_header) -- letting the
+  // browser's own HTTP cache honor that (instead of forcing "no-store")
+  // means repeat navigation/back-forward/multi-tab can skip the round
+  // trip to the droplet entirely. POST endpoints are user-driven ad-hoc
+  // queries and stay "no-store": browsers never cache non-GET anyway, but
+  // being explicit keeps intent clear.
+  const isGet = !init?.method || init.method === "GET";
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
-    cache: "no-store",
+    cache: isGet ? undefined : "no-store",
     headers: {
       "Content-Type": "application/json",
       ...init?.headers,
