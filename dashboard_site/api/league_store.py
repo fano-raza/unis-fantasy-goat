@@ -267,6 +267,26 @@ class LeagueStore:
         self._weekly_leaderboard_cache[cache_key] = result
         return result
 
+    def weekly_leaderboard_season(self, year: int) -> dict[int, list[dict]]:
+        # Every week of a season in one call, keyed by week number -- lets
+        # the frontend prefetch a whole year once (see
+        # weekly-stats-view.tsx's seasonCache) instead of paying a fresh
+        # round trip for every week switch within that year. Reuses
+        # weekly_leaderboard()'s own cache per week (same cache_key, same
+        # _week_row_to_dict shape) rather than recomputing -- a week
+        # already viewed individually isn't rebuilt here, and a week first
+        # seen through this call populates that same per-week cache for
+        # free.
+        df = self._ensure_weekly_df()
+        weeks = sorted(int(w) for w in df.loc[df["Year"] == year, "Week"].unique().tolist())
+        out: dict[int, list[dict]] = {}
+        for week in weeks:
+            try:
+                out[week] = self.weekly_leaderboard(year, week)
+            except ValueError:
+                continue
+        return out
+
     def totals(
         self,
         years: list[int] | None = None,

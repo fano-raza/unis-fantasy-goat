@@ -331,11 +331,16 @@ async function apiFetch<T>(
   // means repeat navigation/back-forward/multi-tab can skip the round
   // trip to the droplet entirely. POST endpoints are user-driven ad-hoc
   // queries and stay "no-store": browsers never cache non-GET anyway, but
-  // being explicit keeps intent clear.
+  // being explicit keeps intent clear. Exception: a caller passing its own
+  // `next.revalidate` (the server components that fetch a default POST
+  // bootstrap, e.g. draft picks) -- Next's fetch rejects `cache` and
+  // `next.revalidate` set together, so an explicit `next` always wins and
+  // `cache` is left for Next/the browser to decide.
+  const hasExplicitRevalidate = (init as { next?: { revalidate?: unknown } } | undefined)?.next?.revalidate !== undefined;
   const isGet = !init?.method || init.method === "GET";
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
-    cache: isGet ? undefined : "no-store",
+    cache: hasExplicitRevalidate ? undefined : isGet ? undefined : "no-store",
     headers: {
       "Content-Type": "application/json",
       ...init?.headers,
@@ -350,27 +355,41 @@ async function apiFetch<T>(
   return res.json() as Promise<T>;
 }
 
-function post<T>(path: string, body: unknown): Promise<T> {
-  return apiFetch<T>(path, { method: "POST", body: JSON.stringify(body) });
+function post<T>(path: string, body: unknown, init?: RequestInit): Promise<T> {
+  return apiFetch<T>(path, { ...init, method: "POST", body: JSON.stringify(body) });
 }
 
-export const getLeagueMeta = () => apiFetch<LeagueMeta>("/league/meta");
+export const getLeagueMeta = (init?: RequestInit) => apiFetch<LeagueMeta>("/league/meta", init);
+
+// Every week of a season, keyed by week number as a string (JSON object
+// keys are always strings, even though the backend's dict is int-keyed --
+// see dashboard_site/api/league_store.py::weekly_leaderboard_season).
+export type SeasonWeeks = Record<string, WeekRow[]>;
 
 export interface WeeklyStatsBootstrap {
   meta: LeagueMeta;
   rows: WeekRow[];
+  // Every week of meta.current_year, for weekly-stats-view.tsx's
+  // seasonCache -- switching weeks within the year the page loaded with
+  // is then a client-side lookup, not a fresh fetch.
+  season: SeasonWeeks;
 }
 
-// Combines meta + the current week's leaderboard into one round-trip, for
-// the Weekly Stats page's initial load (see dashboard_site/api/app.py's
-// /league/weekly_stats_bootstrap for why this exists instead of the two
-// separate calls below). Takes an optional `init` so the server component
-// in app/page.tsx can pass `{ next: { revalidate: 30 } }` -- that fetch
-// runs during SSR/ISR rather than after the client hydrates, and Next's
-// Data Cache then serves repeat requests within that window without
-// touching the backend at all.
+// Combines meta + the current week's leaderboard + the whole current
+// season into one round-trip, for the Weekly Stats page's initial load
+// (see dashboard_site/api/app.py's /league/weekly_stats_bootstrap for why
+// this exists instead of the separate calls below). Takes an optional
+// `init` so the server component in app/page.tsx can pass
+// `{ next: { revalidate: 30 } }` -- that fetch runs during SSR/ISR rather
+// than after the client hydrates, and Next's Data Cache then serves repeat
+// requests within that window without touching the backend at all.
 export const getWeeklyStatsBootstrap = (init?: RequestInit) =>
   apiFetch<WeeklyStatsBootstrap>("/league/weekly_stats_bootstrap", init);
+
+// On-demand version of the season slice above, for switching to a year
+// that wasn't the one the page loaded with.
+export const getWeeklyLeaderboardSeason = (year: number) =>
+  apiFetch<SeasonWeeks>(`/league/weekly_leaderboard_season?year=${year}`);
 
 export const getWeeklyTeam = (req: WeeklyTeamRequest) =>
   post<WeekRow>("/league/weekly_team", req);
@@ -396,11 +415,11 @@ export interface WeeklyRecap {
 export const getWeeklyRecap = (req: WeeklyLeaderboardRequest) =>
   post<WeeklyRecap | null>("/league/weekly_recap", req);
 
-export const getTotals = (req: AggregateRequest = {}) =>
-  post<AggregateRow[]>("/league/totals", req);
+export const getTotals = (req: AggregateRequest = {}, init?: RequestInit) =>
+  post<AggregateRow[]>("/league/totals", req, init);
 
-export const getAverages = (req: AggregateRequest = {}) =>
-  post<AggregateRow[]>("/league/averages", req);
+export const getAverages = (req: AggregateRequest = {}, init?: RequestInit) =>
+  post<AggregateRow[]>("/league/averages", req, init);
 
 export interface CareerBootstrap {
   meta: LeagueMeta;
@@ -415,8 +434,8 @@ export interface CareerBootstrap {
 // one round-trip (see league_store.py's career_bootstrap()). Not a fit for
 // Analysis, which restores a persisted custom filter from localStorage
 // client-side rather than always defaulting to "everything."
-export const getCareerBootstrap = () =>
-  apiFetch<CareerBootstrap>("/league/career_bootstrap");
+export const getCareerBootstrap = (init?: RequestInit) =>
+  apiFetch<CareerBootstrap>("/league/career_bootstrap", init);
 
 export interface UltraBootstrap {
   meta: LeagueMeta;
@@ -427,8 +446,8 @@ export interface UltraBootstrap {
 
 // Combines meta + Ultra's default (current year, every week, averages) rows
 // into one round-trip (see league_store.py's ultra_bootstrap()).
-export const getUltraBootstrap = () =>
-  apiFetch<UltraBootstrap>("/league/ultra_bootstrap");
+export const getUltraBootstrap = (init?: RequestInit) =>
+  apiFetch<UltraBootstrap>("/league/ultra_bootstrap", init);
 
 export const getLeaders = (req: LeadersRequest = {}) =>
   post<LeadersResponse>("/league/leaders", req);
@@ -436,8 +455,8 @@ export const getLeaders = (req: LeadersRequest = {}) =>
 export const getSeasonLeaders = (req: SeasonLeadersRequest) =>
   post<SeasonLeadersResponse>("/league/season_leaders", req);
 
-export const getCategoryHistory = () =>
-  apiFetch<CategoryHistoryResponse>("/league/category_history");
+export const getCategoryHistory = (init?: RequestInit) =>
+  apiFetch<CategoryHistoryResponse>("/league/category_history", init);
 
 export const getRsFinishHistory = () =>
   apiFetch<RsFinishHistoryResponse>("/league/rs_finish_history");
@@ -451,8 +470,8 @@ export const getRecords = (req: RecordsRequest = {}) =>
 export const getAnalysisRows = (req: AggregateRequest = {}) =>
   post<AnalysisRow[]>("/league/analysis_rows", req);
 
-export const getTeamSummary = (req: TeamSummaryRequest = {}) =>
-  post<TeamSummary[]>("/league/team_summary", req);
+export const getTeamSummary = (req: TeamSummaryRequest = {}, init?: RequestInit) =>
+  post<TeamSummary[]>("/league/team_summary", req, init);
 
 export const getRosterRanks = (req: RosterRanksRequest) =>
   post<RosterRankRow[]>("/league/roster_ranks", req);
@@ -482,8 +501,8 @@ export interface StandingsBootstrap {
 // one round-trip, for the Standings and League Wins pages' initial load
 // (mirrors getWeeklyStatsBootstrap -- see dashboard_site/api/league_store.py's
 // standings_bootstrap()).
-export const getStandingsBootstrap = () =>
-  apiFetch<StandingsBootstrap>("/league/standings_bootstrap");
+export const getStandingsBootstrap = (init?: RequestInit) =>
+  apiFetch<StandingsBootstrap>("/league/standings_bootstrap", init);
 
 export interface RatingsBootstrap {
   meta: LeagueMeta;
@@ -497,8 +516,8 @@ export interface RatingsBootstrap {
 
 // Same combining trick as getStandingsBootstrap, for the Ratings page's
 // default filters (see league_store.py's ratings_bootstrap()).
-export const getRatingsBootstrap = () =>
-  apiFetch<RatingsBootstrap>("/league/ratings_bootstrap");
+export const getRatingsBootstrap = (init?: RequestInit) =>
+  apiFetch<RatingsBootstrap>("/league/ratings_bootstrap", init);
 
 export const getPlayoffBrackets = () =>
   apiFetch<PlayoffBracketsResponse>("/league/playoff_brackets");
@@ -517,10 +536,10 @@ export interface PlayerStat {
   [field: string]: number | string | null;
 }
 
-export const getPlayerStats = () => apiFetch<PlayerStat[]>("/league/player_stats");
+export const getPlayerStats = (init?: RequestInit) => apiFetch<PlayerStat[]>("/league/player_stats", init);
 
-export const getDraftPicks = (req: DraftPicksRequest = {}) =>
-  post<DraftPick[]>("/league/draft_picks", req);
+export const getDraftPicks = (req: DraftPicksRequest = {}, init?: RequestInit) =>
+  post<DraftPick[]>("/league/draft_picks", req, init);
 
 export type RefreshSource = "live" | "draft" | "player_stats" | "team_summary";
 
@@ -564,4 +583,4 @@ export interface QueryResponse {
   aggregation: string;
 }
 
-export const getQuery = (req: QueryRequest) => post<QueryResponse>("/query", req);
+export const getQuery = (req: QueryRequest, init?: RequestInit) => post<QueryResponse>("/query", req, init);

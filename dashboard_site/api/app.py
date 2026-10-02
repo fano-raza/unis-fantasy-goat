@@ -232,20 +232,32 @@ def league_meta() -> dict:
 @app.get("/league/weekly_stats_bootstrap")
 def league_weekly_stats_bootstrap() -> dict:
     # Combines /league/meta + /league/weekly_leaderboard (current year/week)
-    # into one response so the Weekly Stats page's initial load pays a single
-    # network round-trip to the droplet instead of two sequential ones --
-    # both underlying calls are already cheap/cached (see meta()'s and
-    # weekly_leaderboard()'s own caching), so RTT was the actual cost here,
-    # not computation.
+    # + the current year's *entire* season (every week, see
+    # weekly_leaderboard_season) into one response -- so the Weekly Stats
+    # page's initial load pays a single network round-trip to the droplet,
+    # and switching weeks within the current year afterward is a client-
+    # side cache lookup, not a fresh fetch. All three pieces are already
+    # cheap/cached (see meta()'s and weekly_leaderboard()'s own caching),
+    # so RTT was the actual cost here, not computation.
     m = league_store.meta()
     year, week = m.get("current_year"), m.get("current_week")
     rows: list[dict] = []
+    season: dict[int, list[dict]] = {}
     if year is not None and week is not None:
         try:
             rows = league_store.weekly_leaderboard(year, week)
         except ValueError:
             rows = []
-    return {"meta": m, "rows": rows}
+        season = league_store.weekly_leaderboard_season(year)
+    return {"meta": m, "rows": rows, "season": season}
+
+
+@app.get("/league/weekly_leaderboard_season")
+def league_weekly_leaderboard_season(year: int) -> dict[int, list[dict]]:
+    # On-demand version of the above, for when the client switches to a
+    # year that wasn't the one the page loaded with -- see
+    # weekly-stats-view.tsx's seasonCache.
+    return league_store.weekly_leaderboard_season(year)
 
 
 @app.get("/league/category_history")

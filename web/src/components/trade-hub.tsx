@@ -263,9 +263,17 @@ function PlayerPicker({
   );
 }
 
-export function TradeHub() {
-  const [players, setPlayers] = useState<PlayerStat[]>([]);
-  const [playersLoading, setPlayersLoading] = useState(true);
+export function TradeHub({
+  initialPlayers,
+}: {
+  // Fetched server-side (see app/players/page.tsx) -- skips this
+  // component's own fetch on first render when present. undefined (an
+  // older caller) behaves like before; null (server fetch failed) also
+  // falls back to the client fetch.
+  initialPlayers?: PlayerStat[] | null;
+} = {}) {
+  const [players, setPlayers] = useState<PlayerStat[]>(initialPlayers ?? []);
+  const [playersLoading, setPlayersLoading] = useState(!initialPlayers);
   const [teamA, setTeamA] = useState<string[]>([]);
   const [teamB, setTeamB] = useState<string[]>([]);
   // Defaults to "season" -- during the NBA off-season the rolling windows
@@ -276,9 +284,11 @@ export function TradeHub() {
   const [view, setView] = useState<"stats" | "net">("stats");
 
   useEffect(() => {
+    if (initialPlayers) return;
     getPlayerStats()
       .then(setPlayers)
       .finally(() => setPlayersLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const playersA = players.filter((p) => teamA.includes(p.Player));

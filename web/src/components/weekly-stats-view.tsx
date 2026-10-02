@@ -20,9 +20,11 @@ import { SourceLastUpdated } from "@/components/source-last-updated";
 import {
   API_BASE_URL,
   getWeeklyLeaderboard,
+  getWeeklyLeaderboardSeason,
   getWeeklyRecap,
   getWeeklyStatsBootstrap,
   type LeagueMeta,
+  type SeasonWeeks,
   type WeekRow,
   type WeeklyRecap,
   type WeeklyStatsBootstrap,
@@ -84,6 +86,12 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
   // flags that the next [year, week] effect run is that same initial pair,
   // so it doesn't re-fetch what bootstrap already delivered.
   const skipNextLeaderboardFetch = useRef(false);
+  // Every year's weeks fetched so far, keyed by year -- seeded from the
+  // bootstrap's current-year season slice, then grown on demand whenever
+  // the user switches to a year not yet in here (see the [year, week]
+  // effect below). Switching weeks WITHIN an already-cached year is then a
+  // synchronous lookup, not a fetch -- the whole point of this cache.
+  const seasonCacheRef = useRef<Map<number, SeasonWeeks>>(new Map());
 
   const searchParams = useSearchParams();
 
@@ -94,8 +102,9 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
     // Resolves the fetched-from-wherever bootstrap payload (server-provided
     // prop, or -- if that failed -- the client's own fetch below) the same
     // way regardless of source.
-    function applyBootstrap(m: LeagueMeta, r: WeekRow[]) {
+    function applyBootstrap(m: LeagueMeta, r: WeekRow[], season: SeasonWeeks) {
       setMeta(m);
+      seasonCacheRef.current.set(m.current_year, season);
       // A deep link (e.g. StatBot's weekly rankings post) always names a
       // real, already-completed week -- fall through to the normal
       // [year, week] fetch effect below instead of using bootstrap's
@@ -116,11 +125,13 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
     }
 
     if (initialBootstrap) {
-      applyBootstrap(initialBootstrap.meta, initialBootstrap.rows);
+      applyBootstrap(initialBootstrap.meta, initialBootstrap.rows, initialBootstrap.season);
       return;
     }
 
-    getWeeklyStatsBootstrap().then(({ meta: m, rows: r }) => applyBootstrap(m, r)).catch(setMetaError);
+    getWeeklyStatsBootstrap()
+      .then(({ meta: m, rows: r, season }) => applyBootstrap(m, r, season))
+      .catch(setMetaError);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -137,17 +148,55 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
       skipNextLeaderboardFetch.current = false;
       return;
     }
+
+    // Fast path: this year's weeks are already cached (from bootstrap, or
+    // from a previous switch to this year) -- synchronous, no fetch, no
+    // loading flicker.
+    const cachedWeek = seasonCacheRef.current.get(year)?.[String(week)];
+    if (cachedWeek) {
+      setRows(cachedWeek);
+      setRowsError(null);
+      setRowsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
     setRowsLoading(true);
-    getWeeklyLeaderboard({ year, week })
-      .then((r) => {
+
+    async function load() {
+      try {
+        let season = seasonCacheRef.current.get(year as number);
+        if (!season) {
+          season = await getWeeklyLeaderboardSeason(year as number);
+          seasonCacheRef.current.set(year as number, season);
+        }
+        if (cancelled) return;
+        const weekRows = season[String(week)];
+        if (weekRows) {
+          setRows(weekRows);
+          setRowsError(null);
+          return;
+        }
+        // Defensive fallback -- the season endpoint covers every real week,
+        // so this shouldn't normally trigger, but a single-week fetch still
+        // works standalone if it ever does.
+        const r = await getWeeklyLeaderboard({ year: year as number, week: week as number });
+        if (cancelled) return;
         setRows(r);
         setRowsError(null);
-      })
-      .catch((err) => {
+      } catch (err) {
+        if (cancelled) return;
         setRows([]);
         setRowsError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => setRowsLoading(false));
+      } finally {
+        if (!cancelled) setRowsLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
   }, [year, week]);
 
   const displayRanks = useMemo(() => computeDisplayRanks(rows), [rows]);

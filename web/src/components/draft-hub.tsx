@@ -235,16 +235,35 @@ function DraftSortHead({
 
 const PAGE_SIZE = 25;
 
-export function DraftHub({ meta }: { meta: LeagueMeta }) {
+export function DraftHub({
+  meta,
+  initialPicks,
+}: {
+  meta: LeagueMeta;
+  // Fetched server-side for the default (every year, every team) filter
+  // (see app/players/draft/page.tsx) -- skips this component's own fetch
+  // on first render when present. undefined (not fetched, e.g. an older
+  // caller) behaves like before; null (server fetch failed) also falls
+  // back to the client fetch.
+  initialPicks?: DraftPick[] | null;
+}) {
   const [filters, setFilters] = useState<DraftFilters>({ years: meta.years, teams: meta.members });
   const [groupBy, setGroupBy] = useState<DraftGroupBy>(DEFAULT_GROUP_BY);
   const [statMode, setStatMode] = useState<"totals" | "averages">("totals");
-  const [picks, setPicks] = useState<DraftPick[]>([]);
-  const [picksLoading, setPicksLoading] = useState(true);
+  const [picks, setPicks] = useState<DraftPick[]>(initialPicks ?? []);
+  const [picksLoading, setPicksLoading] = useState(!initialPicks);
   const [sort, setSort] = useState<SortState>({ key: "draftScore", dir: "desc" });
   const [page, setPage] = useState(0);
+  // The default filter (every year/team) is exactly what initialPicks
+  // already covers -- skip the redundant first fetch, same skipNextFetch
+  // pattern as every other bootstrap-seeded page.
+  const skipNextFetch = useRef(Boolean(initialPicks));
 
   useEffect(() => {
+    if (skipNextFetch.current) {
+      skipNextFetch.current = false;
+      return;
+    }
     setPicksLoading(true);
     getDraftPicks({ years: filters.years, teams: filters.teams })
       .then(setPicks)
