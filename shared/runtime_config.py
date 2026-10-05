@@ -34,6 +34,14 @@ def feature_requests_path() -> Path:
     return DATA_ROOT / "feature_requests.md"
 
 
+def msg_claude_path() -> Path:
+    """Same Open/Done/Ignored checklist shape as feature_requests_path(),
+    populated by the /msg-claude Discord command (discord/feature_bot.py)
+    -- a separate inbox for general chat messages to Claude, distinct
+    from feature requests."""
+    return DATA_ROOT / "msg_claude.md"
+
+
 def weekly_role_sync_state_path() -> Path:
     """Last-run date for FeatureBot's weekly Discord role sync (Top 6 /
     Champs / Current Champ -- see discord/feature_bot.py) -- a container

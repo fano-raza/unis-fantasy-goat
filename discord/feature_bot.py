@@ -45,23 +45,25 @@ from discord.bot_env import (
     strip_bot_mention,
 )
 from discord.stat_bot import _api_get, _api_post, _load_user_team_maps
-from shared.runtime_config import feature_requests_path, weekly_role_sync_state_path
+from shared.runtime_config import feature_requests_path, msg_claude_path, weekly_role_sync_state_path
 
 CHECKBOX_REACTION = "☑️"  # ballot box with check (☑️) -- acknowledges capture
 COMPLETED_REACTION = "✅"  # white_check_mark -- added later, once the request ships
 IN_PROGRESS_REACTION = "🚧"  # construction -- someone's actively working it, still open
 REJECTED_REACTION = "❌"  # cross mark -- considered and declined, moved to "## Ignored"
+MSG_CLAUDE_REACTION = "💬"  # speech balloon -- acknowledges capture, distinct from a feature request's ☑️
 
 SECTION_HEADERS = ["## Open", "## Done", "## Ignored"]
 
-_DISCORD_REF_RE = re.compile(r"<!--\s*discord:\s*channel_id=(\d+)\s+message_id=(\d+)\s*-->")
 
-
-def _ensure_file(path: Path) -> None:
+def _ensure_file(path: Path, title: str) -> None:
     if path.exists():
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("# Feature Requests\n\n" + "\n\n".join(f"{h}\n" for h in SECTION_HEADERS))
+    path.write_text(f"# {title}\n\n" + "\n\n".join(f"{h}\n" for h in SECTION_HEADERS))
+
+
+_DISCORD_REF_RE = re.compile(r"<!--\s*discord:\s*channel_id=(\d+)\s+message_id=(\d+)\s*-->")
 
 
 def _location_for(channel) -> str:
@@ -77,15 +79,19 @@ def parse_discord_ref(line: str) -> tuple[int, int] | None:
     return int(m.group(1)), int(m.group(2))
 
 
-def append_feature_request(
+def _append_entry(
+    path: Path,
+    title: str,
     author: str,
     location: str,
     content: str,
     channel_id: int | None = None,
     message_id: int | None = None,
 ) -> None:
-    path = feature_requests_path()
-    _ensure_file(path)
+    """Shared by append_feature_request() and append_msg_claude() below --
+    identical Open/Done/Ignored checklist shape, just a different file/
+    title."""
+    _ensure_file(path, title)
     date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     ref_comment = f" <!-- discord: channel_id={channel_id} message_id={message_id} -->" if channel_id and message_id else ""
     entry = f"- [ ] [{date}] {author} in {location}: \"{content}\"{ref_comment}\n"
@@ -101,6 +107,32 @@ def append_feature_request(
         insert_at = idx + len(marker)
         text = text[:insert_at] + entry + text[insert_at:]
     path.write_text(text)
+
+
+def append_feature_request(
+    author: str,
+    location: str,
+    content: str,
+    channel_id: int | None = None,
+    message_id: int | None = None,
+) -> None:
+    _append_entry(feature_requests_path(), "Feature Requests", author, location, content, channel_id, message_id)
+
+
+def append_msg_claude(
+    author: str,
+    location: str,
+    content: str,
+    channel_id: int | None = None,
+    message_id: int | None = None,
+) -> None:
+    """Populates msg_claude.md -- a separate inbox from feature_requests.md,
+    for general chat messages directed at Claude (see /msg-claude below),
+    not feature requests. "Discord Mode" (a Claude Code session behavior,
+    documented in this repo's CLAUDE.md, not application code) periodically
+    scans this file's "## Open" section and treats new entries as incoming
+    chat turns."""
+    _append_entry(msg_claude_path(), "Messages to Claude", author, location, content, channel_id, message_id)
 
 
 # --- Weekly role sync (Top 6 / Champs / Current Champ) ----------------------
@@ -405,6 +437,35 @@ def run_bot() -> None:
                 await msg.add_reaction(CHECKBOX_REACTION)
             except Exception as exc:
                 print(f"Failed to react to feature request confirmation: {exc}")
+
+    @bot.slash_command(
+        name="msg-claude",
+        description="Send a chat message to Claude (separate from /feature-request).",
+        **slash_kwargs,
+    )
+    async def msg_claude(inter: disnake.ApplicationCommandInteraction, message: str):
+        # Same shape as /feature-request above -- reply first so there's a
+        # message to attach the Discord ref to.
+        await inter.response.send_message(f'💬 Sent to Claude: "{message}"')
+        msg = None
+        try:
+            msg = await inter.original_response()
+        except Exception as exc:
+            print(f"Failed to fetch msg-claude confirmation message: {exc}")
+
+        append_msg_claude(
+            author=str(inter.author.display_name or inter.author.name),
+            location=_location_for(inter.channel),
+            content=message,
+            channel_id=inter.channel.id if inter.channel else None,
+            message_id=msg.id if msg else None,
+        )
+
+        if msg:
+            try:
+                await msg.add_reaction(MSG_CLAUDE_REACTION)
+            except Exception as exc:
+                print(f"Failed to react to msg-claude confirmation: {exc}")
 
     @bot.slash_command(
         name="manual-push",

@@ -22,10 +22,11 @@ if str(REPO_ROOT) not in sys.path:
 
 from discord.feature_bot import IN_PROGRESS_REACTION  # noqa: E402
 from scripts._feature_request_ops import react_only  # noqa: E402
+from shared.runtime_config import feature_requests_path  # noqa: E402
 
 
 def mark_in_progress(substring: str) -> None:
-    react_only(substring, IN_PROGRESS_REACTION, "In Progress")
+    react_only(feature_requests_path(), substring, IN_PROGRESS_REACTION, "In Progress")
 
 
 if __name__ == "__main__":

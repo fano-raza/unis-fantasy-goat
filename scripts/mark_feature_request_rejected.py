@@ -23,12 +23,13 @@ if str(REPO_ROOT) not in sys.path:
 
 from discord.feature_bot import REJECTED_REACTION  # noqa: E402
 from scripts._feature_request_ops import move_and_react  # noqa: E402
+from shared.runtime_config import feature_requests_path  # noqa: E402
 
 IGNORED_HEADER = "## Ignored"
 
 
 def mark_rejected(substring: str) -> None:
-    move_and_react(substring, IGNORED_HEADER, REJECTED_REACTION, "Rejected")
+    move_and_react(feature_requests_path(), substring, IGNORED_HEADER, REJECTED_REACTION, "Rejected")
 
 
 if __name__ == "__main__":

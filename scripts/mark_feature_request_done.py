@@ -25,12 +25,13 @@ if str(REPO_ROOT) not in sys.path:
 
 from discord.feature_bot import COMPLETED_REACTION  # noqa: E402
 from scripts._feature_request_ops import move_and_react  # noqa: E402
+from shared.runtime_config import feature_requests_path  # noqa: E402
 
 DONE_HEADER = "## Done"
 
 
 def mark_done(substring: str) -> None:
-    move_and_react(substring, DONE_HEADER, COMPLETED_REACTION, "Done")
+    move_and_react(feature_requests_path(), substring, DONE_HEADER, COMPLETED_REACTION, "Done")
 
 
 if __name__ == "__main__":

@@ -1,8 +1,11 @@
-"""Shared plumbing for scripts/mark_feature_request_*.py -- parsing/
-rendering feature_requests.md's section structure, and reacting to a
-logged request's original Discord message. Not meant to be run directly;
-see mark_feature_request_done.py/_in_progress.py/_rejected.py for the
-actual CLI entry points.
+"""Shared plumbing for scripts/mark_feature_request_*.py AND
+scripts/mark_msg_claude_*.py -- parsing/rendering a feature_requests.md-
+shaped file's section structure, and reacting to a logged entry's
+original Discord message. Generalized to take an explicit `path` (not
+hardcoded to feature_requests_path()) so the exact same move/react logic
+works against msg_claude.md's identical Open/Done/Ignored structure too.
+Not meant to be run directly; see mark_feature_request_done.py/_in_progress.py/
+_rejected.py and mark_msg_claude_done.py for the actual CLI entry points.
 """
 
 from __future__ import annotations
@@ -18,7 +21,6 @@ if str(REPO_ROOT) not in sys.path:
 
 from discord.bot_env import load_local_env  # noqa: E402
 from discord.feature_bot import IN_PROGRESS_REACTION, parse_discord_ref  # noqa: E402
-from shared.runtime_config import feature_requests_path  # noqa: E402
 
 OPEN_HEADER = "## Open"
 
@@ -153,11 +155,10 @@ def unreact_to_line(line: str, emoji: str) -> None:
         print(f"Failed to remove {emoji} reaction: {exc}")
 
 
-def react_only(substring: str, emoji: str, label: str) -> None:
+def react_only(path: Path, substring: str, emoji: str, label: str) -> None:
     """For transient status signals (e.g. "in progress") that aren't a
     resolved outcome -- reacts to the original message but leaves the line
     in "## Open" untouched (still unchecked, still open)."""
-    path = feature_requests_path()
     match = find_single_open_match(parse(path.read_text())[1], substring)
     if match is None:
         return
@@ -165,12 +166,11 @@ def react_only(substring: str, emoji: str, label: str) -> None:
     react_to_line(line, emoji, label)
 
 
-def move_and_react(substring: str, target_header: str, emoji: str, label: str) -> None:
+def move_and_react(path: Path, substring: str, target_header: str, emoji: str, label: str) -> None:
     """For resolved outcomes (done, rejected) -- moves the matching line
     from "## Open" to target_header (created at the end of the file if it
     doesn't exist yet), ticking its checkbox, then reacts to the original
     message."""
-    path = feature_requests_path()
     preamble, sections = parse(path.read_text())
     match = find_single_open_match(sections, substring)
     if match is None:
