@@ -39,8 +39,14 @@ Added 2026-10-05, usable in this session and any future one (it's documented her
 
 **Each scan** (use `ScheduleWakeup` to schedule the next one — see below):
 1. `ssh root@134.209.168.108 "cat /srv/unisfantasy/data/msg_claude.md"` and look at the `## Open` section.
-2. For every unchecked entry: first check whether its content is a stop instruction (e.g. "stop scanning", "stop discord mode", "stop") — if so, mark it Done (step 2b below) and end Discord Mode immediately (`ScheduleWakeup(stop=true)`), telling the user it stopped. Otherwise, treat the quoted message as a new chat turn from the user and respond to it normally, right here in this session's output, as if they'd typed it directly.
-   - 2b. Once addressed, mark it off: `ssh root@134.209.168.108 "docker compose -f /opt/unisFantasyGOAT/infra/docker/docker-compose.yml exec -T feature-bot python scripts/mark_msg_claude_done.py '<unique substring>'"` — this moves the line to `## Done` and reacts ✅ on the original Discord message.
+2. For every unchecked entry: first check whether its content is a stop instruction (e.g. "stop scanning", "stop discord mode", "stop") — if so, mark it Done (step 2b below) and end Discord Mode immediately (`ScheduleWakeup(stop=true)`), telling the user it stopped. Otherwise, treat the quoted message as a new chat turn from the user and respond to it normally, right here in this session's output, as if they'd typed it directly. **Also** post that same reply as a real Discord message, by default to `#bot-test` (`channel_id=1536504604261486774`) unless the message said otherwise, sent via FeatureBot's token (confirmed 2026-10-05 this is the user's explicit preference) -- e.g.:
+     ```
+     ssh root@134.209.168.108 "docker compose -f /opt/unisFantasyGOAT/infra/docker/docker-compose.yml exec -T feature-bot python3 -c \"
+     import os, requests
+     requests.post('https://discord.com/api/v10/channels/1536504604261486774/messages', headers={'Authorization': f'Bot {os.getenv(\\\"FEATURE_BOT_TOKEN\\\")}'}, json={'content': '<reply text>'})
+     \""
+     ```
+   - 2b. Once addressed (both the in-session reply and the Discord post are done), mark it off: `ssh root@134.209.168.108 "docker compose -f /opt/unisFantasyGOAT/infra/docker/docker-compose.yml exec -T feature-bot python scripts/mark_msg_claude_done.py '<unique substring>'"` — this moves the line to `## Done` and reacts ✅ on the original Discord message. A 429 from the reaction is transient (Discord rate limit) -- retry once via `scripts._feature_request_ops.react_to_line` directly rather than treating it as a failure.
 3. If at least one entry was found/addressed this scan: reset the empty-scan counter to 0 and the phase to `fast` (real activity means Discord Mode stays "active" at the normal cadence, even if it had backed off).
 4. If nothing was found this scan: increment the empty-scan counter.
    - While in `fast` phase: once the counter reaches 10, switch to `slow` phase (3600s interval) and reset the counter to 0.
