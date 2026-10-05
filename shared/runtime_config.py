@@ -36,7 +36,7 @@ def feature_requests_path() -> Path:
 
 def msg_claude_path() -> Path:
     """Same Open/Done/Ignored checklist shape as feature_requests_path(),
-    populated by the /msg-claude Discord command (discord/feature_bot.py)
+    populated by the /discord-mode-claude Discord command (discord/feature_bot.py)
     -- a separate inbox for general chat messages to Claude, distinct
     from feature requests."""
     return DATA_ROOT / "msg_claude.md"

@@ -31,7 +31,7 @@ As of 2026-08-24, the user extended the above pre-authorization to the whole rep
 
 Added 2026-10-05, usable in this session and any future one (it's documented here, not as a registered slash command — just say "/discord-mode", "discord mode", or "start discord mode" and follow this).
 
-**What it is**: the user chats to Claude *through Discord* instead of (or alongside) this terminal, via a new `/msg-claude` Discord command (`discord/feature_bot.py`) that logs each message to `msg_claude.md` (`shared.runtime_config.msg_claude_path()`, on the droplet at `/srv/unisfantasy/data/msg_claude.md`) — same Open/Done/Ignored checklist shape as `feature_requests.md`, but a completely separate file/inbox; **Discord Mode never reads `feature_requests.md`**, only `msg_claude.md`.
+**What it is**: the user chats to Claude *through Discord* instead of (or alongside) this terminal, via a new `/discord-mode-claude` Discord command (`discord/feature_bot.py`) that logs each message to `msg_claude.md` (`shared.runtime_config.msg_claude_path()`, on the droplet at `/srv/unisfantasy/data/msg_claude.md`) — same Open/Done/Ignored checklist shape as `feature_requests.md`, but a completely separate file/inbox; **Discord Mode never reads `feature_requests.md`**, only `msg_claude.md`.
 
 **On invocation**:
 1. If the user didn't specify a scan interval, default to 60 seconds. If they did ("every 2 min"), use that.

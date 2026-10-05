@@ -127,7 +127,7 @@ def append_msg_claude(
     message_id: int | None = None,
 ) -> None:
     """Populates msg_claude.md -- a separate inbox from feature_requests.md,
-    for general chat messages directed at Claude (see /msg-claude below),
+    for general chat messages directed at Claude (see /discord-mode-claude below),
     not feature requests. "Discord Mode" (a Claude Code session behavior,
     documented in this repo's CLAUDE.md, not application code) periodically
     scans this file's "## Open" section and treats new entries as incoming
@@ -439,7 +439,7 @@ def run_bot() -> None:
                 print(f"Failed to react to feature request confirmation: {exc}")
 
     @bot.slash_command(
-        name="msg-claude",
+        name="discord-mode-claude",
         description="Send a chat message to Claude (separate from /feature-request).",
         **slash_kwargs,
     )
