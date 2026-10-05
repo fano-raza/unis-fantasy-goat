@@ -176,7 +176,7 @@ def run_bot() -> None:
                 return
             if _read_last_weekly_rankings_run() == (year, week):
                 return
-            posted = await weekly_rankings.post_weekly_rankings(bot, _api_post, year, week)
+            posted = await weekly_rankings.post_weekly_recap(bot, _api_post, _api_get, year, week)
             if posted:
                 _write_last_weekly_rankings_run(year, week)
                 print(f"Weekly rankings posted for {year} week {week}")

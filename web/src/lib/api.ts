@@ -397,18 +397,20 @@ export const getWeeklyTeam = (req: WeeklyTeamRequest) =>
 export const getWeeklyLeaderboard = (req: WeeklyLeaderboardRequest) =>
   post<WeekRow[]>("/league/weekly_leaderboard", req);
 
-// StatBot's Monday "Week N Rankings" Discord post, mirrored for the web
+// StatBot's Monday "Week N Recap" Discord post, mirrored for the web
 // page -- null if that week hasn't had a recap posted yet (a normal case,
 // not an error: playoff weeks never get one, and past weeks only get one
 // once the Monday job actually runs). See discord/weekly_rankings.py and
-// dashboard_site/api/league_store.py::weekly_recap().
+// dashboard_site/api/league_store.py::weekly_recap(). rank_table isn't
+// surfaced here -- the page's own StatTable already shows this week's
+// ranks, no need to duplicate it.
 export interface WeeklyRecap {
   year: number;
   week: number;
-  rank_table: { team: string; rank: number; rating: number }[];
-  top_team: string;
-  bottom_team: string;
-  commentary: string | null;
+  beatdowns: string[];
+  upsets: string[];
+  milestones: string[];
+  playoff_race: string | null;
   posted_at: string;
 }
 
