@@ -228,6 +228,20 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
   if (metaError) return <BackendUnreachable error={metaError} />;
   if (!meta || year == null || week == null) return <LoadingBasketballs label="Loading" />;
 
+  // Clamp week to the new year's last real week if the current week doesn't
+  // exist there (e.g. 2019 week 22 -> a year with only 18 weeks) -- feature
+  // request, 2026-10-06. Done here, in the same handler as setYear, rather
+  // than a separate effect watching `year`, so both state updates land in
+  // one batch and the [year, week] fetch effect never runs with a
+  // momentarily-invalid (year, week) pair in between.
+  function handleYearChange(newYear: number) {
+    setYear(newYear);
+    // Non-null: this function is only ever invoked from the JSX below,
+    // which only renders past the `!meta || week == null` guard above.
+    const maxWeek = meta!.total_matchup_count[String(newYear)] ?? 1;
+    if (week! > maxWeek) setWeek(maxWeek);
+  }
+
   const isPlayoffWeek = week > (meta.rs_week_count[String(year)] ?? Infinity);
 
   return (
@@ -245,7 +259,7 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
             isPlayoffWeek && "rounded-sm border-2 border-[#4169E1] p-3",
           )}
         >
-          <SteppableSelect label="Season" value={year} onValueChange={setYear} options={meta.years} />
+          <SteppableSelect label="Season" value={year} onValueChange={handleYearChange} options={meta.years} />
           <div className="flex items-center gap-1">
             <SteppableSelect label="Week" value={week} onValueChange={setWeek} options={weekOptions} />
             {isPlayoffWeek && (
