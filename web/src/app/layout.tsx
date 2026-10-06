@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { Nav } from "@/components/nav";
 import { MobileNav } from "@/components/mobile-nav";
 import { PageArrowNav } from "@/components/page-arrow-nav";
+import { FloatingMenuButton } from "@/components/floating-menu-button";
 import { MobileMenuProvider } from "@/components/mobile-menu-context";
 import { API_BASE_URL } from "@/lib/api";
 import "./globals.css";
@@ -41,38 +42,36 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             Suspense fallback forces a static/dynamic split at this level). */}
         <link rel="preconnect" href={API_BASE_URL} crossOrigin="anonymous" />
         <link rel="dns-prefetch" href={API_BASE_URL} />
-        {/* Sticky on mobile only (feature request, 2026-10-06) -- the home
-            link + hamburger + PageArrowNav are the only header content that
-            renders there (desktop's Nav row is sm:hidden-gated out), so
-            freezing the whole header is exactly "freeze the page toggle
-            buttons and home button". z-40 keeps it under MobileNav's
-            drawer (z-50 backdrop/popup) so the drawer still overlays it. */}
-        <header className="sticky top-0 z-40 border-b border-border bg-background sm:static">
-          <MobileMenuProvider>
+        <MobileMenuProvider>
+          {/* Sticky on mobile only (feature request, 2026-10-06) -- the home
+              link + PageArrowNav are the only header content that renders
+              there (desktop's Nav row is sm:hidden-gated out), so freezing
+              the whole header is exactly "freeze the page toggle buttons
+              and home button". z-40 keeps it under MobileNav's drawer
+              (z-50 backdrop/popup) so the drawer still overlays it. */}
+          <header className="sticky top-0 z-40 border-b border-border bg-background sm:static">
             <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 py-4 sm:px-6">
-              <div className="flex items-center justify-between gap-3">
-                <Link
-                  href="/"
-                  className="text-xl font-black tracking-tight italic transition-opacity hover:opacity-80"
-                >
-                  UNIS 2014 <span className="text-primary">FANTASY</span>
-                </Link>
-                <div className="flex items-center gap-3">
-                  <div className="sm:hidden">
-                    <MobileNav />
-                  </div>
-                </div>
-              </div>
+              <Link
+                href="/"
+                className="text-xl font-black tracking-tight italic transition-opacity hover:opacity-80"
+              >
+                UNIS 2014 <span className="text-primary">FANTASY</span>
+              </Link>
               <div className="hidden sm:block">
                 <Nav />
               </div>
               <PageArrowNav />
             </div>
-          </MobileMenuProvider>
-        </header>
-        <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6">
-          {children}
-        </main>
+          </header>
+          {/* No visible trigger left in the header -- FloatingMenuButton
+              (feature request, 2026-10-06) and PageArrowNav's page-name tab
+              are the only ways to open MobileNav's drawer now. */}
+          <MobileNav />
+          <FloatingMenuButton />
+          <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6">
+            {children}
+          </main>
+        </MobileMenuProvider>
         <footer className="border-t border-border">
           <div className="mx-auto w-full max-w-5xl px-4 py-4 text-center text-xs text-muted-foreground sm:px-6">
             <a
