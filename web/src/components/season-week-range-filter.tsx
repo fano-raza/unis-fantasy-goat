@@ -2,7 +2,6 @@
 
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -10,7 +9,6 @@ import {
 } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
-import { SourceLastUpdated } from "@/components/source-last-updated";
 
 // Week-range Slider + Show Graph switch, shared by all 3 Standings sub-pages
 // (Season Standings, League Wins, Ratings) -- purely presentational, no
@@ -35,9 +33,6 @@ export function SeasonWeekRangeFilter({
       <CardHeader>
         <CardTitle>Standings</CardTitle>
         <CardDescription>Regular-season standings for any week range</CardDescription>
-        <CardAction>
-          <SourceLastUpdated source="live" />
-        </CardAction>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
         <div className="flex flex-col gap-3">

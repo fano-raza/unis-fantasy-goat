@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -29,7 +28,6 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { SourceLastUpdated } from "@/components/source-last-updated";
 import { LoadingOverlay } from "@/components/loading-overlay";
 import { getPlayerStats, MAIN_CATS, type Category, type PlayerStat, type StatWindow } from "@/lib/api";
 import { compareCell, type Comparison } from "@/lib/highlight";
@@ -304,9 +302,6 @@ export function TradeHub({
           <CardDescription>
             Real NBA player stats (ESPN) -- compare up to 5 players a side
           </CardDescription>
-          <CardAction>
-            <SourceLastUpdated source="player_stats" />
-          </CardAction>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <LoadingOverlay active={playersLoading} hasContent={players.length > 0} label="Loading players">

@@ -28,7 +28,6 @@ import {
 } from "@/components/ui/table";
 import { StatTable } from "@/components/stat-table";
 import { RoutedViewSwitcher } from "@/components/routed-view-switcher";
-import { SourceLastUpdated } from "@/components/source-last-updated";
 import { Podium, Star, Trophy } from "lucide-react";
 import {
   getAverages,
@@ -365,10 +364,6 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
             ))}
           </SelectContent>
         </Select>
-
-        <div className="ml-auto">
-          <SourceLastUpdated source="team_summary" />
-        </div>
       </div>
 
       <Card>

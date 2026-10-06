@@ -4,7 +4,6 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -16,7 +15,6 @@ import { StatTable } from "@/components/stat-table";
 import { LabeledSelect, NO_FOCUS_TEAM } from "@/components/labeled-select";
 import { SteppableSelect } from "@/components/steppable-select";
 import { useSelectedTeam } from "@/lib/use-selected-team";
-import { SourceLastUpdated } from "@/components/source-last-updated";
 import {
   API_BASE_URL,
   getWeeklyLeaderboard,
@@ -240,9 +238,6 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
           <CardDescription>
             League table for a given season and week
           </CardDescription>
-          <CardAction>
-            <SourceLastUpdated source="live" />
-          </CardAction>
         </CardHeader>
         <CardContent
           className={cn(

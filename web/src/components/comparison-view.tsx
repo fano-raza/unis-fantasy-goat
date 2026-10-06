@@ -26,7 +26,6 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { SourceLastUpdated } from "@/components/source-last-updated";
 import { RoutedViewSwitcher } from "@/components/routed-view-switcher";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { X } from "lucide-react";
@@ -435,10 +434,6 @@ export function ComparisonView({ initialBootstrap }: ComparisonViewProps) {
               </PopoverContent>
             </Popover>
           )}
-        </div>
-
-        <div className="ml-auto">
-          <SourceLastUpdated source="team_summary" />
         </div>
       </div>
 

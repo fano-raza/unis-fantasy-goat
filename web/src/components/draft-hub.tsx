@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -22,7 +21,6 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ChecklistGroup } from "@/components/filter-panel";
 import { GenericFilterDrawer } from "@/components/generic-filter-drawer";
-import { SourceLastUpdated } from "@/components/source-last-updated";
 import { LoadingOverlay } from "@/components/loading-overlay";
 import { getDraftPicks, type DraftPick, type LeagueMeta } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -409,9 +407,6 @@ export function DraftHub({
             <CardDescription>
               Every draft pick across the selected seasons and teams -- group by to aggregate, click any column to sort
             </CardDescription>
-            <CardAction>
-              <SourceLastUpdated source="draft" />
-            </CardAction>
           </CardHeader>
           <CardContent className="flex flex-wrap items-center gap-6">
             <div className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">

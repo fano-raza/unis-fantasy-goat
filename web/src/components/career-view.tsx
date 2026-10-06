@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -14,7 +13,6 @@ import { StatTable } from "@/components/stat-table";
 import { FilterPanel, type FilterPanelValue } from "@/components/filter-panel";
 import { FilterDrawer } from "@/components/filter-drawer";
 import { LabeledSelect, NO_FOCUS_TEAM } from "@/components/labeled-select";
-import { SourceLastUpdated } from "@/components/source-last-updated";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { LoadingOverlay } from "@/components/loading-overlay";
 import { useSelectedTeam } from "@/lib/use-selected-team";
@@ -161,9 +159,6 @@ export function CareerStatsView({ initialBootstrap }: CareerStatsViewProps) {
               Aggregate totals/averages across the selected seasons, weeks, and
               season type
             </CardDescription>
-            <CardAction>
-              <SourceLastUpdated source="live" />
-            </CardAction>
           </CardHeader>
           <CardContent className="flex flex-wrap items-center gap-6">
             <label className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">

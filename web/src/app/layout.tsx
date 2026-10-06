@@ -5,6 +5,7 @@ import { Nav } from "@/components/nav";
 import { MobileNav } from "@/components/mobile-nav";
 import { PageArrowNav } from "@/components/page-arrow-nav";
 import { FloatingMenuButton } from "@/components/floating-menu-button";
+import { GlobalLastUpdated } from "@/components/global-last-updated";
 import { MobileMenuProvider } from "@/components/mobile-menu-context";
 import { API_BASE_URL } from "@/lib/api";
 import "./globals.css";
@@ -51,12 +52,17 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               (z-50 backdrop/popup) so the drawer still overlays it. */}
           <header className="sticky top-0 z-40 border-b border-border bg-background sm:static">
             <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 py-4 sm:px-6">
-              <Link
-                href="/"
-                className="text-xl font-black tracking-tight italic transition-opacity hover:opacity-80"
-              >
-                UNIS 2014 <span className="text-primary">FANTASY</span>
-              </Link>
+              <div className="flex items-center justify-between gap-3">
+                <Link
+                  href="/"
+                  className="text-xl font-black tracking-tight italic transition-opacity hover:opacity-80"
+                >
+                  UNIS 2014 <span className="text-primary">FANTASY</span>
+                </Link>
+                {/* The one freshness indicator in the whole app now (feature
+                    request, 2026-10-06) -- see global-last-updated.tsx. */}
+                <GlobalLastUpdated />
+              </div>
               <div className="hidden sm:block">
                 <Nav />
               </div>
