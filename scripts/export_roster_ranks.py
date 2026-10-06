@@ -278,7 +278,7 @@ def append_roster_rank_history(year: int, week: int) -> int:
     return len(new_rows)
 
 
-TEAM_ROSTER_HISTORY_COLUMNS = ["Year", "Week", "SnapshotDate", "FantasyTeam", "RosterSize", "Players"]
+TEAM_ROSTER_HISTORY_COLUMNS = ["Year", "Week", "SnapshotDate", "FantasyTeam", "RosterSize", "AvgRank", "Players"]
 
 
 def append_team_roster_history(year: int, week: int) -> int:
@@ -286,15 +286,18 @@ def append_team_roster_history(year: int, week: int) -> int:
     Ref/team_roster_history.csv -- one row per (year, week, team), append-
     only, same convention as append_roster_rank_history() above. Complements
     it rather than duplicates it: that one is player-level (one row per
-    player per week) for rank-over-time correlation; this one is team-
-    level (one row per team per week, with its players joined into a
-    single cell) for "what did this team's roster look like in week N"
-    queries, which the player-level file can only answer via a filter +
-    groupby. Feature request, 2026-10-06 -- same cadence/trigger as
-    append_roster_rank_history() (called alongside it every daily cycle;
+    player per week, covering every league player including free agents --
+    deliberately NOT filtered to rostered-only, per explicit user
+    confirmation 2026-10-06) for rank-over-time correlation; this one is
+    team-level (one row per team per week) specifically so a team's AvgRank
+    -- the mean of its rostered players' current Rank, from this same
+    rows_for_year() call, no second fetch/join needed -- can be tracked
+    week to week (feature request, 2026-10-06: "see how a roster's average
+    ranking changes week to week"). Players list included too for "what did
+    this team's roster look like in week N" lookups. Same cadence/trigger
+    as append_roster_rank_history() (called alongside it every daily cycle;
     no-ops once this exact (year, week) is already recorded, so it still
-    only ever actually writes once per week), and reuses the same
-    rows_for_year() fetch -- no new Yahoo/ESPN call logic.
+    only ever actually writes once per week).
     """
     from datetime import date
 
@@ -309,7 +312,7 @@ def append_team_roster_history(year: int, week: int) -> int:
         existing = pd.DataFrame(columns=TEAM_ROSTER_HISTORY_COLUMNS)
 
     year_rows = rows_for_year(year)
-    by_team: dict[str, list[str]] = {}
+    by_team: dict[str, list[tuple[str, float]]] = {}
     for r in year_rows:
         # rows_for_year() returns every league player, rostered or not --
         # free agents carry an empty FantasyTeam (confirmed live: 584 of
@@ -318,7 +321,7 @@ def append_team_roster_history(year: int, week: int) -> int:
         # history above (which deliberately tracks everyone).
         if not r["FantasyTeam"]:
             continue
-        by_team.setdefault(r["FantasyTeam"], []).append(r["Player"])
+        by_team.setdefault(r["FantasyTeam"], []).append((r["Player"], r["Rank"]))
 
     snapshot_date = date.today().isoformat()
     new_rows = [
@@ -327,10 +330,11 @@ def append_team_roster_history(year: int, week: int) -> int:
             "Week": week,
             "SnapshotDate": snapshot_date,
             "FantasyTeam": team,
-            "RosterSize": len(players),
-            "Players": "; ".join(sorted(players)),
+            "RosterSize": len(entries),
+            "AvgRank": round(sum(rank for _, rank in entries) / len(entries), 2),
+            "Players": "; ".join(sorted(p for p, _ in entries)),
         }
-        for team, players in sorted(by_team.items())
+        for team, entries in sorted(by_team.items())
     ]
 
     path.parent.mkdir(parents=True, exist_ok=True)
