@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Card,
   CardAction,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
@@ -16,6 +15,7 @@ import { FilterDrawer } from "@/components/filter-drawer";
 import { getAnalysisRows, getLeagueMeta, type AnalysisRow, type LeagueMeta } from "@/lib/api";
 import { SourceLastUpdated } from "@/components/source-last-updated";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
+import { LoadingOverlay } from "@/components/loading-overlay";
 
 const MAX_GRAPHS = 3;
 const FILTER_KEY = "analysis-filter";
@@ -159,30 +159,26 @@ export function AnalysisView({ initialMeta }: { initialMeta: LeagueMeta | null }
           </CardHeader>
         </Card>
 
-        {rowsLoading ? (
-          <Card>
-            <CardContent>
-              <LoadingBasketballs label="Loading" />
-            </CardContent>
-          </Card>
-        ) : (
-          graphIds.map((id) => (
-            <AnalysisGraph
-              key={id}
-              id={id}
-              rows={rows}
-              allYears={meta.years}
-              onRemove={
-                graphIds.length > 1
-                  ? () => {
-                      localStorage.removeItem(`analysis-graph-${id}`);
-                      setGraphIds((ids) => ids.filter((existing) => existing !== id));
-                    }
-                  : undefined
-              }
-            />
-          ))
-        )}
+        <LoadingOverlay active={rowsLoading} hasContent={rows.length > 0} label="Loading">
+          <>
+            {graphIds.map((id) => (
+              <AnalysisGraph
+                key={id}
+                id={id}
+                rows={rows}
+                allYears={meta.years}
+                onRemove={
+                  graphIds.length > 1
+                    ? () => {
+                        localStorage.removeItem(`analysis-graph-${id}`);
+                        setGraphIds((ids) => ids.filter((existing) => existing !== id));
+                      }
+                    : undefined
+                }
+              />
+            ))}
+          </>
+        </LoadingOverlay>
 
         {graphIds.length < MAX_GRAPHS && (
           <Button

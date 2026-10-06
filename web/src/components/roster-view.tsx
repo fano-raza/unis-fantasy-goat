@@ -31,6 +31,7 @@ import {
 import { LabeledSelect } from "@/components/labeled-select";
 import { SteppableSelect } from "@/components/steppable-select";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
+import { LoadingOverlay } from "@/components/loading-overlay";
 import { cn } from "@/lib/utils";
 import {
   getNBASchedule,
@@ -343,9 +344,8 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
           </CardHeader>
         )}
         <CardContent>
-          {rosterLoading ? (
-            <LoadingBasketballs label="Loading roster" />
-          ) : rosterError ? (
+          <LoadingOverlay active={rosterLoading} hasContent={rosterRows.length > 0} label="Loading roster">
+          {rosterError ? (
             <p className="text-sm text-muted-foreground">No roster data for {year} ({rosterError}).</p>
           ) : teamRoster.length === 0 ? (
             <p className="text-sm text-muted-foreground">No roster data for {team} in {year}.</p>
@@ -465,6 +465,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
               </TableBody>
             </Table>
           )}
+          </LoadingOverlay>
         </CardContent>
       </Card>
 
@@ -474,9 +475,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
           <CardDescription>Every team&apos;s roster, ordered by average player rank (lower is better)</CardDescription>
         </CardHeader>
         <CardContent>
-          {rosterLoading ? (
-            <LoadingBasketballs label="Loading" />
-          ) : (
+          <LoadingOverlay active={rosterLoading} hasContent={rosterRows.length > 0} label="Loading">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -504,7 +503,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                 ))}
               </TableBody>
             </Table>
-          )}
+          </LoadingOverlay>
         </CardContent>
       </Card>
     </div>

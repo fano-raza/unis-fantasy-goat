@@ -28,6 +28,7 @@ import { SteppableSelect } from "@/components/steppable-select";
 import { RoutedViewSwitcher } from "@/components/routed-view-switcher";
 import { useSelectedTeam } from "@/lib/use-selected-team";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
+import { LoadingOverlay } from "@/components/loading-overlay";
 import { SeasonWeekRangeFilter } from "@/components/season-week-range-filter";
 import { categoricalPalette } from "@/lib/palette";
 import {
@@ -311,9 +312,9 @@ function RatingsPageInner({ initialBootstrap }: RatingsViewProps) {
               bad filter combination can always be changed back. */}
           {error ? (
             <p className="text-sm text-muted-foreground">No data for the current filters ({error}).</p>
-          ) : isLoading ? (
-            <LoadingBasketballs label="Loading standings" />
-          ) : ratingsDisplay === "table" ? (
+          ) : (
+          <LoadingOverlay active={isLoading} hasContent={ratingsRows.length > 0} label="Loading standings">
+          {ratingsDisplay === "table" ? (
             <StatTable
               rows={ratingsRows}
               mode="stat"
@@ -351,6 +352,8 @@ function RatingsPageInner({ initialBootstrap }: RatingsViewProps) {
                 })}
               </div>
             )
+          )}
+          </LoadingOverlay>
           )}
         </CardContent>
       </Card>

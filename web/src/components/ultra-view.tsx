@@ -16,6 +16,7 @@ import { LabeledSelect, NO_FOCUS_TEAM } from "@/components/labeled-select";
 import { SteppableSelect } from "@/components/steppable-select";
 import { SourceLastUpdated } from "@/components/source-last-updated";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
+import { LoadingOverlay } from "@/components/loading-overlay";
 import { getAverages, getUltraBootstrap, type AggregateRow, type LeagueMeta, type UltraBootstrap } from "@/lib/api";
 import { useSelectedTeam } from "@/lib/use-selected-team";
 
@@ -156,23 +157,23 @@ export function UltraView({ initialBootstrap }: UltraViewProps) {
 
         <Card>
           <CardContent>
-            {loading ? (
-              <LoadingBasketballs label="Loading" />
-            ) : error ? (
-              <p className="text-sm text-muted-foreground">
-                No data for the current filters ({error}).
-              </p>
-            ) : (
-              <StatTable
-                rows={rows}
-                mode="stat"
-                focusTeam={focusTeam === NO_FOCUS_TEAM ? undefined : focusTeam}
-                showFocusScore
-                pinFocusRow
-                stickyHeaderOffset={0}
-                highlightClose
-              />
-            )}
+            <LoadingOverlay active={loading} hasContent={rows.length > 0} label="Loading">
+              {error ? (
+                <p className="text-sm text-muted-foreground">
+                  No data for the current filters ({error}).
+                </p>
+              ) : (
+                <StatTable
+                  rows={rows}
+                  mode="stat"
+                  focusTeam={focusTeam === NO_FOCUS_TEAM ? undefined : focusTeam}
+                  showFocusScore
+                  pinFocusRow
+                  stickyHeaderOffset={0}
+                  highlightClose
+                />
+              )}
+            </LoadingOverlay>
           </CardContent>
         </Card>
       </div>

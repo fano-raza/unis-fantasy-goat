@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SourceLastUpdated } from "@/components/source-last-updated";
-import { LoadingBasketballs } from "@/components/loading-basketballs";
+import { LoadingOverlay } from "@/components/loading-overlay";
 import { getPlayerStats, MAIN_CATS, type Category, type PlayerStat, type StatWindow } from "@/lib/api";
 import { compareCell, type Comparison } from "@/lib/highlight";
 import { cn } from "@/lib/utils";
@@ -309,14 +309,12 @@ export function TradeHub({
           </CardAction>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          {playersLoading ? (
-            <LoadingBasketballs label="Loading players" />
-          ) : (
+          <LoadingOverlay active={playersLoading} hasContent={players.length > 0} label="Loading players">
             <div className="flex flex-wrap gap-6">
               <PlayerPicker label="Team A (up to 5)" selected={teamA} onChange={setTeamA} available={players} />
               <PlayerPicker label="Team B (up to 5)" selected={teamB} onChange={setTeamB} available={players} />
             </div>
-          )}
+          </LoadingOverlay>
           <div className="flex flex-wrap items-center gap-6">
             <div className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
               <span className="text-muted-foreground">Window</span>

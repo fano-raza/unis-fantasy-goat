@@ -13,6 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { SteppableSelect } from "@/components/steppable-select";
 import { RoutedViewSwitcher } from "@/components/routed-view-switcher";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
+import { LoadingOverlay } from "@/components/loading-overlay";
 import { StandingsTable, toRankMap } from "@/components/standings-table";
 import { SeasonWeekRangeFilter } from "@/components/season-week-range-filter";
 import { PositionOverTimeChart, buildHistoryChartData } from "@/components/position-over-time-chart";
@@ -205,17 +206,19 @@ function LeagueWinsPageInner({ initialBootstrap }: LeagueWinsViewProps) {
           </label>
           {error ? (
             <p className="text-sm text-muted-foreground">No data for the current filters ({error}).</p>
-          ) : isLoading || !standings ? (
-            <LoadingBasketballs label="Loading standings" />
           ) : (
-            <StandingsTable
-              rows={leagueMode === "wl" ? standings.league_wl : standings.league_cats}
-              previousRanks={
-                previousStandings
-                  ? toRankMap(leagueMode === "wl" ? previousStandings.league_wl : previousStandings.league_cats)
-                  : undefined
-              }
-            />
+            <LoadingOverlay active={isLoading || !standings} hasContent={!!standings} label="Loading standings">
+              {standings && (
+                <StandingsTable
+                  rows={leagueMode === "wl" ? standings.league_wl : standings.league_cats}
+                  previousRanks={
+                    previousStandings
+                      ? toRankMap(leagueMode === "wl" ? previousStandings.league_wl : previousStandings.league_cats)
+                      : undefined
+                  }
+                />
+              )}
+            </LoadingOverlay>
           )}
         </CardContent>
       </Card>

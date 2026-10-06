@@ -15,6 +15,7 @@ import { Switch } from "@/components/ui/switch";
 import { SteppableSelect } from "@/components/steppable-select";
 import { RoutedViewSwitcher } from "@/components/routed-view-switcher";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
+import { LoadingOverlay } from "@/components/loading-overlay";
 import { StandingsTable, toRankMap } from "@/components/standings-table";
 import { SeasonWeekRangeFilter } from "@/components/season-week-range-filter";
 import { PositionOverTimeChart, buildHistoryChartData } from "@/components/position-over-time-chart";
@@ -236,19 +237,22 @@ function StandingsPageInner({ initialBootstrap }: StandingsViewProps) {
               bad filter combination can always be changed back. */}
           {error ? (
             <p className="text-sm text-muted-foreground">No data for the current filters ({error}).</p>
-          ) : isLoading || !standings ? (
-            <LoadingBasketballs label="Loading standings" />
-          ) : showPlayoffTree ? (
-            <PlayoffTree bracket={brackets[String(year)]} year={year} />
           ) : (
-            <StandingsTable
-              rows={oneVOneMode === "wl" ? standings.wl : standings.cats}
-              previousRanks={
-                previousStandings
-                  ? toRankMap(oneVOneMode === "wl" ? previousStandings.wl : previousStandings.cats)
-                  : undefined
-              }
-            />
+            <LoadingOverlay active={isLoading || !standings} hasContent={!!standings} label="Loading standings">
+              {standings &&
+                (showPlayoffTree ? (
+                  <PlayoffTree bracket={brackets[String(year)]} year={year} />
+                ) : (
+                  <StandingsTable
+                    rows={oneVOneMode === "wl" ? standings.wl : standings.cats}
+                    previousRanks={
+                      previousStandings
+                        ? toRankMap(oneVOneMode === "wl" ? previousStandings.wl : previousStandings.cats)
+                        : undefined
+                    }
+                  />
+                ))}
+            </LoadingOverlay>
           )}
         </CardContent>
       </Card>

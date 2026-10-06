@@ -23,7 +23,7 @@ import { Switch } from "@/components/ui/switch";
 import { ChecklistGroup } from "@/components/filter-panel";
 import { GenericFilterDrawer } from "@/components/generic-filter-drawer";
 import { SourceLastUpdated } from "@/components/source-last-updated";
-import { LoadingBasketballs } from "@/components/loading-basketballs";
+import { LoadingOverlay } from "@/components/loading-overlay";
 import { getDraftPicks, type DraftPick, type LeagueMeta } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -446,9 +446,8 @@ export function DraftHub({
 
         <Card>
           <CardContent>
-            {picksLoading ? (
-              <LoadingBasketballs label="Loading" />
-            ) : rows.length === 0 ? (
+            <LoadingOverlay active={picksLoading} hasContent={picks.length > 0} label="Loading">
+              {rows.length === 0 ? (
               <p className="text-sm text-muted-foreground">No picks for the current filters.</p>
             ) : (
               <>
@@ -514,6 +513,7 @@ export function DraftHub({
                 </div>
               </>
             )}
+            </LoadingOverlay>
           </CardContent>
         </Card>
       </div>

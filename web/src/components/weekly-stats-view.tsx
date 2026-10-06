@@ -30,6 +30,7 @@ import {
   type WeeklyStatsBootstrap,
 } from "@/lib/api";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
+import { LoadingOverlay } from "@/components/loading-overlay";
 import { cn } from "@/lib/utils";
 
 // Standard competition ranking (ties share a rank) over just the rows
@@ -291,20 +292,20 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
 
       <Card>
         <CardContent>
-          {rowsLoading ? (
-            <LoadingBasketballs label="Loading week" />
-          ) : rowsError ? (
-            <p className="text-sm text-muted-foreground">
-              No data for {year} week {week} ({rowsError}).
-            </p>
-          ) : (
-            <StatTable
-              rows={displayRows}
-              mode={mode}
-              focusTeam={focusTeam === NO_FOCUS_TEAM ? undefined : focusTeam}
-              showFocusScore
-            />
-          )}
+          <LoadingOverlay active={rowsLoading} hasContent={rows.length > 0} label="Loading week">
+            {rowsError ? (
+              <p className="text-sm text-muted-foreground">
+                No data for {year} week {week} ({rowsError}).
+              </p>
+            ) : (
+              <StatTable
+                rows={displayRows}
+                mode={mode}
+                focusTeam={focusTeam === NO_FOCUS_TEAM ? undefined : focusTeam}
+                showFocusScore
+              />
+            )}
+          </LoadingOverlay>
         </CardContent>
       </Card>
 

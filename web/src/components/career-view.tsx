@@ -16,6 +16,7 @@ import { FilterDrawer } from "@/components/filter-drawer";
 import { LabeledSelect, NO_FOCUS_TEAM } from "@/components/labeled-select";
 import { SourceLastUpdated } from "@/components/source-last-updated";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
+import { LoadingOverlay } from "@/components/loading-overlay";
 import { useSelectedTeam } from "@/lib/use-selected-team";
 import {
   getAverages,
@@ -197,19 +198,19 @@ export function CareerStatsView({ initialBootstrap }: CareerStatsViewProps) {
 
         <Card>
           <CardContent>
-            {loading ? (
-              <LoadingBasketballs label="Loading" />
-            ) : error ? (
-              <p className="text-sm text-muted-foreground">
-                No data for the current filters ({error}).
-              </p>
-            ) : (
-              <StatTable
-                rows={rows}
-                mode={mode}
-                focusTeam={focusTeam === NO_FOCUS_TEAM ? undefined : focusTeam}
-              />
-            )}
+            <LoadingOverlay active={loading} hasContent={rows.length > 0} label="Loading">
+              {error ? (
+                <p className="text-sm text-muted-foreground">
+                  No data for the current filters ({error}).
+                </p>
+              ) : (
+                <StatTable
+                  rows={rows}
+                  mode={mode}
+                  focusTeam={focusTeam === NO_FOCUS_TEAM ? undefined : focusTeam}
+                />
+              )}
+            </LoadingOverlay>
           </CardContent>
         </Card>
       </div>
