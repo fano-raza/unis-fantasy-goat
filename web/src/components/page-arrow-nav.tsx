@@ -22,7 +22,15 @@ export function PageArrowNav() {
   const { setOpen } = useMobileMenu();
   const touchStartX = useRef<number | null>(null);
 
-  const currentIndex = NAV_LINKS.findIndex((link) => link.href === pathname);
+  // Prefix-aware match, mirroring nav.tsx's activePrefix logic -- without
+  // this, any sub-page route (/standings/ratings, /team/roster, /players/
+  // draft, ...) fails an exact-href match and this whole bar (prev arrow,
+  // page-name tab, next arrow) vanished entirely instead of staying on the
+  // parent page's entry (feature request, 2026-10-06).
+  const currentIndex = NAV_LINKS.findIndex((link) => {
+    const prefix = link.activePrefix ?? link.href;
+    return pathname === link.href || pathname.startsWith(`${prefix}/`);
+  });
   // Unknown route (shouldn't normally happen) -- don't render rather than
   // guess a position.
   if (currentIndex === -1) return null;

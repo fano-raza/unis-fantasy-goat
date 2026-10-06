@@ -131,7 +131,7 @@ export function CareerStatsView({ initialBootstrap }: CareerStatsViewProps) {
 
   return (
     <div className="flex flex-col gap-4 sm:flex-row">
-      <div className="hidden sm:block sm:w-64 sm:shrink-0">
+      <div className="hidden sm:block sm:w-fit sm:shrink-0">
         <FilterPanel
           allYears={meta.years}
           allWeeks={allWeeks}

@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
 import { ChecklistGroup } from "@/components/filter-panel";
 import { GenericFilterDrawer } from "@/components/generic-filter-drawer";
 import { LoadingOverlay } from "@/components/loading-overlay";
@@ -184,12 +185,16 @@ function cellValue(row: DraftDisplayRow, key: SortKey): ReactNode {
 // become the leftmost, frozen columns, immediately followed by Draft Score
 // (per the user's exact spec) -- Team/Year keep their button order (Team
 // before Year) when both are active, Player is always alone (see the
-// mutual-exclusivity comment on toggleGroupBy). Ungrouped: no frozen
-// columns, Year/Player/Team stay in their natural order up front, and
-// Draft Score simply moves to right after them.
+// mutual-exclusivity comment on toggleGroupBy). Ungrouped (the default
+// state): Year and Player are frozen instead (feature request, 2026-10-06
+// -- they're already the first two columns in this order, so this is a
+// pure sticky-column change, no reordering needed).
 function getColumnLayout(groupBy: DraftGroupBy): { order: SortKey[]; frozen: SortKey[] } {
   if (!groupBy.team && !groupBy.player && !groupBy.year) {
-    return { order: ["year", "player", "team", "draftScore", "round", "roundPick", "overallPick", "rank"], frozen: [] };
+    return {
+      order: ["year", "player", "team", "draftScore", "round", "roundPick", "overallPick", "rank"],
+      frozen: ["year", "player"],
+    };
   }
   const frozen: SortKey[] = groupBy.player ? ["player"] : (["team", "year"] as const).filter((k) => groupBy[k]);
   const remainingIdentity = (["year", "player", "team"] as SortKey[]).filter((k) => !frozen.includes(k));
@@ -358,7 +363,7 @@ export function DraftHub({
 
   return (
     <div className="flex flex-col gap-4 sm:flex-row">
-      <div className="hidden sm:flex sm:w-64 sm:shrink-0 sm:flex-col sm:gap-3">
+      <div className="hidden sm:flex sm:w-fit sm:shrink-0 sm:flex-col sm:gap-3">
         <ChecklistGroup
           label="Season"
           options={meta.years}
@@ -483,28 +488,52 @@ export function DraftHub({
                   </TableBody>
                 </Table>
 
-                <div className="mt-4 flex items-center justify-center gap-3">
-                  <Button
-                    variant="outline"
-                    size="icon-sm"
-                    disabled={page === 0}
-                    onClick={() => setPage((p) => Math.max(0, p - 1))}
-                    aria-label="Previous page"
-                  >
-                    <ChevronLeft className="size-4" />
-                  </Button>
-                  <span className="text-xs text-muted-foreground">
-                    Page {page + 1} of {pageCount}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="icon-sm"
-                    disabled={page >= pageCount - 1}
-                    onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-                    aria-label="Next page"
-                  >
-                    <ChevronRight className="size-4" />
-                  </Button>
+                <div className="mt-4 flex flex-col items-center gap-2">
+                  <div className="flex items-center justify-center gap-3">
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      disabled={page === 0}
+                      onClick={() => setPage((p) => Math.max(0, p - 1))}
+                      aria-label="Previous page"
+                    >
+                      <ChevronLeft className="size-4" />
+                    </Button>
+                    <span className="text-xs text-muted-foreground">
+                      Page {page + 1} of {pageCount}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      disabled={page >= pageCount - 1}
+                      onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+                      aria-label="Next page"
+                    >
+                      <ChevronRight className="size-4" />
+                    </Button>
+                  </div>
+                  {/* Jump straight to a page by dragging, instead of only
+                      stepping one at a time via the arrows above -- feature
+                      request, 2026-10-06 (pageCount here commonly runs into
+                      the teens/30s, where a slider genuinely helps). */}
+                  {pageCount > 1 && (
+                    <div className="w-full max-w-xs px-2">
+                      <Slider
+                        min={1}
+                        max={pageCount}
+                        step={1}
+                        value={[page + 1]}
+                        onValueChange={(v) => {
+                          // base-ui emits a bare number for a single-thumb
+                          // slider at runtime despite the array-typed value
+                          // prop -- handle both shapes defensively.
+                          const next = Array.isArray(v) ? v[0] : (v as unknown as number);
+                          setPage(Math.min(pageCount - 1, Math.max(0, next - 1)));
+                        }}
+                        thumbLabels={[`Page ${page + 1}`]}
+                      />
+                    </div>
+                  )}
                 </div>
               </>
             )}
