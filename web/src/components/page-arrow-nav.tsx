@@ -1,9 +1,16 @@
 "use client";
 
+import { useRef } from "react";
+import type { TouchEvent } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { NAV_LINKS } from "@/components/nav";
+import { useMobileMenu } from "@/components/mobile-menu-context";
+
+// Horizontal distance (px) a touch has to travel before it counts as a
+// swipe rather than a tap/scroll jitter.
+const SWIPE_THRESHOLD_PX = 50;
 
 // Mobile-only quick page switcher -- lets a user step to the previous/next
 // page (wrapping around at either end, like a carousel) without opening the
@@ -11,6 +18,10 @@ import { NAV_LINKS } from "@/components/nav";
 // this is gated to the same `sm:hidden` breakpoint as MobileNav itself.
 export function PageArrowNav() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { setOpen } = useMobileMenu();
+  const touchStartX = useRef<number | null>(null);
+
   const currentIndex = NAV_LINKS.findIndex((link) => link.href === pathname);
   // Unknown route (shouldn't normally happen) -- don't render rather than
   // guess a position.
@@ -19,8 +30,27 @@ export function PageArrowNav() {
   const prevIndex = (currentIndex - 1 + NAV_LINKS.length) % NAV_LINKS.length;
   const nextIndex = (currentIndex + 1) % NAV_LINKS.length;
 
+  function handleTouchStart(e: TouchEvent<HTMLDivElement>) {
+    touchStartX.current = e.touches[0].clientX;
+  }
+
+  function handleTouchEnd(e: TouchEvent<HTMLDivElement>) {
+    const startX = touchStartX.current;
+    touchStartX.current = null;
+    if (startX === null) return;
+    const deltaX = e.changedTouches[0].clientX - startX;
+    if (Math.abs(deltaX) < SWIPE_THRESHOLD_PX) return;
+    // Swipe left -> next page (same direction as the right arrow); swipe
+    // right -> previous page -- mirrors a horizontally-scrolling carousel.
+    router.push(deltaX < 0 ? NAV_LINKS[nextIndex].href : NAV_LINKS[prevIndex].href);
+  }
+
   return (
-    <div className="flex items-center justify-between gap-2 sm:hidden">
+    <div
+      className="flex items-center justify-between gap-2 sm:hidden"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
       <Link
         href={NAV_LINKS[prevIndex].href}
         aria-label={`Go to ${NAV_LINKS[prevIndex].label}`}
@@ -28,9 +58,14 @@ export function PageArrowNav() {
       >
         <ChevronLeft className="size-4" />
       </Link>
-      <span className="text-xs font-bold tracking-wide text-foreground uppercase">
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label="Open page menu"
+        className="rounded-t-md border border-b-0 border-border bg-background px-3 py-1.5 text-xs font-bold tracking-wide text-foreground uppercase shadow-sm transition-colors hover:bg-muted"
+      >
         {NAV_LINKS[currentIndex].label}
-      </span>
+      </button>
       <Link
         href={NAV_LINKS[nextIndex].href}
         aria-label={`Go to ${NAV_LINKS[nextIndex].label}`}

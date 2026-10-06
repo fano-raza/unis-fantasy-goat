@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
@@ -9,14 +8,18 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogPortal, DialogTrigger } from "@/components/ui/dialog";
 import { NAV_LINKS } from "@/components/nav";
+import { useMobileMenu } from "@/components/mobile-menu-context";
 
 // Mobile-only slide-in drawer, standing in for the desktop top pill nav
 // below the `sm` breakpoint. Reuses Dialog's Root/Trigger/Portal/Close but
 // builds its own Backdrop/Popup rather than the shared DialogContent, which
 // is hardcoded to a centered modal, not a left-edge panel.
+//
+// open/setOpen come from MobileMenuProvider (not local state) so
+// PageArrowNav's page-name "tab" can also open this drawer.
 export function MobileNav() {
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
+  const { open, setOpen } = useMobileMenu();
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

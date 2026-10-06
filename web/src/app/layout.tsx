@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { Nav } from "@/components/nav";
 import { MobileNav } from "@/components/mobile-nav";
 import { PageArrowNav } from "@/components/page-arrow-nav";
+import { MobileMenuProvider } from "@/components/mobile-menu-context";
 import { API_BASE_URL } from "@/lib/api";
 import "./globals.css";
 
@@ -41,25 +42,27 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <link rel="preconnect" href={API_BASE_URL} crossOrigin="anonymous" />
         <link rel="dns-prefetch" href={API_BASE_URL} />
         <header className="border-b border-border">
-          <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 py-4 sm:px-6">
-            <div className="flex items-center justify-between gap-3">
-              <Link
-                href="/"
-                className="text-xl font-black tracking-tight italic transition-opacity hover:opacity-80"
-              >
-                UNIS 2014 <span className="text-primary">FANTASY</span>
-              </Link>
-              <div className="flex items-center gap-3">
-                <div className="sm:hidden">
-                  <MobileNav />
+          <MobileMenuProvider>
+            <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 py-4 sm:px-6">
+              <div className="flex items-center justify-between gap-3">
+                <Link
+                  href="/"
+                  className="text-xl font-black tracking-tight italic transition-opacity hover:opacity-80"
+                >
+                  UNIS 2014 <span className="text-primary">FANTASY</span>
+                </Link>
+                <div className="flex items-center gap-3">
+                  <div className="sm:hidden">
+                    <MobileNav />
+                  </div>
                 </div>
               </div>
+              <div className="hidden sm:block">
+                <Nav />
+              </div>
+              <PageArrowNav />
             </div>
-            <div className="hidden sm:block">
-              <Nav />
-            </div>
-            <PageArrowNav />
-          </div>
+          </MobileMenuProvider>
         </header>
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6">
           {children}
