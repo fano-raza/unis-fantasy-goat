@@ -160,12 +160,32 @@ export function PageArrowNav() {
           </Link>
         </div>
         {/* z-10 so a shadow tab sliding in renders above the baseline/
-            arrow row on either side while mid-transition. */}
-        <div className="relative z-10">
+            arrow row on either side while mid-transition. layout="position"
+            because this wrapper's own width (and so its centered position
+            between the two flex-1 arrow regions) depends on the current
+            label's length -- without it, the moment the label swaps to a
+            different-length one, the wrapper snaps to its new centered
+            spot instantly, which (even with the shadow-anchor fix above
+            landing it exactly on this wrapper's OLD position) still read
+            as a jump, since the wrapper itself had already relocated out
+            from under it (bug report, 2026-10-06). This smooths that
+            residual reposition into a continuation of the same motion
+            instead of a snap. */}
+        <motion.div layout="position" className="relative z-10">
+          {/* Anchored at the SAME box as the current tab below (left-0,
+              not right-full) -- its transform must end (at full drag)
+              exactly overlapping that box, which is where the real tab
+              will sit once the data updates and `x` resets to 0. Anchoring
+              it flush against the current tab's own edge instead (the
+              original bug) meant it only ever travelled half the needed
+              distance: it'd stop flush against the OLD tab's edge rather
+              than reaching the OLD tab's full resting position, so the
+              reset to the new label was a visible jump, not a
+              continuation (bug report, 2026-10-06). */}
           <motion.div
             aria-hidden="true"
             style={{ x: prevShadowX, opacity: prevShadowOpacity }}
-            className="pointer-events-none absolute top-0 right-full rounded-t-md border border-b-0 border-border bg-background px-3 py-1.5 text-xs font-bold tracking-wide whitespace-nowrap text-foreground uppercase shadow-sm"
+            className="pointer-events-none absolute top-0 left-0 rounded-t-md border border-b-0 border-border bg-background px-3 py-1.5 text-xs font-bold tracking-wide whitespace-nowrap text-foreground uppercase shadow-sm"
           >
             {NAV_LINKS[prevIndex].label}
           </motion.div>
@@ -191,14 +211,15 @@ export function PageArrowNav() {
           >
             {NAV_LINKS[currentIndex].label}
           </motion.button>
+          {/* Same anchoring fix as the prev shadow above, mirrored. */}
           <motion.div
             aria-hidden="true"
             style={{ x: nextShadowX, opacity: nextShadowOpacity }}
-            className="pointer-events-none absolute top-0 left-full rounded-t-md border border-b-0 border-border bg-background px-3 py-1.5 text-xs font-bold tracking-wide whitespace-nowrap text-foreground uppercase shadow-sm"
+            className="pointer-events-none absolute top-0 left-0 rounded-t-md border border-b-0 border-border bg-background px-3 py-1.5 text-xs font-bold tracking-wide whitespace-nowrap text-foreground uppercase shadow-sm"
           >
             {NAV_LINKS[nextIndex].label}
           </motion.div>
-        </div>
+        </motion.div>
         <div className="flex flex-1 items-center justify-end border-b border-border">
           <Link
             href={NAV_LINKS[nextIndex].href}
