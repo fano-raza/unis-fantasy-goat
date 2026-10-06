@@ -41,7 +41,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             Suspense fallback forces a static/dynamic split at this level). */}
         <link rel="preconnect" href={API_BASE_URL} crossOrigin="anonymous" />
         <link rel="dns-prefetch" href={API_BASE_URL} />
-        <header className="border-b border-border">
+        {/* Sticky on mobile only (feature request, 2026-10-06) -- the home
+            link + hamburger + PageArrowNav are the only header content that
+            renders there (desktop's Nav row is sm:hidden-gated out), so
+            freezing the whole header is exactly "freeze the page toggle
+            buttons and home button". z-40 keeps it under MobileNav's
+            drawer (z-50 backdrop/popup) so the drawer still overlays it. */}
+        <header className="sticky top-0 z-40 border-b border-border bg-background sm:static">
           <MobileMenuProvider>
             <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 py-4 sm:px-6">
               <div className="flex items-center justify-between gap-3">
