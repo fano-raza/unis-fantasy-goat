@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
+import { useViewportHeight } from "@/lib/use-viewport-height";
 
 export interface ChecklistGroupProps<T extends string | number> {
   label: string;
@@ -11,6 +12,14 @@ export interface ChecklistGroupProps<T extends string | number> {
   selected: T[];
   onChange: (next: T[]) => void;
   scrollable?: boolean;
+  // Caps the checklist at whichever is shorter: the window's own height,
+  // or however tall the full unclamped list actually is -- instead of
+  // scrollable's flat 192px, which scrolls even when there's plenty of
+  // room. Opt-in (not a replacement for `scrollable` everywhere) since it
+  // only makes sense for a page with just one standalone box -- a
+  // multi-box page letting each one grow toward the full window height
+  // would be unusable. Feature request, 2026-10-06.
+  adaptiveHeight?: boolean;
 }
 
 export function ChecklistGroup<T extends string | number>({
@@ -19,9 +28,35 @@ export function ChecklistGroup<T extends string | number>({
   selected,
   onChange,
   scrollable,
+  adaptiveHeight,
 }: ChecklistGroupProps<T>) {
   const [open, setOpen] = useState(true);
   const selectedSet = new Set(selected);
+
+  const itemsRef = useRef<HTMLDivElement | null>(null);
+  const [naturalHeight, setNaturalHeight] = useState<number | null>(null);
+  const viewportHeight = useViewportHeight();
+
+  useEffect(() => {
+    if (!adaptiveHeight) return;
+    const el = itemsRef.current;
+    if (!el) return;
+    // scrollHeight reports the full unclamped content height regardless
+    // of any overflow/max-height already applied to this same element --
+    // no separate invisible measurement render needed.
+    function measure() {
+      setNaturalHeight(el!.scrollHeight);
+    }
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [adaptiveHeight, options.length]);
+
+  const adaptiveMaxHeight =
+    adaptiveHeight && naturalHeight != null && viewportHeight > 0
+      ? Math.min(viewportHeight, naturalHeight)
+      : undefined;
 
   function toggle(value: T) {
     onChange(
@@ -74,10 +109,13 @@ export function ChecklistGroup<T extends string | number>({
       </div>
       {open && (
         <div
+          ref={itemsRef}
           className={cn(
             "mt-2 flex flex-col gap-1.5",
-            scrollable && "max-h-48 overflow-y-auto",
+            scrollable && !adaptiveHeight && "max-h-48 overflow-y-auto",
+            adaptiveHeight && "overflow-y-auto",
           )}
+          style={adaptiveMaxHeight != null ? { maxHeight: adaptiveMaxHeight } : undefined}
         >
           {options.map((option) => (
             <label

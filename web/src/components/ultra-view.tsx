@@ -110,12 +110,18 @@ export function UltraView({ initialBootstrap }: UltraViewProps) {
   return (
     <div className="flex flex-col gap-4 sm:flex-row">
       <div className="hidden sm:block sm:w-fit sm:shrink-0">
+        {/* adaptiveHeight (feature request, 2026-10-06), not scrollable --
+            Ultra's is the only standalone single-filter-box desktop page,
+            so letting this box grow to whatever the window/content allows
+            (instead of a flat 192px that scrolls even with room to spare)
+            doesn't risk crowding out other boxes the way it would on a
+            multi-box page like Career Stats/Analysis/Draft Hub. */}
         <ChecklistGroup
           label="Week"
           options={allWeeks}
           selected={weeks}
           onChange={setWeeks}
-          scrollable
+          adaptiveHeight
         />
       </div>
 
@@ -169,6 +175,18 @@ export function UltraView({ initialBootstrap }: UltraViewProps) {
                 />
               )}
             </LoadingOverlay>
+            {/* Explains StatTable's highlightClose ring (stat-table.tsx /
+                isCloseValue in highlight.ts): a non-focus cell within 10%
+                of the focus team's value, relative to that category's own
+                spread across the shown rows -- feature request,
+                2026-10-06. text-xs text-muted-foreground matches
+                chart-legend.tsx's existing caption styling. */}
+            {!error && (
+              <p className="mt-3 text-xs text-muted-foreground">
+                Boxes outlined in yellow are within 10% of the focus team&apos;s value for that category -- close,
+                easily flippable categories.
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>
