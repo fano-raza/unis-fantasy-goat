@@ -257,6 +257,15 @@ export function DraftHub({
   const [picksLoading, setPicksLoading] = useState(!initialPicks);
   const [sort, setSort] = useState<SortState>({ key: "draftScore", dir: "desc" });
   const [page, setPage] = useState(0);
+  // Live drag position for the page-jump Slider, separate from `page` --
+  // feature request, 2026-10-06: the table shouldn't re-render through
+  // every page the thumb passes over while dragging, only once the drag
+  // is released. Kept in sync with `page` for every OTHER way it changes
+  // (arrows, filters resetting to page 0, the slider's own release).
+  const [sliderPage, setSliderPage] = useState(0);
+  useEffect(() => {
+    setSliderPage(page);
+  }, [page]);
   // The default filter (every year/team) is exactly what initialPicks
   // already covers -- skip the redundant first fetch, same skipNextFetch
   // pattern as every other bootstrap-seeded page.
@@ -500,7 +509,7 @@ export function DraftHub({
                       <ChevronLeft className="size-4" />
                     </Button>
                     <span className="text-xs text-muted-foreground">
-                      Page {page + 1} of {pageCount}
+                      Page {sliderPage + 1} of {pageCount}
                     </span>
                     <Button
                       variant="outline"
@@ -522,15 +531,23 @@ export function DraftHub({
                         min={1}
                         max={pageCount}
                         step={1}
-                        value={[page + 1]}
+                        value={[sliderPage + 1]}
+                        // Live drag -- only moves the thumb/label, doesn't
+                        // touch `page` (so the table doesn't re-render
+                        // through every page in between). onValueCommitted
+                        // below applies it for real once released.
                         onValueChange={(v) => {
                           // base-ui emits a bare number for a single-thumb
                           // slider at runtime despite the array-typed value
                           // prop -- handle both shapes defensively.
                           const next = Array.isArray(v) ? v[0] : (v as unknown as number);
+                          setSliderPage(Math.min(pageCount - 1, Math.max(0, next - 1)));
+                        }}
+                        onValueCommitted={(v) => {
+                          const next = Array.isArray(v) ? v[0] : (v as unknown as number);
                           setPage(Math.min(pageCount - 1, Math.max(0, next - 1)));
                         }}
-                        thumbLabels={[`Page ${page + 1}`]}
+                        thumbLabels={[`Page ${sliderPage + 1}`]}
                       />
                     </div>
                   )}
