@@ -218,9 +218,13 @@ def run_bot() -> None:
         if not any(token in message.content for token in bot_mention_tokens):
             return
         game_lines = "\n".join(
-            f"`/{game} [days]" + (" [raw]" if game == "maptap" else "") + "`"
+            f"`/{game} [days]"
+            + (" [raw]" if game == "maptap" else "")
+            + (" [additional_stats]" if game in daily_games.TOP_SCORE_GAMES else "")
+            + "`"
             f" — {daily_games.GAME_LABELS[game]} leaderboard (default: last 7 days, or \"ever\" for all-time)"
             + (' -- raw:<anything but "no"/"false"> averages the pre-multiplier round-score total instead' if game == "maptap" else "")
+            + (' -- additional_stats:<anything but "false"/"0"> also shows median and standard deviation' if game in daily_games.TOP_SCORE_GAMES else "")
             for game in daily_games.GAMES
         )
         top_score_lines = "\n".join(
@@ -437,6 +441,7 @@ def run_bot() -> None:
         game: str,
         days: Optional[str],
         raw: Optional[str] = None,
+        additional_stats: Optional[str] = None,
     ) -> None:
         try:
             days_back, range_label = daily_games.parse_days_arg(days)
@@ -444,6 +449,7 @@ def run_bot() -> None:
             await inter.response.send_message(f"⚠️ {e}", ephemeral=True)
             return
         raw = daily_games.parse_raw_arg(raw)
+        additional_stats = daily_games.parse_additional_stats_arg(additional_stats)
 
         # Deferred because ensure_fresh() may do a live channel scan (only
         # when stale -- see FRESHNESS_WINDOW), which can outrun Discord's
@@ -481,7 +487,12 @@ def run_bot() -> None:
                     f"Avg Tries: {avg}, {pct:.0f}% Comp. Rate ({entry['gp']} games)"
                 )
             else:
-                lines.append(f"{rank}. **{name}** — {score_label}: {avg} ({entry['gp']} games)")
+                line = f"{rank}. **{name}** — {score_label}: {avg} ({entry['gp']} games)"
+                if additional_stats:
+                    median = f"{entry['median']:.2f}" if entry["median"] is not None else "—"
+                    stdev = f"{entry['stdev']:.2f}" if entry["stdev"] is not None else "—"
+                    line += f" — Median: {median}, StDev: {stdev}"
+                lines.append(line)
         if last_synced is not None:
             lines.append(f"\n*Last updated: <t:{int(last_synced.timestamp())}:R>*")
         await inter.followup.send("\n".join(lines))
@@ -504,8 +515,21 @@ def run_bot() -> None:
                     inter: disnake.ApplicationCommandInteraction,
                     days: Optional[str] = None,
                     raw: Optional[str] = None,
+                    additional_stats: Optional[str] = None,
                 ):
-                    await _game_leaderboard(inter, game, days, raw)
+                    await _game_leaderboard(inter, game, days, raw, additional_stats)
+            elif game in daily_games.TOP_SCORE_GAMES:
+                @bot.slash_command(
+                    name=game,
+                    description=f"{daily_games.GAME_LABELS[game]} leaderboard (default: last 7 days).",
+                    **slash_kwargs,
+                )
+                async def _game_command(
+                    inter: disnake.ApplicationCommandInteraction,
+                    days: Optional[str] = None,
+                    additional_stats: Optional[str] = None,
+                ):
+                    await _game_leaderboard(inter, game, days, additional_stats=additional_stats)
             else:
                 @bot.slash_command(
                     name=game,

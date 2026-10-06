@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import csv
 import re
+import statistics
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -450,6 +451,20 @@ async def scan_and_record(channel: disnake.abc.Messageable) -> int:
     return len(new_rows)
 
 
+def _krillion_baseline_puzzle_num(rows: list[dict]) -> Optional[int]:
+    """Puzzle number of the chronologically first Krillion row ever
+    recorded (by message timestamp, not canonical date -- that's not
+    resolved yet when this runs). None if no Krillion rows exist yet."""
+    krillion_rows = [r for r in rows if r["game"] == "krillion" and r.get("puzzle_num")]
+    if not krillion_rows:
+        return None
+    earliest = min(krillion_rows, key=lambda r: r["timestamp"])
+    try:
+        return int(earliest["puzzle_num"])
+    except ValueError:
+        return None
+
+
 def reconcile_krillion_dates() -> tuple[int, int]:
     """Assigns a single canonical date to every recorded Krillion row per
     puzzle number, overwriting whatever provisional per-message post date
@@ -470,6 +485,13 @@ def reconcile_krillion_dates() -> tuple[int, int]:
     differed at insert time) -- resolved the same way as any other same-
     day duplicate, keeping only the earliest.
 
+    Also drops any Krillion row whose puzzle_num is lower than the
+    puzzle_num of the chronologically first Krillion message ever recorded
+    (feature request, 2026-09-30) -- a message with a lower number than
+    that one is a retroactive/throwback share of an older puzzle from
+    before the channel started playing Krillion, not a live daily play,
+    and shouldn't count toward anyone's stats.
+
     Returns (rows whose date changed, duplicate rows removed)."""
     csv_path = daily_games_history_path()
     if not csv_path.exists():
@@ -478,6 +500,8 @@ def reconcile_krillion_dates() -> tuple[int, int]:
         reader = csv.DictReader(f)
         fieldnames = reader.fieldnames
         rows = list(reader)
+
+    baseline = _krillion_baseline_puzzle_num(rows)
 
     by_puzzle: dict[str, list[dict]] = {}
     for row in rows:
@@ -508,6 +532,17 @@ def reconcile_krillion_dates() -> tuple[int, int]:
                 rows_to_drop.add(id(existing))
                 by_user[r["discord_user_id"]] = r
             else:
+                rows_to_drop.add(id(r))
+
+    if baseline is not None:
+        for r in rows:
+            if r["game"] != "krillion" or not r.get("puzzle_num"):
+                continue
+            try:
+                below_baseline = int(r["puzzle_num"]) < baseline
+            except ValueError:
+                continue
+            if below_baseline:
                 rows_to_drop.add(id(r))
 
     if dates_changed or rows_to_drop:
@@ -675,6 +710,19 @@ def parse_raw_arg(value: Optional[str]) -> bool:
     return value.strip().lower() not in RAW_ARG_FALSE_VALUES
 
 
+# Same free-text opt-out shape as RAW_ARG_FALSE_VALUES, but with the two
+# "off" spellings the feature request specified: "false" and "0".
+ADDITIONAL_STATS_FALSE_VALUES = ("false", "0")
+
+
+def parse_additional_stats_arg(value: Optional[str]) -> bool:
+    """True for any non-empty value except (case-insensitively) "false" or
+    "0"; False for those two, and for None/empty (not passed)."""
+    if value is None or not value.strip():
+        return False
+    return value.strip().lower() not in ADDITIONAL_STATS_FALSE_VALUES
+
+
 def load_history_rows(game: str) -> list[dict]:
     path = daily_games_history_path()
     if not path.exists():
@@ -807,10 +855,11 @@ def _completion_score(rate: float, complete: int, avg: float) -> float:
 
 
 def build_leaderboard(game: str, days_back: Optional[int], raw: bool = False) -> list[dict]:
-    """[{uid, gp, complete, incomplete, avg}], sorted best-first. gp =
-    complete + incomplete (total games played). avg is over complete plays
-    only -- None if the user has zero complete plays in range, even if
-    incomplete > 0.
+    """[{uid, gp, complete, incomplete, avg, median, stdev}], sorted
+    best-first. gp = complete + incomplete (total games played). avg,
+    median, and stdev (population stdev, via statistics.pstdev) are all
+    over complete plays only -- None if the user has zero complete plays
+    in range, even if incomplete > 0.
 
     For games where CAN_BE_INCOMPLETE (Worldle/Flagle/Travle), each entry
     also carries rate (complete/gp) and rank_score (_completion_score(),
@@ -858,6 +907,8 @@ def build_leaderboard(game: str, days_back: Optional[int], raw: bool = False) ->
                 "complete": len(solved),
                 "incomplete": len(scores) - len(solved),
                 "avg": avg,
+                "median": statistics.median(solved) if solved else None,
+                "stdev": statistics.pstdev(solved) if solved else None,
             }
         )
 
