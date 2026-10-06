@@ -54,18 +54,27 @@ export function PageArrowNav() {
   }
 
   return (
+    // items-end (not items-center) so the two side baselines -- each a
+    // flex-1 div stretching all the way to the screen edge, not just
+    // hugging its arrow icon -- align exactly with the tab's own bottom
+    // edge, closing the open-bottomed tab shape into a continuous line
+    // on either side (feature request, 2026-10-06). No gap between a
+    // baseline and the tab so the horizontal line visually touches the
+    // tab's vertical border rather than leaving a break at the corner.
     <div
-      className="flex items-center justify-between gap-2 sm:hidden"
+      className="flex items-end sm:hidden"
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
-      <Link
-        href={NAV_LINKS[prevIndex].href}
-        aria-label={`Go to ${NAV_LINKS[prevIndex].label}`}
-        className="flex items-center gap-1 rounded-sm px-2 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-      >
-        <ChevronLeft className="size-4" />
-      </Link>
+      <div className="flex flex-1 items-center border-b border-border">
+        <Link
+          href={NAV_LINKS[prevIndex].href}
+          aria-label={`Go to ${NAV_LINKS[prevIndex].label}`}
+          className="flex items-center gap-1 rounded-sm px-2 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <ChevronLeft className="size-4" />
+        </Link>
+      </div>
       <button
         type="button"
         onClick={() => setOpen(true)}
@@ -74,13 +83,15 @@ export function PageArrowNav() {
       >
         {NAV_LINKS[currentIndex].label}
       </button>
-      <Link
-        href={NAV_LINKS[nextIndex].href}
-        aria-label={`Go to ${NAV_LINKS[nextIndex].label}`}
-        className="flex items-center gap-1 rounded-sm px-2 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-      >
-        <ChevronRight className="size-4" />
-      </Link>
+      <div className="flex flex-1 items-center justify-end border-b border-border">
+        <Link
+          href={NAV_LINKS[nextIndex].href}
+          aria-label={`Go to ${NAV_LINKS[nextIndex].label}`}
+          className="flex items-center gap-1 rounded-sm px-2 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <ChevronRight className="size-4" />
+        </Link>
+      </div>
     </div>
   );
 }
