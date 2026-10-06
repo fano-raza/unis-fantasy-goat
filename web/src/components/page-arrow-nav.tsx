@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import type { TouchEvent } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { AnimatePresence, motion } from "motion/react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { NAV_LINKS } from "@/components/nav";
 import { useMobileMenu } from "@/components/mobile-menu-context";
@@ -21,6 +22,12 @@ export function PageArrowNav() {
   const router = useRouter();
   const { setOpen } = useMobileMenu();
   const touchStartX = useRef<number | null>(null);
+  // 1 = moving to the next page (old tab exits left, new one enters from
+  // the right); -1 = previous (mirrored). Drives the slide direction below
+  // -- feature request, 2026-10-06: make the tab itself visibly move with
+  // a swipe/arrow change, a new tab sliding in from the trailing edge,
+  // instead of the label just instantly swapping in place.
+  const [direction, setDirection] = useState<1 | -1>(1);
 
   // Prefix-aware match, mirroring nav.tsx's activePrefix logic -- without
   // this, any sub-page route (/standings/ratings, /team/roster, /players/
@@ -48,8 +55,14 @@ export function PageArrowNav() {
     if (startX === null) return;
     const deltaX = e.changedTouches[0].clientX - startX;
     if (Math.abs(deltaX) < SWIPE_THRESHOLD_PX) return;
+    // A real swipe, not a tap -- suppress any click some browsers
+    // synthesize from a touch sequence that ends on the tab button itself,
+    // which would otherwise also pop the page menu open alongside the
+    // navigation this triggers below.
+    e.preventDefault();
     // Swipe left -> next page (same direction as the right arrow); swipe
     // right -> previous page -- mirrors a horizontally-scrolling carousel.
+    setDirection(deltaX < 0 ? 1 : -1);
     router.push(deltaX < 0 ? NAV_LINKS[nextIndex].href : NAV_LINKS[prevIndex].href);
   }
 
@@ -70,23 +83,38 @@ export function PageArrowNav() {
         <Link
           href={NAV_LINKS[prevIndex].href}
           aria-label={`Go to ${NAV_LINKS[prevIndex].label}`}
+          onClick={() => setDirection(-1)}
           className="flex items-center gap-1 rounded-sm px-2 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <ChevronLeft className="size-4" />
         </Link>
       </div>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        aria-label="Open page menu"
-        className="rounded-t-md border border-b-0 border-border bg-background px-3 py-1.5 text-xs font-bold tracking-wide text-foreground uppercase shadow-sm transition-colors hover:bg-muted"
-      >
-        {NAV_LINKS[currentIndex].label}
-      </button>
+      {/* overflow-hidden clips the sliding tab to this box; mode="popLayout"
+          takes the exiting label out of flow (absolute, pinned to its last
+          position) so the box can immediately resize to the entering
+          label's own width while the old one slides out on top of it. */}
+      <div className="relative overflow-hidden rounded-t-md border border-b-0 border-border bg-background shadow-sm">
+        <AnimatePresence mode="popLayout" initial={false}>
+          <motion.button
+            key={NAV_LINKS[currentIndex].href}
+            type="button"
+            onClick={() => setOpen(true)}
+            aria-label="Open page menu"
+            initial={{ x: direction === 1 ? "100%" : "-100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: direction === 1 ? "-100%" : "100%" }}
+            transition={{ type: "spring", stiffness: 420, damping: 38 }}
+            className="block px-3 py-1.5 text-xs font-bold tracking-wide text-foreground uppercase transition-colors hover:bg-muted"
+          >
+            {NAV_LINKS[currentIndex].label}
+          </motion.button>
+        </AnimatePresence>
+      </div>
       <div className="flex flex-1 items-center justify-end border-b border-border">
         <Link
           href={NAV_LINKS[nextIndex].href}
           aria-label={`Go to ${NAV_LINKS[nextIndex].label}`}
+          onClick={() => setDirection(1)}
           className="flex items-center gap-1 rounded-sm px-2 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <ChevronRight className="size-4" />
