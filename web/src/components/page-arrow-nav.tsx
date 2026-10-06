@@ -174,6 +174,14 @@ export function PageArrowNav() {
             drag="x"
             dragConstraints={{ left: -DRAG_RANGE_PX, right: DRAG_RANGE_PX }}
             dragElastic={0.1}
+            // Without this, Motion's own built-in release-inertia
+            // animation (based on release velocity) runs on the SAME
+            // motion value at the same time as handleDragEnd's explicit
+            // animate() call below -- the two fight over `x`, which is
+            // exactly what read as the slide stuttering/stopping mid-way
+            // (bug report, 2026-10-06). false makes handleDragEnd's
+            // animate() the sole driver of post-release motion.
+            dragMomentum={false}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
             onTap={handleTap}
