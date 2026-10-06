@@ -24,17 +24,23 @@ def per_week_rating(
     team_col: str = "Team",
 ) -> pd.DataFrame:
     """Per-week Weighted Rank: minmax-scale each category within its week
-    (inverted for neg_cats), average into a composite, then minmax-scale the
-    composite again. Adds {cat}_rank/{cat}_wt_rank/{cat}_rating per category,
-    plus week_wt_rank/week_rank/week_rating.
+    (inverted for neg_cats), average into a composite. Adds {cat}_rank/
+    {cat}_wt_rank/{cat}_rating per category, plus week_wt_rank/week_rank/
+    week_rating.
 
     team_count is the season's fixed roster size (not derived per-week), to
     match the original scalar `self.teamCount` used in the rank rescale.
 
-    This mirrors Models/seasons.py::regSeason.df_build_out exactly — do not
-    change this formula without updating both call sites (and re-verifying
-    against a snapshot of the old output; the two formulas drifting apart
-    silently would break "reproduce the existing stat views").
+    week_rating is the plain average of the per-category ratings (feature
+    request, 2026-10-06) -- it is deliberately NOT re-minmax-scaled across
+    the week's teams afterward, so a lopsided week doesn't get stretched to
+    always hit exactly 0/100. week_wt_rank (used for week_rank) is a
+    separate, still-rescaled composite -- rank ordering is unaffected by
+    this, only the rating's displayed magnitude.
+
+    Models/seasons.py::regSeason.df_build_out and dashboard_site/api/
+    league_store.py both call this function directly (no separate formula
+    to keep in sync).
     """
     df = df.copy()
     pos_cats = [c for c in main_cats if c not in neg_cats]
@@ -66,7 +72,6 @@ def per_week_rating(
     df["week_rank"] = df.groupby(week_col)["week_wt_rank"].rank(method="min", ascending=True)
 
     df["week_rating"] = df[rating_cols].mean(axis=1)
-    df["week_rating"] = minmax_rating_scale(df, ["week_rating"])
 
     df[wt_rank_cols + ["week_wt_rank"]] = df[wt_rank_cols + ["week_wt_rank"]].apply(lambda x: (team_count - 1) * x + 1)
 

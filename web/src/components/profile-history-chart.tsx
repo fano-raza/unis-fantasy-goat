@@ -117,7 +117,12 @@ export function ProfileHistoryChart({ team, meta }: { team: string; meta: League
               />
               {mode === "rating" ? (
                 <YAxis
-                  domain={[0, 100]}
+                  // week_rating is a plain average of category ratings (no
+                  // longer re-stretched to span 0-100 every week), so season
+                  // averages cluster well short of 100 -- auto-scale the top
+                  // instead of hardcoding it, while keeping 0 as the real
+                  // floor (ratings can't go negative).
+                  domain={[0, "auto"]}
                   width={40}
                   tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
                   stroke="var(--border)"

@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { AnimatePresence, motion } from "motion/react"
 
 import { cn } from "@/lib/utils"
 
@@ -29,13 +30,19 @@ function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
   )
 }
 
-function TableBody({ className, ...props }: React.ComponentProps<"tbody">) {
+function TableBody({ className, children, ...props }: React.ComponentProps<"tbody">) {
   return (
     <tbody
       data-slot="table-body"
       className={cn("[&_tr:last-child]:border-0", className)}
       {...props}
-    />
+    >
+      {/* AnimatePresence tracks each row's `key` (every caller already uses a
+          stable id, e.g. team/player name) so TableRow's layout/enter
+          animation below fires on reorder, and a brand-new key enters from
+          the bottom instead of popping in at its sorted slot. */}
+      <AnimatePresence initial={false}>{children}</AnimatePresence>
+    </tbody>
   )
 }
 
@@ -52,10 +59,15 @@ function TableFooter({ className, ...props }: React.ComponentProps<"tfoot">) {
   )
 }
 
-function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
+function TableRow({ className, ...props }: React.ComponentProps<typeof motion.tr>) {
   return (
-    <tr
+    <motion.tr
       data-slot="table-row"
+      layout="position"
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      transition={{ type: "spring", stiffness: 500, damping: 40, mass: 1 }}
       className={cn(
         "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
         className
