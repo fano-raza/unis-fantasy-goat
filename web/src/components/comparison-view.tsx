@@ -49,19 +49,7 @@ import { cn } from "@/lib/utils";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { useElementHeight } from "@/lib/use-element-height";
 import { useSelectedTeam } from "@/lib/use-selected-team";
-
-const VIEW_OPTIONS = [
-  { value: "profile", label: "Profile" },
-  { value: "comparison", label: "Comparison" },
-  { value: "roster", label: "Roster" },
-  { value: "trade", label: "Trade Hub" },
-];
-const VIEW_PATHS = {
-  profile: "/team/profile",
-  comparison: "/team/comparison",
-  roster: "/team/roster",
-  trade: "/players",
-};
+import { TEAM_PLAYERS_VIEW_OPTIONS, TEAM_PLAYERS_VIEW_PATHS } from "@/lib/team-players-nav";
 
 const SELECTED_TEAMS_KEY = "comparison-selected-teams";
 const MOBILE_TEAM_CAP = 2;
@@ -388,7 +376,7 @@ export function ComparisonView({ initialBootstrap }: ComparisonViewProps) {
         ref={stickyBarRef}
         className="sticky top-0 z-30 flex flex-wrap items-center gap-3 rounded-sm border border-border bg-card px-3 py-2 shadow-sm"
       >
-        <RoutedViewSwitcher options={VIEW_OPTIONS} current="comparison" paths={VIEW_PATHS} />
+        <RoutedViewSwitcher options={TEAM_PLAYERS_VIEW_OPTIONS} current="comparison" paths={TEAM_PLAYERS_VIEW_PATHS} />
 
         <div className="flex flex-wrap items-center gap-2">
           {visibleSelected.map((t) => (

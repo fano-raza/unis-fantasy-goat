@@ -54,18 +54,7 @@ import { TeamBadges } from "@/components/team-badges";
 import { BadgeDrawer } from "@/components/badge-drawer";
 import { SELECTED_TEAM_STORAGE_KEY } from "@/lib/use-selected-team";
 
-const VIEW_OPTIONS = [
-  { value: "profile", label: "Profile" },
-  { value: "comparison", label: "Comparison" },
-  { value: "roster", label: "Roster" },
-  { value: "trade", label: "Trade Hub" },
-];
-const VIEW_PATHS = {
-  profile: "/team/profile",
-  comparison: "/team/comparison",
-  roster: "/team/roster",
-  trade: "/players",
-};
+import { TEAM_PLAYERS_VIEW_OPTIONS, TEAM_PLAYERS_VIEW_PATHS } from "@/lib/team-players-nav";
 
 // Gold / silver / bronze for the League Top 3 table's 1st/2nd/3rd rank text
 // -- topFields is always filtered to rank <= 3, so no 4th-place case exists.
@@ -347,7 +336,7 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
   return (
     <div className="flex flex-col gap-4">
       <div className="sticky top-0 z-30 flex flex-wrap items-center gap-3 rounded-sm border border-border bg-card px-3 py-2 shadow-sm">
-        <RoutedViewSwitcher options={VIEW_OPTIONS} current="profile" paths={VIEW_PATHS} />
+        <RoutedViewSwitcher options={TEAM_PLAYERS_VIEW_OPTIONS} current="profile" paths={TEAM_PLAYERS_VIEW_PATHS} />
 
         <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
           Team

@@ -5,13 +5,7 @@ import { RoutedViewSwitcher } from "@/components/routed-view-switcher";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { DraftHub } from "@/components/draft-hub";
 import { getLeagueMeta, type DraftPick, type LeagueMeta } from "@/lib/api";
-
-const VIEW_OPTIONS = [
-  { value: "draft", label: "Draft Hub" },
-  { value: "trade", label: "Trade Hub" },
-  { value: "roster", label: "Roster" },
-];
-const VIEW_PATHS = { trade: "/players", draft: "/players/draft", roster: "/team/roster" };
+import { TEAM_PLAYERS_VIEW_OPTIONS, TEAM_PLAYERS_VIEW_PATHS } from "@/lib/team-players-nav";
 
 interface DraftPageViewProps {
   // Both fetched server-side (see app/players/draft/page.tsx); null if
@@ -36,7 +30,7 @@ export function DraftPageView({ initialMeta, initialPicks }: DraftPageViewProps)
   return (
     <div className="flex flex-col gap-4">
       <div className="sticky top-0 z-30 flex items-center gap-3 rounded-sm border border-border bg-card px-3 py-2 shadow-sm">
-        <RoutedViewSwitcher options={VIEW_OPTIONS} current="draft" paths={VIEW_PATHS} />
+        <RoutedViewSwitcher options={TEAM_PLAYERS_VIEW_OPTIONS} current="draft" paths={TEAM_PLAYERS_VIEW_PATHS} />
       </div>
       <DraftHub meta={meta} initialPicks={initialPicks} />
     </div>
