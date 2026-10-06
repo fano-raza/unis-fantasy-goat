@@ -94,6 +94,15 @@ def roster_rank_history_csv_path() -> Path:
     return REF_DIR / "roster_rank_history.csv"
 
 
+def team_roster_history_csv_path() -> Path:
+    """One row per (year, week, team) snapshot of that team's full roster,
+    dated -- see scripts/export_roster_ranks.py's
+    append_team_roster_history(). Team-level complement to
+    roster_rank_history_csv_path() above (which is player-level); same
+    no-op-if-already-recorded convention, no separate cursor file."""
+    return REF_DIR / "team_roster_history.csv"
+
+
 def daily_games_last_synced_at_path() -> Path:
     """Last-synced-at UTC timestamp (ISO 8601), written on every successful
     scan_and_record() call regardless of caller. Distinct from

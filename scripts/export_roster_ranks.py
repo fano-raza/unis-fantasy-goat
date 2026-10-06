@@ -278,6 +278,67 @@ def append_roster_rank_history(year: int, week: int) -> int:
     return len(new_rows)
 
 
+TEAM_ROSTER_HISTORY_COLUMNS = ["Year", "Week", "SnapshotDate", "FantasyTeam", "RosterSize", "Players"]
+
+
+def append_team_roster_history(year: int, week: int) -> int:
+    """Snapshots each fantasy team's full roster, dated, into
+    Ref/team_roster_history.csv -- one row per (year, week, team), append-
+    only, same convention as append_roster_rank_history() above. Complements
+    it rather than duplicates it: that one is player-level (one row per
+    player per week) for rank-over-time correlation; this one is team-
+    level (one row per team per week, with its players joined into a
+    single cell) for "what did this team's roster look like in week N"
+    queries, which the player-level file can only answer via a filter +
+    groupby. Feature request, 2026-10-06 -- same cadence/trigger as
+    append_roster_rank_history() (called alongside it every daily cycle;
+    no-ops once this exact (year, week) is already recorded, so it still
+    only ever actually writes once per week), and reuses the same
+    rows_for_year() fetch -- no new Yahoo/ESPN call logic.
+    """
+    from datetime import date
+
+    from shared.runtime_config import team_roster_history_csv_path
+
+    path = team_roster_history_csv_path()
+    if path.exists():
+        existing = pd.read_csv(path)
+        if ((existing["Year"] == year) & (existing["Week"] == week)).any():
+            return 0
+    else:
+        existing = pd.DataFrame(columns=TEAM_ROSTER_HISTORY_COLUMNS)
+
+    year_rows = rows_for_year(year)
+    by_team: dict[str, list[str]] = {}
+    for r in year_rows:
+        # rows_for_year() returns every league player, rostered or not --
+        # free agents carry an empty FantasyTeam (confirmed live: 584 of
+        # 719 2026 rows). A *roster* tracker should only ever include
+        # players actually on a team, unlike the player-level rank
+        # history above (which deliberately tracks everyone).
+        if not r["FantasyTeam"]:
+            continue
+        by_team.setdefault(r["FantasyTeam"], []).append(r["Player"])
+
+    snapshot_date = date.today().isoformat()
+    new_rows = [
+        {
+            "Year": year,
+            "Week": week,
+            "SnapshotDate": snapshot_date,
+            "FantasyTeam": team,
+            "RosterSize": len(players),
+            "Players": "; ".join(sorted(players)),
+        }
+        for team, players in sorted(by_team.items())
+    ]
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    combined = pd.concat([existing, pd.DataFrame(new_rows, columns=TEAM_ROSTER_HISTORY_COLUMNS)], ignore_index=True)
+    atomic_write(path, lambda f: combined.to_csv(f, index=False))
+    return len(new_rows)
+
+
 def main(years: list[int]) -> None:
     new_rows: list[dict] = []
     failed_years: list[int] = []

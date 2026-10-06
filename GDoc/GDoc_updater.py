@@ -19,7 +19,7 @@ from scripts.export_real_matchup_flags import main as export_real_matchup_flags
 from scripts.export_team_summary import main as export_team_summary
 from scripts.export_playoff_brackets import main as export_playoff_brackets
 from scripts.export_player_stats import main as export_player_stats
-from scripts.export_roster_ranks import append_roster_rank_history, main as export_roster_ranks
+from scripts.export_roster_ranks import append_roster_rank_history, append_team_roster_history, main as export_roster_ranks
 from scripts.export_nba_schedule import main as export_nba_schedule
 
 app = Flask(__name__)
@@ -138,6 +138,17 @@ def run_updater():
                         print(f"roster_rank_history: snapshotted {added} player rows for week {currentWeek}")
                 except Exception as roster_history_exc:
                     print(f"roster_rank_history export warning: {roster_history_exc}")
+
+                # Team-level complement to roster_rank_history above (feature
+                # request, 2026-10-06): same cadence/trigger, same no-op-if-
+                # already-recorded guard, reuses the same already-fetched
+                # roster data -- just grouped by team instead of by player.
+                try:
+                    added_teams = append_team_roster_history(year, currentWeek)
+                    if added_teams:
+                        print(f"team_roster_history: snapshotted {added_teams} team rows for week {currentWeek}")
+                except Exception as team_roster_history_exc:
+                    print(f"team_roster_history export warning: {team_roster_history_exc}")
 
                 try:
                     export_nba_schedule()
