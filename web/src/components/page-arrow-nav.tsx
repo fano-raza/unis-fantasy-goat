@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { motion, animate, useMotionValue, useTransform } from "motion/react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { NAV_LINKS } from "@/components/nav";
 import { useMobileMenu } from "@/components/mobile-menu-context";
+import { LoadingBasketballs } from "@/components/loading-basketballs";
 
 // Distance (px) the tab travels for a live drag's crossfade with its
 // neighbor to be fully complete, and the commit threshold (half that) for
@@ -44,6 +45,14 @@ export function PageArrowNav() {
   // drag-vs-tap distinction didn't reliably suppress it on its own
   // (confirmed via a real drag-release test still opening the menu).
   const didDragRef = useRef(false);
+  // Tracks the actual page-load wait, entirely separate from the tab's own
+  // slide -- feature request, 2026-10-06: the slide must always finish on
+  // its own regardless of how long the destination page takes to load
+  // (it already does -- see commitNext/commitPrev's animate().then()
+  // ordering below), and a loading overlay over the still-visible old
+  // page should fill the gap after that, not the slide itself stalling
+  // mid-flight waiting on the network.
+  const [isPending, startTransition] = useTransition();
 
   // Prefix-aware match, mirroring nav.tsx's activePrefix logic -- without
   // this, any sub-page route (/standings/ratings, /team/roster, /players/
@@ -80,21 +89,27 @@ export function PageArrowNav() {
   const prevIndex = (currentIndex - 1 + NAV_LINKS.length) % NAV_LINKS.length;
   const nextIndex = (currentIndex + 1) % NAV_LINKS.length;
 
-  // Finishes sliding the current tab the rest of the way off-screen, then
-  // commits the navigation and resets `x` -- by the time the new page's
-  // label renders, it's already fully centered (0) and opaque (1), so
-  // there's no flash: the reset happens in the same tick as the
-  // navigation call, not on a later effect-driven render.
+  // Finishes sliding the current tab the rest of the way off-screen, THEN
+  // (only once that's done) starts the actual navigation -- the slide
+  // itself never waits on the network either way. `x` resets in the same
+  // tick as the push call, not a later effect-driven render, so there's
+  // no flash once the new page's label renders. startTransition's
+  // isPending tracks the navigation separately, driving the loading
+  // overlay below for however long the destination page takes.
   function commitNext() {
     animate(x, -DRAG_RANGE_PX, springTransition).then(() => {
-      router.push(NAV_LINKS[nextIndex].href);
       x.set(0);
+      startTransition(() => {
+        router.push(NAV_LINKS[nextIndex].href);
+      });
     });
   }
   function commitPrev() {
     animate(x, DRAG_RANGE_PX, springTransition).then(() => {
-      router.push(NAV_LINKS[prevIndex].href);
       x.set(0);
+      startTransition(() => {
+        router.push(NAV_LINKS[prevIndex].href);
+      });
     });
   }
 
@@ -121,72 +136,86 @@ export function PageArrowNav() {
   }
 
   return (
-    // items-end (not items-center) so the two side baselines -- each a
-    // flex-1 div stretching all the way to the screen edge, not just
-    // hugging its arrow icon -- align exactly with the tab's own bottom
-    // edge, closing the open-bottomed tab shape into a continuous line
-    // on either side (feature request, 2026-10-06). No gap between a
-    // baseline and the tab so the horizontal line visually touches the
-    // tab's vertical border rather than leaving a break at the corner.
-    <div className="flex items-end sm:hidden">
-      <div className="flex flex-1 items-center border-b border-border">
-        <Link
-          href={NAV_LINKS[prevIndex].href}
-          aria-label={`Go to ${NAV_LINKS[prevIndex].label}`}
-          onClick={(e) => {
-            e.preventDefault();
-            commitPrev();
-          }}
-          className="flex items-center gap-1 rounded-sm px-2 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <ChevronLeft className="size-4" />
-        </Link>
+    <>
+      {/* items-end (not items-center) so the two side baselines -- each a
+          flex-1 div stretching all the way to the screen edge, not just
+          hugging its arrow icon -- align exactly with the tab's own
+          bottom edge, closing the open-bottomed tab shape into a
+          continuous line on either side (feature request, 2026-10-06).
+          No gap between a baseline and the tab so the horizontal line
+          visually touches the tab's vertical border rather than leaving
+          a break at the corner. */}
+      <div className="flex items-end sm:hidden">
+        <div className="flex flex-1 items-center border-b border-border">
+          <Link
+            href={NAV_LINKS[prevIndex].href}
+            aria-label={`Go to ${NAV_LINKS[prevIndex].label}`}
+            onClick={(e) => {
+              e.preventDefault();
+              commitPrev();
+            }}
+            className="flex items-center gap-1 rounded-sm px-2 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <ChevronLeft className="size-4" />
+          </Link>
+        </div>
+        {/* z-10 so a shadow tab sliding in renders above the baseline/
+            arrow row on either side while mid-transition. */}
+        <div className="relative z-10">
+          <motion.div
+            aria-hidden="true"
+            style={{ x: prevShadowX, opacity: prevShadowOpacity }}
+            className="pointer-events-none absolute top-0 right-full rounded-t-md border border-b-0 border-border bg-background px-3 py-1.5 text-xs font-bold tracking-wide whitespace-nowrap text-foreground uppercase shadow-sm"
+          >
+            {NAV_LINKS[prevIndex].label}
+          </motion.div>
+          <motion.button
+            type="button"
+            drag="x"
+            dragConstraints={{ left: -DRAG_RANGE_PX, right: DRAG_RANGE_PX }}
+            dragElastic={0.1}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onTap={handleTap}
+            style={{ x, opacity: currentOpacity, touchAction: "pan-y" }}
+            aria-label="Open page menu"
+            className="relative rounded-t-md border border-b-0 border-border bg-background px-3 py-1.5 text-xs font-bold tracking-wide whitespace-nowrap text-foreground uppercase shadow-sm transition-colors hover:bg-muted"
+          >
+            {NAV_LINKS[currentIndex].label}
+          </motion.button>
+          <motion.div
+            aria-hidden="true"
+            style={{ x: nextShadowX, opacity: nextShadowOpacity }}
+            className="pointer-events-none absolute top-0 left-full rounded-t-md border border-b-0 border-border bg-background px-3 py-1.5 text-xs font-bold tracking-wide whitespace-nowrap text-foreground uppercase shadow-sm"
+          >
+            {NAV_LINKS[nextIndex].label}
+          </motion.div>
+        </div>
+        <div className="flex flex-1 items-center justify-end border-b border-border">
+          <Link
+            href={NAV_LINKS[nextIndex].href}
+            aria-label={`Go to ${NAV_LINKS[nextIndex].label}`}
+            onClick={(e) => {
+              e.preventDefault();
+              commitNext();
+            }}
+            className="flex items-center gap-1 rounded-sm px-2 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <ChevronRight className="size-4" />
+          </Link>
+        </div>
       </div>
-      {/* z-10 so a shadow tab sliding in renders above the baseline/arrow
-          row on either side while mid-transition. */}
-      <div className="relative z-10">
-        <motion.div
-          aria-hidden="true"
-          style={{ x: prevShadowX, opacity: prevShadowOpacity }}
-          className="pointer-events-none absolute top-0 right-full rounded-t-md border border-b-0 border-border bg-background px-3 py-1.5 text-xs font-bold tracking-wide whitespace-nowrap text-foreground uppercase shadow-sm"
-        >
-          {NAV_LINKS[prevIndex].label}
-        </motion.div>
-        <motion.button
-          type="button"
-          drag="x"
-          dragConstraints={{ left: -DRAG_RANGE_PX, right: DRAG_RANGE_PX }}
-          dragElastic={0.1}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          onTap={handleTap}
-          style={{ x, opacity: currentOpacity, touchAction: "pan-y" }}
-          aria-label="Open page menu"
-          className="relative rounded-t-md border border-b-0 border-border bg-background px-3 py-1.5 text-xs font-bold tracking-wide whitespace-nowrap text-foreground uppercase shadow-sm transition-colors hover:bg-muted"
-        >
-          {NAV_LINKS[currentIndex].label}
-        </motion.button>
-        <motion.div
-          aria-hidden="true"
-          style={{ x: nextShadowX, opacity: nextShadowOpacity }}
-          className="pointer-events-none absolute top-0 left-full rounded-t-md border border-b-0 border-border bg-background px-3 py-1.5 text-xs font-bold tracking-wide whitespace-nowrap text-foreground uppercase shadow-sm"
-        >
-          {NAV_LINKS[nextIndex].label}
-        </motion.div>
-      </div>
-      <div className="flex flex-1 items-center justify-end border-b border-border">
-        <Link
-          href={NAV_LINKS[nextIndex].href}
-          aria-label={`Go to ${NAV_LINKS[nextIndex].label}`}
-          onClick={(e) => {
-            e.preventDefault();
-            commitNext();
-          }}
-          className="flex items-center gap-1 rounded-sm px-2 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <ChevronRight className="size-4" />
-        </Link>
-      </div>
-    </div>
+      {/* Covers the still-visible old page (not the header/tab above it --
+          z-30 sits below the header's own z-40) while the destination
+          page loads, instead of leaving it looking frozen with no
+          feedback -- feature request, 2026-10-06. bg-background/80
+          matches the 20%-see-through convention used by LoadingOverlay
+          elsewhere. */}
+      {isPending && (
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-background/80 sm:hidden">
+          <LoadingBasketballs label="Loading" />
+        </div>
+      )}
+    </>
   );
 }
