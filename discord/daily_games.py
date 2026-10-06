@@ -88,6 +88,11 @@ MAPTAP_ROUND_SCORE_RE = re.compile(r"\d{1,3}")
 # post) and gets filtered out entirely rather than recorded as a play.
 MAPTAP_MAX_FINAL_SCORE = 1000
 MAPTAP_MAX_ROUND_SCORE = 100
+# "MapTap Challenge Round" posts are a different, limited-time game mode
+# (not the daily challenge) -- excluded for now at the user's request
+# (2026-10-06) even though they share the same "Final score: N" share text,
+# so they don't get miscounted as daily plays.
+MAPTAP_CHALLENGE_ROUND_RE = re.compile(r"maptap challenge round", re.IGNORECASE)
 
 # "#Worldle #1673 (21.08.2026) 3/6 (100%)" -- the "(date)" group is optional:
 # the earliest (2023-08-18) posts were "#Worldle #574 6/6 (100%)", no date.
@@ -236,10 +241,14 @@ def parse_message(
     matched), rather than recording an obviously-fake play. This runs
     before the caller's same-day dedup, so a rejected joke/fake post can
     never occupy the "first message of the day"
-    slot ahead of a real one posted later that day."""
+    slot ahead of a real one posted later that day.
+
+    MapTap "Challenge Round" posts (a separate limited-time mode, not the
+    daily challenge) are excluded the same way -- see
+    MAPTAP_CHALLENGE_ROUND_RE."""
     results: list[tuple[str, Optional[float], bool, Optional[date], Optional[float], Optional[str]]] = []
 
-    m = MAPTAP_MARKER.search(content)
+    m = MAPTAP_MARKER.search(content) if not MAPTAP_CHALLENGE_ROUND_RE.search(content) else None
     if m:
         score_m = MAPTAP_SCORE_RE.search(content)
         if score_m:
