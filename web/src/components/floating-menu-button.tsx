@@ -9,7 +9,8 @@ import { useMobileMenu } from "@/components/mobile-menu-context";
 // placed (persisted across visits) until dragged again. Replaces the old
 // inline hamburger-in-header trigger entirely -- see mobile-nav.tsx.
 const STORAGE_KEY = "floating-menu-button-top";
-const BUTTON_SIZE_PX = 44;
+// 80% of the original 44px (feature request, 2026-10-06).
+const BUTTON_SIZE_PX = 35;
 const EDGE_MARGIN_PX = 8;
 // Pointer movement (px) below which a press counts as a tap (open the menu)
 // rather than a drag (reposition) -- real drags on touch easily clear this.
@@ -86,9 +87,12 @@ export function FloatingMenuButton() {
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
       style={{ top }}
-      className="fixed left-2 z-40 flex size-11 touch-none items-center justify-center rounded-full border-2 border-primary bg-primary/10 text-primary shadow-md backdrop-blur-sm sm:hidden"
+      // Square w/ rounded corners (not a circle), 75% transparent overall
+      // (opacity-25, so the page behind it stays visible), sized to 80% of
+      // the original button -- all per feature request, 2026-10-06.
+      className="fixed left-2 z-40 flex size-[35px] touch-none items-center justify-center rounded-xl border-2 border-primary bg-primary/10 text-primary opacity-25 shadow-md backdrop-blur-sm sm:hidden"
     >
-      <Menu className="size-5" />
+      <Menu className="size-4" />
     </button>
   );
 }
