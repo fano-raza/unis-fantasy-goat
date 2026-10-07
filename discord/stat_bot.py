@@ -169,14 +169,22 @@ def run_bot() -> None:
             if week is None:
                 return
             rs_week_count = meta["rs_week_count"].get(str(year))
-            # Request is explicitly scoped to regular-season weeks only --
-            # also the guard that keeps this from firing forever once a
-            # season's calendar pins at its last (offseason) row.
-            if rs_week_count is None or week > rs_week_count:
+            if rs_week_count is None:
+                return
+            # Playoff weeks get their own recap too (feature request,
+            # 2026-10-07) -- bounded by this year's actual playoff round
+            # count so this doesn't keep firing forever once a season's
+            # calendar pins at its last (offseason) row, same guard
+            # rs_week_count alone used to provide for the RS-only case.
+            playoff_rounds = meta.get("playoff_rounds", {}).get(str(year)) or 0
+            if week > rs_week_count + playoff_rounds:
                 return
             if _read_last_weekly_rankings_run() == (year, week):
                 return
-            posted = await weekly_rankings.post_weekly_recap(bot, _api_post, _api_get, year, week)
+            if week <= rs_week_count:
+                posted = await weekly_rankings.post_weekly_recap(bot, _api_post, _api_get, year, week)
+            else:
+                posted = await weekly_rankings.post_playoff_weekly_recap(bot, _api_get, year, week)
             if posted:
                 _write_last_weekly_rankings_run(year, week)
                 print(f"Weekly rankings posted for {year} week {week}")

@@ -324,11 +324,80 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
       {(recapLoading || recap) && (
         <Card>
           <CardHeader>
-            <CardTitle>{recap ? `Week ${recap.week} Recap` : "Week Recap"}</CardTitle>
+            <CardTitle>
+              {recap?.kind === "playoff"
+                ? `${recap.round_label} Recap`
+                : recap
+                  ? `Week ${recap.week} Recap`
+                  : "Week Recap"}
+            </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <LoadingOverlay active={recapLoading} hasContent={false} label="Loading recap">
-              {recap && (
+              {recap?.kind === "playoff" && (
+                <div className="flex flex-col gap-4">
+                  {recap.champion && (
+                    <div className="flex flex-col gap-1 rounded-sm border border-border bg-secondary/40 px-3 py-2">
+                      <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+                        Champion
+                      </span>
+                      <p className="text-base font-bold text-primary">🏆 {recap.champion}</p>
+                      {recap.final_standings && (
+                        <p className="text-sm text-muted-foreground">
+                          {Object.entries(recap.final_standings)
+                            .sort(([a], [b]) => Number(a) - Number(b))
+                            .map(([place, team]) => `${place}. ${team}`)
+                            .join("  •  ")}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+                      Results
+                    </span>
+                    <ul className="flex flex-col gap-1">
+                      {recap.matchups.map((m, i) => {
+                        // m.wins/m.losses are team1's perspective (matches
+                        // playoff_brackets.json directly) -- flip to the
+                        // WINNER's perspective so "def." always reads
+                        // correctly instead of implying team1 won.
+                        const team1Won = m.winner === m.team1;
+                        const winnerSeed = team1Won ? m.seed1 : m.seed2;
+                        const loserSeed = team1Won ? m.seed2 : m.seed1;
+                        const [winnerScore, loserScore] = team1Won
+                          ? [m.wins, m.losses]
+                          : [m.losses, m.wins];
+                        return (
+                          <li key={i} className="text-sm">
+                            {m.slot ? <span className="text-muted-foreground">{m.slot}: </span> : null}
+                            <span className="font-bold">
+                              ({winnerSeed}) {m.winner}
+                            </span>
+                            {" def. "}
+                            <span>
+                              ({loserSeed}) {m.loser}
+                            </span>{" "}
+                            <span className="text-muted-foreground">
+                              {winnerScore}-{loserScore}
+                              {m.ties > 0 ? `-${m.ties}` : ""}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                  {recap.byes.length > 0 && (
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+                        Byes
+                      </span>
+                      <p className="text-sm text-muted-foreground">{recap.byes.join(", ")}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              {recap && recap.kind !== "playoff" && (
                 <div className="flex flex-col gap-4">
                   {recap.beatdowns.length > 0 && (
                     <div className="flex flex-col gap-1">

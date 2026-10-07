@@ -399,12 +399,13 @@ export const getWeeklyLeaderboard = (req: WeeklyLeaderboardRequest) =>
 
 // StatBot's Monday "Week N Recap" Discord post, mirrored for the web
 // page -- null if that week hasn't had a recap posted yet (a normal case,
-// not an error: playoff weeks never get one, and past weeks only get one
-// once the Monday job actually runs). See discord/weekly_rankings.py and
+// not an error: past weeks only get one once the Monday job actually
+// runs). See discord/weekly_rankings.py and
 // dashboard_site/api/league_store.py::weekly_recap(). rank_table isn't
 // surfaced here -- the page's own StatTable already shows this week's
 // ranks, no need to duplicate it.
-export interface WeeklyRecap {
+export interface RegularSeasonWeeklyRecap {
+  kind: "regular_season";
   year: number;
   week: number;
   beatdowns: string[];
@@ -413,6 +414,25 @@ export interface WeeklyRecap {
   playoff_race: string | null;
   posted_at: string;
 }
+
+// Playoff-week counterpart (feature request, 2026-10-07) -- built live from
+// the precomputed playoff bracket (see PlayoffMatchup above, same shape
+// playoff_brackets() already returns), not an AI-commented Discord post, so
+// there's no posted_at/beatdowns/upsets/milestones. champion/final_standings
+// are only populated on the last round once that year's bracket is Complete.
+// Only decided matchups (winner set) are ever included here.
+export interface PlayoffWeeklyRecap {
+  kind: "playoff";
+  year: number;
+  week: number;
+  round_label: string;
+  byes: string[];
+  matchups: PlayoffMatchup[];
+  champion: string | null;
+  final_standings: Record<string, string> | null;
+}
+
+export type WeeklyRecap = RegularSeasonWeeklyRecap | PlayoffWeeklyRecap;
 
 export const getWeeklyRecap = (req: WeeklyLeaderboardRequest) =>
   post<WeeklyRecap | null>("/league/weekly_recap", req);

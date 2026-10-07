@@ -653,3 +653,88 @@ async def post_weekly_recap(bot, api_post: ApiPost, api_get: ApiGet, year: int, 
 
     append_weekly_recap(year, week, ranked_rows, sections, datetime.now(timezone.utc).isoformat())
     return True
+
+
+def build_playoff_recap_message(
+    year: int,
+    round_data: dict,
+    matchups: list[dict],
+    champion: str | None,
+    final_standings: dict | None,
+) -> str:
+    """Playoff-week counterpart to build_weekly_recap_message -- feature
+    request, 2026-10-07: "focused on the results of the matchups, who is
+    advancing, final playoff results if it is the last week." No AI
+    commentary (unlike the RS recap's Beatdowns/Upsets/Milestones) -- the
+    bracket result already says everything that matters, deterministically,
+    same reasoning as build_standings_section()."""
+    link = f"{WEB_APP_BASE_URL}/?year={year}&week={round_data.get('week')}"
+    label = round_data.get("label") or "Playoffs"
+    header = f"@everyone\n# {year} {label} Recap #\n{link}"
+
+    result_lines = []
+    for m in matchups:
+        prefix = f"**{m['slot']}** -- " if m.get("slot") else ""
+        # m["wins"]/m["losses"] are team1's perspective (matches
+        # playoff_brackets.json/league_store.py directly) -- flip them to
+        # the WINNER's perspective here so the printed score always reads
+        # as "winner-loser", never backwards when team2 won.
+        team1_won = m["winner"] == m["team1"]
+        winner_wins, winner_losses = (m["wins"], m["losses"]) if team1_won else (m["losses"], m["wins"])
+        score = f"{winner_wins}-{winner_losses}" + (f"-{m['ties']}" if m.get("ties") else "")
+        winner_seed = m["seed1"] if team1_won else m["seed2"]
+        loser_seed = m["seed2"] if team1_won else m["seed1"]
+        result_lines.append(f"{prefix}({winner_seed}) **{m['winner']}** def. ({loser_seed}) {m['loser']} {score}")
+    parts = [header, "**Results**\n" + "\n".join(result_lines)]
+
+    byes = round_data.get("byes") or []
+    if byes:
+        parts.append("**Bye**\n" + ", ".join(byes))
+
+    if champion:
+        standings_line = ""
+        if final_standings:
+            standings_line = "\n" + "  •  ".join(
+                f"{place}. {team}" for place, team in sorted(final_standings.items(), key=lambda kv: int(kv[0]))
+            )
+        parts.append(f"**🏆 {champion} is your {year} champion! 🏆**{standings_line}")
+
+    return "\n\n".join(parts)
+
+
+async def post_playoff_weekly_recap(bot, api_get: ApiGet, year: int, week: int) -> bool:
+    """Playoff-week counterpart to post_weekly_recap. Reuses
+    /league/playoff_brackets -- the same precomputed data
+    dashboard_site/api/league_store.py::_playoff_weekly_recap() reads for
+    the web app's Weekly Stats page, so the Discord post and the app card
+    always agree. No CSV row to append (unlike the RS recap, there's no
+    LLM-generated content that needs freezing at post time -- the bracket
+    data already IS the recap, and it's already durably stored in
+    Ref/playoff_brackets.json). Returns True on success (message sent),
+    False if this (year, week) doesn't line up with a decided playoff
+    round yet."""
+    brackets = await api_get("/league/playoff_brackets")
+    year_data = brackets.get(str(year))
+    if not year_data:
+        return False
+    rounds = year_data.get("rounds") or []
+    round_data = next((r for r in rounds if r.get("week") == week), None)
+    if round_data is None:
+        return False
+    matchups = [m for m in round_data.get("matchups", []) if m.get("winner")]
+    if not matchups:
+        return False
+
+    is_last_round = rounds[-1] is round_data
+    is_complete = is_last_round and year_data.get("status") == "Complete"
+    message = build_playoff_recap_message(
+        year,
+        round_data,
+        matchups,
+        champion=year_data.get("champion") if is_complete else None,
+        final_standings=year_data.get("standings") if is_complete else None,
+    )
+
+    channel = bot.get_channel(RANKINGS_CHANNEL_ID) or await bot.fetch_channel(RANKINGS_CHANNEL_ID)
+    await channel.send(message)
+    return True

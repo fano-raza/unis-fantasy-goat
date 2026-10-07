@@ -548,15 +548,22 @@ class LeagueStore:
         return self._week_calendar_df
 
     def weekly_recap(self, year: int, week: int) -> dict | None:
-        """The Monday "Week N Recap" post's content (rank table, Beatdowns/
-        Upsets/Milestones bullets, Playoff Race paragraph), for the Weekly
-        Stats page to show alongside a completed week. Reads
-        discord/weekly_rankings.py's precomputed Ref/weekly_recaps.csv.
-        Unlike week_calendar()/roster_ranks() (which raise if their export
-        was never run), a missing file OR a missing row for this specific
-        (year, week) is a normal "not posted yet" case -- returns None,
-        not an error, so the frontend can treat it the same way either way
-        (hide the card)."""
+        """The Monday "Week N Recap" post's content for the Weekly Stats page
+        to show alongside a completed week. Regular-season weeks read
+        discord/weekly_rankings.py's precomputed Ref/weekly_recaps.csv
+        (rank table, Beatdowns/Upsets/Milestones bullets, Playoff Race
+        paragraph); playoff weeks are delegated to _playoff_weekly_recap
+        (bracket matchup results/advancement, final standings on the last
+        round) -- see that method's docstring for why playoff weeks don't
+        use the CSV at all. Unlike week_calendar()/roster_ranks() (which
+        raise if their export was never run), a missing file OR a missing
+        row for this specific (year, week) is a normal "not posted yet"
+        case -- returns None, not an error, so the frontend can treat it
+        the same way either way (hide the card)."""
+        rs_week_count = self.meta().get("rs_week_count", {}).get(year)
+        if rs_week_count is not None and week > rs_week_count:
+            return self._playoff_weekly_recap(year, week)
+
         df = self._ensure_weekly_recaps_df()
         if df is None:
             return None
@@ -565,6 +572,7 @@ class LeagueStore:
             return None
         r = row.iloc[-1]  # last write wins if ever somehow duplicated
         return {
+            "kind": "regular_season",
             "year": int(r["year"]),
             "week": int(r["week"]),
             "rank_table": json.loads(r["rank_table_json"]),
@@ -574,6 +582,47 @@ class LeagueStore:
             "playoff_race": r["playoff_race"] if pd.notna(r["playoff_race"]) and r["playoff_race"] else None,
             "posted_at": str(r["posted_at"]),
         }
+
+    def _playoff_weekly_recap(self, year: int, week: int) -> dict | None:
+        """Playoff-week counterpart to the RS Monday recap -- feature
+        request, 2026-10-07: "focused on the results of the matchups, who
+        is advancing, final playoff results if it is the last week." Built
+        live from scripts/export_playoff_brackets.py's precomputed
+        Ref/playoff_brackets.json (matchup results, seeding, final
+        standings) rather than weekly_recaps.csv -- unlike the RS recap,
+        there's no LLM commentary step to freeze at post time, the bracket
+        data already IS the recap content, so nothing needs a separate
+        "posted" snapshot. Returns None if this year has no bracket data
+        yet, no round lines up with this week, or that round's games
+        haven't been decided yet -- all normal "nothing to show" cases,
+        not errors."""
+        brackets = self.playoff_brackets()
+        year_data = brackets.get(str(year))
+        if not year_data:
+            return None
+        rounds = year_data.get("rounds") or []
+        round_data = next((r for r in rounds if r.get("week") == week), None)
+        if round_data is None:
+            return None
+        matchups = [m for m in round_data.get("matchups", []) if m.get("winner")]
+        if not matchups:
+            return None
+
+        result: dict = {
+            "kind": "playoff",
+            "year": year,
+            "week": week,
+            "round_label": round_data.get("label"),
+            "byes": round_data.get("byes") or [],
+            "matchups": matchups,
+            "champion": None,
+            "final_standings": None,
+        }
+        is_last_round = rounds[-1] is round_data
+        if is_last_round and year_data.get("status") == "Complete":
+            result["champion"] = year_data.get("champion")
+            result["final_standings"] = year_data.get("standings")
+        return result
 
     def _ensure_weekly_recaps_df(self) -> pd.DataFrame | None:
         if self._weekly_recaps_df is not None:
