@@ -655,25 +655,25 @@ async def post_weekly_recap(bot, api_post: ApiPost, api_get: ApiGet, year: int, 
     return True
 
 
-def build_playoff_recap_message(
-    year: int,
-    round_data: dict,
-    matchups: list[dict],
-    champion: str | None,
-    final_standings: dict | None,
-) -> str:
+def build_playoff_recap_message(recap: dict) -> str:
     """Playoff-week counterpart to build_weekly_recap_message -- feature
     request, 2026-10-07: "focused on the results of the matchups, who is
-    advancing, final playoff results if it is the last week." No AI
-    commentary (unlike the RS recap's Beatdowns/Upsets/Milestones) -- the
-    bracket result already says everything that matters, deterministically,
-    same reasoning as build_standings_section()."""
-    link = f"{WEB_APP_BASE_URL}/?year={year}&week={round_data.get('week')}"
-    label = round_data.get("label") or "Playoffs"
+    advancing, final playoff results if it is the last week." `recap` is
+    exactly /league/weekly_recap's response for a playoff week (same dict
+    dashboard_site/api/league_store.py::_playoff_weekly_recap() returns,
+    including each matchup's backend-computed `verb_phrase`/`advancement`
+    -- 2026-10-07 follow-up request for margin-reactive wording + what the
+    winner earns by winning). No AI commentary (unlike the RS recap's
+    Beatdowns/Upsets/Milestones) -- the bracket result already says
+    everything that matters, deterministically, same reasoning as
+    build_standings_section()."""
+    year = recap["year"]
+    link = f"{WEB_APP_BASE_URL}/?year={year}&week={recap['week']}"
+    label = recap.get("round_label") or "Playoffs"
     header = f"@everyone\n# {year} {label} Recap #\n{link}"
 
     result_lines = []
-    for m in matchups:
+    for m in recap["matchups"]:
         prefix = f"**{m['slot']}** -- " if m.get("slot") else ""
         # m["wins"]/m["losses"] are team1's perspective (matches
         # playoff_brackets.json/league_store.py directly) -- flip them to
@@ -682,17 +682,19 @@ def build_playoff_recap_message(
         team1_won = m["winner"] == m["team1"]
         winner_wins, winner_losses = (m["wins"], m["losses"]) if team1_won else (m["losses"], m["wins"])
         score = f"{winner_wins}-{winner_losses}" + (f"-{m['ties']}" if m.get("ties") else "")
-        winner_seed = m["seed1"] if team1_won else m["seed2"]
-        loser_seed = m["seed2"] if team1_won else m["seed1"]
-        result_lines.append(f"{prefix}({winner_seed}) **{m['winner']}** def. ({loser_seed}) {m['loser']} {score}")
+        result_lines.append(
+            f"{prefix}**{m['winner']}** {m['verb_phrase']} {m['loser']} to {m['advancement']} ({score})"
+        )
     parts = [header, "**Results**\n" + "\n".join(result_lines)]
 
-    byes = round_data.get("byes") or []
+    byes = recap.get("byes") or []
     if byes:
         parts.append("**Bye**\n" + ", ".join(byes))
 
+    champion = recap.get("champion")
     if champion:
         standings_line = ""
+        final_standings = recap.get("final_standings")
         if final_standings:
             standings_line = "\n" + "  •  ".join(
                 f"{place}. {team}" for place, team in sorted(final_standings.items(), key=lambda kv: int(kv[0]))
@@ -702,39 +704,26 @@ def build_playoff_recap_message(
     return "\n\n".join(parts)
 
 
-async def post_playoff_weekly_recap(bot, api_get: ApiGet, year: int, week: int) -> bool:
-    """Playoff-week counterpart to post_weekly_recap. Reuses
-    /league/playoff_brackets -- the same precomputed data
-    dashboard_site/api/league_store.py::_playoff_weekly_recap() reads for
-    the web app's Weekly Stats page, so the Discord post and the app card
-    always agree. No CSV row to append (unlike the RS recap, there's no
-    LLM-generated content that needs freezing at post time -- the bracket
-    data already IS the recap, and it's already durably stored in
-    Ref/playoff_brackets.json). Returns True on success (message sent),
-    False if this (year, week) doesn't line up with a decided playoff
-    round yet."""
-    brackets = await api_get("/league/playoff_brackets")
-    year_data = brackets.get(str(year))
-    if not year_data:
-        return False
-    rounds = year_data.get("rounds") or []
-    round_data = next((r for r in rounds if r.get("week") == week), None)
-    if round_data is None:
-        return False
-    matchups = [m for m in round_data.get("matchups", []) if m.get("winner")]
-    if not matchups:
+async def post_playoff_weekly_recap(bot, api_post: ApiPost, year: int, week: int) -> bool:
+    """Playoff-week counterpart to post_weekly_recap. Reads
+    /league/weekly_recap (the same endpoint and exact same precomputed
+    response dashboard_site/api/league_store.py::_playoff_weekly_recap()
+    builds for the web app's Weekly Stats page) rather than
+    /league/playoff_brackets directly, so the Discord message and the app
+    card always show identical matchup wording -- including the
+    margin-reactive verb_phrase/advancement text, which is randomly
+    chosen once per matchup; re-deriving it independently here would risk
+    the two channels disagreeing on the same game. No CSV row to append
+    (unlike the RS recap, there's no LLM-generated content that needs
+    freezing at post time -- the bracket data already IS the recap, and
+    it's already durably stored in Ref/playoff_brackets.json). Returns
+    True on success (message sent), False if this (year, week) doesn't
+    line up with a decided playoff round yet."""
+    status, recap = await api_post("/league/weekly_recap", {"year": year, "week": week})
+    if status != 200 or not recap or recap.get("kind") != "playoff":
         return False
 
-    is_last_round = rounds[-1] is round_data
-    is_complete = is_last_round and year_data.get("status") == "Complete"
-    message = build_playoff_recap_message(
-        year,
-        round_data,
-        matchups,
-        champion=year_data.get("champion") if is_complete else None,
-        final_standings=year_data.get("standings") if is_complete else None,
-    )
-
+    message = build_playoff_recap_message(recap)
     channel = bot.get_channel(RANKINGS_CHANNEL_ID) or await bot.fetch_channel(RANKINGS_CHANNEL_ID)
     await channel.send(message)
     return True

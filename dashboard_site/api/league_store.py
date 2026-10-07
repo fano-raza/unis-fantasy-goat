@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import random
 import sys
 from pathlib import Path
 
@@ -595,7 +596,17 @@ class LeagueStore:
         "posted" snapshot. Returns None if this year has no bracket data
         yet, no round lines up with this week, or that round's games
         haven't been decided yet -- all normal "nothing to show" cases,
-        not errors."""
+        not errors.
+
+        Each matchup gets a `verb_phrase` (margin-reactive, e.g. "beats
+        convincingly") and `advancement` ("advance to the Final" / "win
+        the 2026 championship" / "claim 3rd place") computed HERE, once,
+        rather than by each consumer -- feature request, 2026-10-07
+        follow-up. discord/weekly_rankings.py's post_playoff_weekly_recap
+        reads this same endpoint (not /league/playoff_brackets directly
+        anymore) so the Discord message and the web card always use
+        identical wording for the same game, never independently-rolled
+        random phrasing."""
         brackets = self.playoff_brackets()
         year_data = brackets.get(str(year))
         if not year_data:
@@ -608,21 +619,86 @@ class LeagueStore:
         if not matchups:
             return None
 
+        is_last_round = rounds[-1] is round_data
+        next_round_label = None
+        if not is_last_round:
+            idx = rounds.index(round_data)
+            if idx + 1 < len(rounds):
+                next_round_label = rounds[idx + 1].get("label")
+
+        enriched_matchups = [
+            {**m, **self._matchup_narrative(year, m, is_last_round, next_round_label)} for m in matchups
+        ]
+
         result: dict = {
             "kind": "playoff",
             "year": year,
             "week": week,
             "round_label": round_data.get("label"),
             "byes": round_data.get("byes") or [],
-            "matchups": matchups,
+            "matchups": enriched_matchups,
             "champion": None,
             "final_standings": None,
         }
-        is_last_round = rounds[-1] is round_data
         if is_last_round and year_data.get("status") == "Complete":
             result["champion"] = year_data.get("champion")
             result["final_standings"] = year_data.get("standings")
         return result
+
+    # margin = winner's category wins minus winner's category losses, within
+    # one playoff matchup -- a tied category count (decided by tiebreak) is
+    # its own tier regardless of the margin math, since "tiebreak_applied"
+    # is a more honest signal of how close the game actually was than a
+    # margin of 0 alone (ties in the category count itself also land here).
+    _TIE_VERB_PHRASES = (
+        "barely edges out",
+        "narrowly survives against",
+        "needs a tiebreaker to get past",
+        "escapes with a win over",
+    )
+    _CLOSE_VERB_PHRASES = ("defeats", "beats", "edges past", "gets past")  # margin == 1
+    _SOLID_VERB_PHRASES = (  # margin 2-3
+        "beats convincingly",
+        "cruises past",
+        "comfortably defeats",
+        "pulls away from",
+        "ousts",
+    )
+    _BLOWOUT_VERB_PHRASES = (  # margin >= 4
+        "demolishes",
+        "blows out",
+        "routs",
+        "dominates",
+        "runs away with it against",
+    )
+
+    def _matchup_narrative(
+        self, year: int, m: dict, is_last_round: bool, next_round_label: str | None
+    ) -> dict:
+        # m["wins"]/m["losses"] are team1's perspective (see
+        # weekly_rankings.py's build_playoff_recap_message for the same
+        # fix) -- flip to the WINNER's perspective before computing margin.
+        team1_won = m["winner"] == m["team1"]
+        winner_wins, winner_losses = (m["wins"], m["losses"]) if team1_won else (m["losses"], m["wins"])
+        margin = winner_wins - winner_losses
+        if m.get("tiebreak_applied") or margin <= 0:
+            pool = self._TIE_VERB_PHRASES
+        elif margin == 1:
+            pool = self._CLOSE_VERB_PHRASES
+        elif margin <= 3:
+            pool = self._SOLID_VERB_PHRASES
+        else:
+            pool = self._BLOWOUT_VERB_PHRASES
+        verb_phrase = random.choice(pool)
+
+        if is_last_round:
+            advancement = "claim 3rd place" if m.get("slot") == "3rd Place" else f"win the {year} championship"
+        elif next_round_label:
+            advancement = f"advance to the {next_round_label}"
+        else:
+            advancement = "advance to the next round"
+
+        return {"verb_phrase": verb_phrase, "advancement": advancement}
 
     def _ensure_weekly_recaps_df(self) -> pd.DataFrame | None:
         if self._weekly_recaps_df is not None:

@@ -360,27 +360,20 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
                       {recap.matchups.map((m, i) => {
                         // m.wins/m.losses are team1's perspective (matches
                         // playoff_brackets.json directly) -- flip to the
-                        // WINNER's perspective so "def." always reads
-                        // correctly instead of implying team1 won.
+                        // WINNER's perspective so the score reads correctly
+                        // next to the (backend-computed) narrative sentence.
                         const team1Won = m.winner === m.team1;
-                        const winnerSeed = team1Won ? m.seed1 : m.seed2;
-                        const loserSeed = team1Won ? m.seed2 : m.seed1;
                         const [winnerScore, loserScore] = team1Won
                           ? [m.wins, m.losses]
                           : [m.losses, m.wins];
                         return (
                           <li key={i} className="text-sm">
                             {m.slot ? <span className="text-muted-foreground">{m.slot}: </span> : null}
-                            <span className="font-bold">
-                              ({winnerSeed}) {m.winner}
-                            </span>
-                            {" def. "}
-                            <span>
-                              ({loserSeed}) {m.loser}
-                            </span>{" "}
+                            <span className="font-bold">{m.winner}</span> {m.verb_phrase} {m.loser} to{" "}
+                            {m.advancement}{" "}
                             <span className="text-muted-foreground">
-                              {winnerScore}-{loserScore}
-                              {m.ties > 0 ? `-${m.ties}` : ""}
+                              ({winnerScore}-{loserScore}
+                              {m.ties > 0 ? `-${m.ties}` : ""})
                             </span>
                           </li>
                         );

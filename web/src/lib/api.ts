@@ -421,13 +421,23 @@ export interface RegularSeasonWeeklyRecap {
 // there's no posted_at/beatdowns/upsets/milestones. champion/final_standings
 // are only populated on the last round once that year's bracket is Complete.
 // Only decided matchups (winner set) are ever included here.
+export interface PlayoffRecapMatchup extends PlayoffMatchup {
+  // Margin-reactive verb ("beats convincingly", "barely edges out", ...)
+  // and what the winner earns by winning this specific game -- both
+  // computed once on the backend (league_store.py::_matchup_narrative) so
+  // the Discord post and this card always read identically for the same
+  // game, feature request follow-up, 2026-10-07.
+  verb_phrase: string;
+  advancement: string;
+}
+
 export interface PlayoffWeeklyRecap {
   kind: "playoff";
   year: number;
   week: number;
   round_label: string;
   byes: string[];
-  matchups: PlayoffMatchup[];
+  matchups: PlayoffRecapMatchup[];
   champion: string | null;
   final_standings: Record<string, string> | null;
 }
