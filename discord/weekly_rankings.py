@@ -269,7 +269,10 @@ WEEKLY_RECAP_SYSTEM_PROMPT = (
     "to the actual numbers, don't manufacture drama that isn't there. "
     "If major_victories/underdog_victories/milestones is an empty list, its matching output array must "
     "be an empty array -- never write a sentence claiming nothing happened. "
-    "Each sentence stands alone (these become individual bullet points, not a flowing paragraph) -- use "
+    "Each sentence stands alone (these become individual bullet points, not a flowing paragraph) -- do NOT "
+    "end a beatdowns/upsets/milestones sentence with a period (no trailing '.'); other punctuation like "
+    "'!' or '?' is fine if it fits. The playoff_race paragraph is NOT a bullet list -- use normal "
+    "sentence-ending punctuation there. Use "
     "blunt, colloquial trash-talk phrasing (e.g. 'beat the fuck out of', 'got smoked', 'ran him out of the "
     "gym'), still good-natured between friends, not genuinely cruel. You may replace an intensifier like "
     "'very'/'really' with 'fucking' at most ONCE total across your ENTIRE response (every sentence "
@@ -501,6 +504,16 @@ async def build_weekly_recap_league_facts(api_post: ApiPost, api_get, year: int,
     }
 
 
+def _strip_bullet_period(sentence: str) -> str:
+    """Beatdowns/upsets/milestones render as "- {sentence}" bullet points
+    (build_weekly_recap_message below), not a flowing paragraph -- a
+    trailing period on a standalone bullet clause reads oddly (user
+    request, 2026-10-07). playoff_race is a real paragraph, not bullets,
+    so it's deliberately NOT run through this."""
+    s = sentence.rstrip()
+    return s[:-1] if s.endswith(".") else s
+
+
 async def generate_weekly_recap_sections(facts: dict) -> dict:
     """Returns {"beatdowns": [...], "upsets": [...], "milestones": [...],
     "playoff_race": str} -- one sentence per bullet, same order as the
@@ -527,9 +540,11 @@ async def generate_weekly_recap_sections(facts: dict) -> dict:
     if not parsed:
         return empty
     return {
-        "beatdowns": parsed.get("beatdowns") or [],
-        "upsets": parsed.get("upsets") or [],
-        "milestones": parsed.get("milestones") or [],
+        "beatdowns": [_strip_bullet_period(s) for s in (parsed.get("beatdowns") or [])],
+        "upsets": [_strip_bullet_period(s) for s in (parsed.get("upsets") or [])],
+        "milestones": [_strip_bullet_period(s) for s in (parsed.get("milestones") or [])],
+        # Not a bullet -- a 2-3 sentence paragraph -- so trailing periods
+        # on its own internal sentences stay.
         "playoff_race": parsed.get("playoff_race") or "",
     }
 
