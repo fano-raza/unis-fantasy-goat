@@ -64,11 +64,12 @@ function rankColorClass(rank: number): string {
   return "text-[#cd7f32]";
 }
 
-// Excluded from the "League Top 3" list -- either not rankable (year lists
-// paired with a count field already included) or asked to be dropped
-// outright (Best/Worst Week Rating: a single-week fluke isn't a meaningful
-// "career" top-3 stat). Championships/MVPs/RS 1st Place are shown both as
-// their own stat tile above AND here -- the user asked for them included.
+// Excluded from the "League Top 3" list -- not rankable (year lists
+// paired with a count field already included). Championships/MVPs/RS 1st
+// Place are shown both as their own stat tile above AND here -- the user
+// asked for them included. Best/Worst Week Rating were excluded here too
+// (as single-week flukes, not meaningful "career" stats) until the user
+// asked to track them (2026-10-07).
 const TOP3_EXCLUDED = new Set([
   "Championship Years",
   "MVP Years",
@@ -81,8 +82,6 @@ const TOP3_EXCLUDED = new Set([
   "RS Last Years",
   "Best RS Finish",
   "Best RS Finish Years",
-  "Best Week Rating",
-  "Worst Week Rating",
   // Redundant with the rating fields already shown -- same reasoning as
   // COMPARISON_EXCLUDED_FIELDS in team-summary-fields.ts.
   "Avg Weighted Rank",

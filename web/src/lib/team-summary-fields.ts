@@ -93,15 +93,14 @@ export const EMPHASIZED_FIELDS = new Set([
   "Best Draft Score",
 ]);
 
-// Comparison-page only: "Best/Worst Week Rating" are single-week flukes, not
-// meaningful comparison stats (separate from TOP3_EXCLUDED even though both
-// happen to exclude the same two fields today, for a different reason).
-// "Avg Weighted Rank" is excluded because it's effectively the same signal
-// as "Avg Rating (out of 100)"/"Avg Rank", already shown -- kept in the CSV
-// export itself in case some other consumer wants it later.
+// Comparison-page only. "Best/Worst Week Rating" were excluded here too
+// (single-week flukes, not meaningful comparison stats) until the user
+// asked to track them (2026-10-07) -- same change as TOP3_EXCLUDED in
+// profile-view.tsx. "Avg Weighted Rank" is excluded because it's
+// effectively the same signal as "Avg Rating (out of 100)"/"Avg Rank",
+// already shown -- kept in the CSV export itself in case some other
+// consumer wants it later.
 export const COMPARISON_EXCLUDED_FIELDS = new Set([
-  "Best Week Rating",
-  "Worst Week Rating",
   "Avg Weighted Rank",
 ]);
 
