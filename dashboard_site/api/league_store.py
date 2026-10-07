@@ -658,7 +658,7 @@ class LeagueStore:
     )
     _CLOSE_VERB_PHRASES = ("defeats", "beats", "edges past", "gets past")  # margin == 1
     _SOLID_VERB_PHRASES = (  # margin 2-3
-        "beats convincingly",
+        "convincingly beats",
         "cruises past",
         "comfortably defeats",
         "pulls away from",
