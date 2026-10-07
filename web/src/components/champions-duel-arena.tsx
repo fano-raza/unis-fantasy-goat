@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getTeamSummary, type TeamSummary } from "@/lib/api";
-import { directionFor, formatValue } from "@/lib/team-summary-fields";
+import { COMPARISON_EXCLUDED_FIELDS, directionFor, formatValue } from "@/lib/team-summary-fields";
 
 // One figure per team with >=1 Championship (not every league member) --
 // feature request, 2026-10-07: "every champion gets their own stick
@@ -117,6 +117,7 @@ function spawnFigure(team: string, w: number, h: number): Physics {
 function duelCategoriesFor(rowA: TeamSummary, rowB: TeamSummary): string[] {
   return Object.keys(rowA).filter((field) => {
     if (field === "Team" || directionFor(field) === "skip") return false;
+    if (COMPARISON_EXCLUDED_FIELDS.has(field)) return false;
     const a = rowA[field];
     const b = rowB[field];
     return typeof a === "number" && typeof b === "number" && a !== b;
