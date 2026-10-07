@@ -352,7 +352,7 @@ function RatingsPageInner({ initialBootstrap }: RatingsViewProps) {
         </CardContent>
       </Card>
 
-      {showGraph && !error && !isLoading && ratingsChartData.length > 0 && (
+      {showGraph && !error && (
         <Card>
           <CardHeader>
             <CardTitle>Rating Over Time</CardTitle>
@@ -361,6 +361,7 @@ function RatingsPageInner({ initialBootstrap }: RatingsViewProps) {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            <LoadingOverlay active={isLoading} hasContent={false} label="Loading">
             <div className="h-[360px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={ratingsChartData} margin={{ left: 8, right: 16, top: 8, bottom: 24 }}>
@@ -417,6 +418,7 @@ function RatingsPageInner({ initialBootstrap }: RatingsViewProps) {
               </ResponsiveContainer>
             </div>
             <ChartLegend items={ratingsTeams.map((team, i) => ({ key: team, color: ratingsColors[i] }))} />
+            </LoadingOverlay>
           </CardContent>
         </Card>
       )}

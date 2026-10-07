@@ -28,6 +28,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { RoutedViewSwitcher } from "@/components/routed-view-switcher";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
+import { LoadingOverlay } from "@/components/loading-overlay";
 import { X } from "lucide-react";
 import {
   getHeadToHead,
@@ -316,6 +317,12 @@ export function ComparisonView({ initialBootstrap }: ComparisonViewProps) {
   const colWidthPct = `${100 / (selectedRows.length + 1)}%`;
 
   const selectedTeamKey = selectedRows.map((r) => r.Team).join("|");
+  // Distinguishes "the user hasn't selected any teams yet" from "teams are
+  // selected, but allTeams hasn't loaded yet to resolve them into rows" (the
+  // client-fallback path) -- without this, the latter showed the misleading
+  // "Add two or more teams to compare" placeholder during every load instead
+  // of a loading indicator.
+  const dataLoading = !hydrated || (selected.length > 0 && allTeams.length === 0);
 
   // Aggregate H2H: summed matchup W-L-T against every *other* selected team
   // (pairwise -- N teams = N*(N-1)/2 calls to the existing single-pair
@@ -436,7 +443,7 @@ export function ComparisonView({ initialBootstrap }: ComparisonViewProps) {
         </CardHeader>
       </Card>
 
-      {selectedRows.length === 0 ? (
+      {!dataLoading && selected.length === 0 ? (
         <Card>
           <CardContent>
             <p className="text-sm text-muted-foreground">
@@ -446,7 +453,7 @@ export function ComparisonView({ initialBootstrap }: ComparisonViewProps) {
         </Card>
       ) : (
         <>
-          {selectedRows.length >= 2 && (
+          {(dataLoading || selectedRows.length >= 2) && (
             <Card>
               <CardHeader>
                 <CardTitle>Head-to-Head</CardTitle>
@@ -455,6 +462,7 @@ export function ComparisonView({ initialBootstrap }: ComparisonViewProps) {
                 </CardDescription>
               </CardHeader>
               <CardContent>
+                <LoadingOverlay active={dataLoading} hasContent={false} label="Loading">
                 {h2h ? (
                   <Table className="table-fixed">
                     <TableHeader>
@@ -527,19 +535,21 @@ export function ComparisonView({ initialBootstrap }: ComparisonViewProps) {
                 ) : (
                   <LoadingBasketballs label="Loading" />
                 )}
+                </LoadingOverlay>
               </CardContent>
             </Card>
           )}
 
           {COMPARISON_GROUPS.map((group) => {
             const fields = group.fields.filter((f) => comparisonFields.includes(f));
-            if (fields.length === 0) return null;
+            if (fields.length === 0 && !dataLoading) return null;
             return (
               <Card key={group.title}>
                 <CardHeader>
                   <CardTitle>{group.title}</CardTitle>
                 </CardHeader>
                 <CardContent>
+                  <LoadingOverlay active={dataLoading} hasContent={false} label="Loading">
                   <Table className="table-fixed">
                     <TableHeader>
                       <TableRow>
@@ -591,6 +601,7 @@ export function ComparisonView({ initialBootstrap }: ComparisonViewProps) {
                       })}
                     </TableBody>
                   </Table>
+                  </LoadingOverlay>
                 </CardContent>
               </Card>
             );

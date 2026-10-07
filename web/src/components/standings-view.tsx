@@ -61,6 +61,7 @@ function StandingsPageInner({ initialBootstrap }: StandingsViewProps) {
   const [previousStandings, setPreviousStandings] = useState<StandingsResponse | null>(null);
   const [history, setHistory] = useState<StandingsHistoryResponse | null>(null);
   const [brackets, setBrackets] = useState<PlayoffBracketsResponse>({});
+  const [bracketsLoading, setBracketsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -112,7 +113,9 @@ function StandingsPageInner({ initialBootstrap }: StandingsViewProps) {
   // All years' bracket data is a single small payload -- fetched once, not
   // refetched per year switch (mirrors getLeagueMeta's own one-shot fetch).
   useEffect(() => {
-    getPlayoffBrackets().then(setBrackets);
+    getPlayoffBrackets()
+      .then(setBrackets)
+      .finally(() => setBracketsLoading(false));
   }, []);
 
   const maxWeek = useMemo(() => {
@@ -235,7 +238,7 @@ function StandingsPageInner({ initialBootstrap }: StandingsViewProps) {
             <LoadingOverlay active={isLoading || !standings} hasContent={!!standings} label="Loading standings">
               {standings &&
                 (showPlayoffTree ? (
-                  <PlayoffTree bracket={brackets[String(year)]} year={year} />
+                  <PlayoffTree bracket={brackets[String(year)]} year={year} loading={bracketsLoading} />
                 ) : (
                   <StandingsTable
                     rows={oneVOneMode === "wl" ? standings.wl : standings.cats}
@@ -251,13 +254,14 @@ function StandingsPageInner({ initialBootstrap }: StandingsViewProps) {
         </CardContent>
       </Card>
 
-      {showGraph && !error && !isLoading && historyChartData.length > 0 && (
+      {showGraph && !error && (
         <PositionOverTimeChart
           data={historyChartData}
           teams={historyTeams}
           colors={historyColors}
           weekRange={weekRange}
           modeLabel={oneVOneMode === "wl" ? "W/L" : "Cats"}
+          loading={isLoading}
         />
       )}
     </div>

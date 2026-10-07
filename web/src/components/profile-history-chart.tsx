@@ -11,6 +11,7 @@ import {
   YAxis,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { LoadingOverlay } from "@/components/loading-overlay";
 import { Switch } from "@/components/ui/switch";
 import { getAnalysisRows, getRsFinishHistory, type LeagueMeta } from "@/lib/api";
 
@@ -87,7 +88,11 @@ export function ProfileHistoryChart({ team, meta }: { team: string; meta: League
     [points, mode],
   );
 
-  if (!points || points.length === 0) return null;
+  // Only hide the card once we know for sure there's nothing to show (data
+  // loaded, genuinely empty) -- while points is still null (loading), fall
+  // through to the LoadingOverlay below instead, so the card shell appears
+  // immediately on page load / team switch rather than popping in late.
+  if (points !== null && points.length === 0) return null;
 
   return (
     <Card>
@@ -104,6 +109,7 @@ export function ProfileHistoryChart({ team, meta }: { team: string; meta: League
           />
           <span className="text-muted-foreground">RS Place Finish</span>
         </label>
+        <LoadingOverlay active={points === null} hasContent={false} label="Loading">
         <div className="h-[320px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData} margin={{ left: 8, right: 16, top: 8, bottom: 24 }}>
@@ -112,7 +118,7 @@ export function ProfileHistoryChart({ team, meta }: { team: string; meta: League
                 dataKey="year"
                 type="number"
                 domain={["dataMin", "dataMax"]}
-                ticks={points.map((p) => p.year)}
+                ticks={(points ?? []).map((p) => p.year)}
                 tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
                 stroke="var(--border)"
                 label={{
@@ -182,6 +188,7 @@ export function ProfileHistoryChart({ team, meta }: { team: string; meta: League
             </LineChart>
           </ResponsiveContainer>
         </div>
+        </LoadingOverlay>
       </CardContent>
     </Card>
   );

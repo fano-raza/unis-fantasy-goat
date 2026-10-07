@@ -81,6 +81,7 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
   const [rowsError, setRowsError] = useState<string | null>(null);
   const [rowsLoading, setRowsLoading] = useState(true);
   const [recap, setRecap] = useState<WeeklyRecap | null>(null);
+  const [recapLoading, setRecapLoading] = useState(true);
   // Bootstrap fetches meta + the current week's rows in one round-trip; this
   // flags that the next [year, week] effect run is that same initial pair,
   // so it doesn't re-fetch what bootstrap already delivered.
@@ -136,9 +137,11 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
 
   useEffect(() => {
     if (year == null || week == null) return;
+    setRecapLoading(true);
     getWeeklyRecap({ year, week })
       .then(setRecap)
-      .catch(() => setRecap(null));
+      .catch(() => setRecap(null))
+      .finally(() => setRecapLoading(false));
   }, [year, week]);
 
   useEffect(() => {
@@ -318,62 +321,68 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
         </CardContent>
       </Card>
 
-      {recap && (
+      {(recapLoading || recap) && (
         <Card>
           <CardHeader>
-            <CardTitle>Week {recap.week} Recap</CardTitle>
+            <CardTitle>{recap ? `Week ${recap.week} Recap` : "Week Recap"}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            {recap.beatdowns.length > 0 && (
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
-                  Beatdowns
-                </span>
-                <ul className="flex flex-col gap-1">
-                  {recap.beatdowns.map((s, i) => (
-                    <li key={i} className="text-sm">
-                      • {s}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {recap.upsets.length > 0 && (
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
-                  Upsets
-                </span>
-                <ul className="flex flex-col gap-1">
-                  {recap.upsets.map((s, i) => (
-                    <li key={i} className="text-sm">
-                      • {s}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {recap.milestones.length > 0 && (
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
-                  Milestones
-                </span>
-                <ul className="flex flex-col gap-1">
-                  {recap.milestones.map((s, i) => (
-                    <li key={i} className="text-sm">
-                      • {s}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {recap.playoff_race && (
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
-                  Playoff Race
-                </span>
-                <p className="text-sm text-muted-foreground">{recap.playoff_race}</p>
-              </div>
-            )}
+            <LoadingOverlay active={recapLoading} hasContent={false} label="Loading recap">
+              {recap && (
+                <div className="flex flex-col gap-4">
+                  {recap.beatdowns.length > 0 && (
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+                        Beatdowns
+                      </span>
+                      <ul className="flex flex-col gap-1">
+                        {recap.beatdowns.map((s, i) => (
+                          <li key={i} className="text-sm">
+                            • {s}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {recap.upsets.length > 0 && (
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+                        Upsets
+                      </span>
+                      <ul className="flex flex-col gap-1">
+                        {recap.upsets.map((s, i) => (
+                          <li key={i} className="text-sm">
+                            • {s}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {recap.milestones.length > 0 && (
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+                        Milestones
+                      </span>
+                      <ul className="flex flex-col gap-1">
+                        {recap.milestones.map((s, i) => (
+                          <li key={i} className="text-sm">
+                            • {s}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {recap.playoff_race && (
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+                        Playoff Race
+                      </span>
+                      <p className="text-sm text-muted-foreground">{recap.playoff_race}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </LoadingOverlay>
           </CardContent>
         </Card>
       )}

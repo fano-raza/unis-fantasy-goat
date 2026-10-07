@@ -49,6 +49,7 @@ import { comparableFields, formatValue, ordinal, rankFor } from "@/lib/team-summ
 import { cn } from "@/lib/utils";
 import { ProfileHistoryChart } from "@/components/profile-history-chart";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
+import { LoadingOverlay } from "@/components/loading-overlay";
 import { buildBadges, POSITIVE_BADGE_TYPES } from "@/lib/badges";
 import { TeamBadges } from "@/components/team-badges";
 import { BadgeDrawer } from "@/components/badge-drawer";
@@ -330,6 +331,14 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
       .sort((a, b) => a.rank - b.rank);
   }, [team, allTeams, totals, averages, queryTotals]);
 
+  // Each of these feeds its own card below, from its own independent fetch
+  // (allTeams/totals/averages/queryTotals can each still be arriving on the
+  // client-fallback path) -- used to show the card shell + a loading
+  // indicator instead of hiding the whole card until every last one lands.
+  const topFieldsLoading = allTeams.length === 0 || totals.length === 0 || averages.length === 0;
+  const totalsLoading = totals.length === 0;
+  const averagesLoading = averages.length === 0;
+
   if (!meta || !team) return <LoadingBasketballs label="Loading" />;
 
   return (
@@ -388,6 +397,7 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
         </CardContent>
       </Card>
 
+      <LoadingOverlay active={!profile} hasContent={false} label="Loading">
       {profile && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <StatTile
@@ -434,8 +444,9 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
           )}
         </div>
       )}
+      </LoadingOverlay>
 
-      {topFields.length > 0 && (
+      {(topFieldsLoading || topFields.length > 0) && (
         <Card>
           <CardHeader>
             <CardTitle>League Top 3</CardTitle>
@@ -444,6 +455,7 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            <LoadingOverlay active={topFieldsLoading} hasContent={false} label="Loading">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -466,6 +478,7 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
                 ))}
               </TableBody>
             </Table>
+            </LoadingOverlay>
           </CardContent>
         </Card>
       )}
@@ -476,11 +489,13 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
           <CardDescription>League-wide rank included</CardDescription>
         </CardHeader>
         <CardContent>
-          {totalsRow ? (
-            <StatTable rows={[totalsRow]} mode="stat" />
-          ) : (
-            <p className="text-sm text-muted-foreground">No data.</p>
-          )}
+          <LoadingOverlay active={totalsLoading} hasContent={false} label="Loading">
+            {totalsRow ? (
+              <StatTable rows={[totalsRow]} mode="stat" />
+            ) : (
+              <p className="text-sm text-muted-foreground">No data.</p>
+            )}
+          </LoadingOverlay>
         </CardContent>
       </Card>
 
@@ -490,11 +505,13 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
           <CardDescription>League-wide rank included</CardDescription>
         </CardHeader>
         <CardContent>
-          {averagesRow ? (
-            <StatTable rows={[averagesRow]} mode="stat" />
-          ) : (
-            <p className="text-sm text-muted-foreground">No data.</p>
-          )}
+          <LoadingOverlay active={averagesLoading} hasContent={false} label="Loading">
+            {averagesRow ? (
+              <StatTable rows={[averagesRow]} mode="stat" />
+            ) : (
+              <p className="text-sm text-muted-foreground">No data.</p>
+            )}
+          </LoadingOverlay>
         </CardContent>
       </Card>
 

@@ -17,6 +17,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ChartLegend } from "@/components/chart-legend";
+import { LoadingOverlay } from "@/components/loading-overlay";
 
 // Reshapes standings_history's {team: [{week, rank}]} into one row per week
 // with a rank column per team, the shape recharts' LineChart wants.
@@ -47,12 +48,14 @@ export function PositionOverTimeChart({
   colors,
   weekRange,
   modeLabel,
+  loading,
 }: {
   data: Record<string, number>[];
   teams: string[];
   colors: string[];
   weekRange: [number, number];
   modeLabel: "W/L" | "Cats";
+  loading: boolean;
 }) {
   return (
     <Card>
@@ -63,6 +66,7 @@ export function PositionOverTimeChart({
         </CardDescription>
       </CardHeader>
       <CardContent>
+        <LoadingOverlay active={loading} hasContent={false} label="Loading">
         <div className="h-[360px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ left: 8, right: 16, top: 8, bottom: 24 }}>
@@ -121,6 +125,7 @@ export function PositionOverTimeChart({
           </ResponsiveContainer>
         </div>
         <ChartLegend items={teams.map((team, i) => ({ key: team, color: colors[i] }))} />
+        </LoadingOverlay>
       </CardContent>
     </Card>
   );

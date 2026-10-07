@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { LoadingBasketballs } from "@/components/loading-basketballs";
 import type { PlayoffBracket, PlayoffMatchup, PlayoffRound } from "@/lib/api";
 
 type RoundItem =
@@ -153,8 +154,17 @@ function ByeBox({ team }: { team: string }) {
   );
 }
 
-export function PlayoffTree({ bracket, year }: { bracket: PlayoffBracket | undefined; year: number }) {
+export function PlayoffTree({
+  bracket,
+  year,
+  loading,
+}: {
+  bracket: PlayoffBracket | undefined;
+  year: number;
+  loading?: boolean;
+}) {
   if (!bracket) {
+    if (loading) return <LoadingBasketballs label="Loading" />;
     return (
       <p className="text-sm text-muted-foreground">
         No playoff bracket data for {year}.

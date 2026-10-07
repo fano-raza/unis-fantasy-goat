@@ -217,13 +217,14 @@ function LeagueWinsPageInner({ initialBootstrap }: LeagueWinsViewProps) {
         </CardContent>
       </Card>
 
-      {showGraph && !error && !isLoading && historyChartData.length > 0 && (
+      {showGraph && !error && (
         <PositionOverTimeChart
           data={historyChartData}
           teams={historyTeams}
           colors={historyColors}
           weekRange={weekRange}
           modeLabel={leagueMode === "wl" ? "W/L" : "Cats"}
+          loading={isLoading}
         />
       )}
     </div>
