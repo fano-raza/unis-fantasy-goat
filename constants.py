@@ -1,15 +1,11 @@
 import os
 import json
-import gspread as gs
 import math
 from pathlib import Path
 from espn_fr.basketball.constant import STATS_MAP
 import datetime
 import csv
-from shared.runtime_config import (
-    GOOGLE_SERVICE_ACCOUNT_JSON_PATH,
-    calendar_csv_path,
-)
+from shared.runtime_config import calendar_csv_path
 
 
 ## ESPN league/login info
@@ -217,24 +213,15 @@ yStatMap = {
     'DD': 27, 28: 'TD', 'TD': 28
             }
 
-## GOOGLE DOC SPECIFIC INFO ##
-gc = gs.service_account(
-        GOOGLE_SERVICE_ACCOUNT_JSON_PATH
-    )
+# The Google Sheets client/auth and spreadsheet-name lookup that used to
+# live here moved to legacy/gdoc/gdoc_auth.py (2026-10-07) -- this module
+# is imported by nearly everything in the app, and the gspread
+# service-account auth was a hard dependency on Google credentials for
+# every process that just needed, say, seasonInfo. Only legacy/gdoc/*.py
+# imports gdoc_auth now.
 
-## Spreadsheet Names ##
-gDocNames = {
-    2019:"ULTRA 18/19 Rankings",
-    2020:"19/20 Rankings (The Numbers)",
-    2021:"20/21 Rankings (The Numbers)",
-    2022:"21/22 Rankings (The Numbers)",
-    2023:"ULTRA 22/23 Rankings",
-    2024:"23/24 Rankings (The Numbers)",
-    2025:"24/25 Rankings (The Numbers)",
-    2026:"25/26 Rankings (The Numbers)",
-}
-
-# the categories and order they appear on the gdocs
+# the categories and order they appear on the gdocs (also the stat column
+# order used elsewhere in the app, e.g. discord/stats_query_engine.py)
 gDocStatCats = ['FG%', 'FT%', '3PTM', 'PTS', 'REB', 'AST', 'STL', 'BLK', 'TO']
 
 ## are the actual stats the top rows? ##

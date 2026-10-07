@@ -1,24 +1,20 @@
-"""Standalone stat-refresh loop, decoupled from Google Sheets output.
+"""Standalone production update loop -- the app's one live updater.
 
-GDoc/GDoc_updater.py historically did both: pull fresh stats AND push them
-to Google Sheets. Now that the web app (dashboard_site + Next.js frontend)
-is the live presentation layer, the Sheets-writing half is no longer
-needed for day-to-day operation -- this module keeps only the
-stat-fetching half. GDoc_updater.py is left as-is (not touched here, may
-be retired later) rather than edited in place, so nothing here risks
-breaking its still-independent Sheets-writing path.
+Originally split off from legacy/gdoc/GDoc_updater.py (2026-08-10) to
+decouple stat refreshing from Google Sheets output. As of 2026-10-07,
+GDoc_updater.py's remaining non-Sheets responsibilities (draft refresh,
+player-stats/roster-rank/NBA-schedule exports, roster/team rank history,
+Discord milestone notifications) were ported in here too, and the
+gdoc-updater container/service was removed -- this is now the only
+production update loop. See legacy/gdoc/README.md for the retired
+Sheets-writing half.
 
-Two-tier cadence, same shape as GDoc_updater.py's own loop:
+Two-tier cadence, same shape as the old GDoc_updater.py loop:
 - 6PM-2AM Eastern (game hours): refresh the stat CSV every ~2 minutes, so
   the web app/bots reflect near-live stats while games are happening.
-- Otherwise: one full refresh (stat CSV + all 3 precomputed exports for
-  dashboard_site), then sleep until 6PM.
-
-Deliberately does NOT build the full fantasyLeague() object or send
-Discord milestone notifications -- both added real cost (a full
-historical league rebuild) for the stat-CSV refresh itself, and the user
-chose to drop them here rather than pay that cost every cycle. Revisit
-if milestones are wanted again later.
+- Otherwise: one full refresh (stat CSV + every precomputed export for
+  dashboard_site + Discord bots, draft scores, roster/rank history
+  snapshots, Discord milestones), then sleep until 6PM.
 """
 
 from __future__ import annotations
@@ -50,6 +46,16 @@ from shared.runtime_config import calendar_csv_path  # noqa: E402
 from scripts.export_real_matchup_flags import main as export_real_matchup_flags  # noqa: E402
 from scripts.export_team_summary import main as export_team_summary  # noqa: E402
 from scripts.export_playoff_brackets import main as export_playoff_brackets  # noqa: E402
+from scripts.export_player_stats import main as export_player_stats  # noqa: E402
+from scripts.export_roster_ranks import (  # noqa: E402
+    append_roster_rank_history,
+    append_team_roster_history,
+    main as export_roster_ranks,
+)
+from scripts.export_nba_schedule import main as export_nba_schedule  # noqa: E402
+from Models.Draft import Draft  # noqa: E402
+from Models.League import fantasyLeague  # noqa: E402
+from discord.discord_messages import notify_milestones  # noqa: E402
 
 app = Flask(__name__)
 EASTERN_TZ = ZoneInfo("America/New_York")
@@ -123,6 +129,14 @@ def run_updater() -> None:
             time.sleep(120)
         else:
             try:
+                # Refresh draft results/scores once per daytime update cycle.
+                try:
+                    print(f"Refreshing draft scores for {year}...")
+                    Draft(year).updateDraft()
+                    print("Draft scores refreshed.")
+                except Exception as draft_exc:
+                    print(f"Draft refresh warning: {draft_exc}")
+
                 updateStatCSV(year)
 
                 try:
@@ -135,11 +149,64 @@ def run_updater() -> None:
                 except Exception as summary_exc:
                     print(f"team_summary export warning: {summary_exc}")
 
+                # Trade Hub's real NBA player stats.
+                try:
+                    export_player_stats()
+                except Exception as player_stats_exc:
+                    print(f"player_stats export warning: {player_stats_exc}")
+
+                # Team page's Roster sub-view: current-season roster/rank
+                # snapshot.
+                try:
+                    export_roster_ranks([year])
+                except Exception as roster_ranks_exc:
+                    print(f"roster_ranks export warning: {roster_ranks_exc}")
+
+                # Once-per-week player/team rank history snapshots -- both
+                # no-op if this (year, currentWeek) is already recorded, so
+                # calling them every daily cycle is cheap and correctly
+                # fires exactly once per week.
+                try:
+                    added = append_roster_rank_history(year, currentWeek)
+                    if added:
+                        print(f"roster_rank_history: snapshotted {added} player rows for week {currentWeek}")
+                except Exception as roster_history_exc:
+                    print(f"roster_rank_history export warning: {roster_history_exc}")
+
+                try:
+                    added_teams = append_team_roster_history(year, currentWeek)
+                    if added_teams:
+                        print(f"team_roster_history: snapshotted {added_teams} team rows for week {currentWeek}")
+                except Exception as team_roster_history_exc:
+                    print(f"team_roster_history export warning: {team_roster_history_exc}")
+
+                try:
+                    export_nba_schedule()
+                except Exception as schedule_exc:
+                    print(f"nba_schedule export warning: {schedule_exc}")
+
                 if _playoff_window_active(year, today, calList):
                     try:
                         export_playoff_brackets()
                     except Exception as bracket_exc:
                         print(f"playoff_brackets export warning: {bracket_exc}")
+
+                # Discord milestone notifications -- gated by
+                # DISCORD_ENABLE_MILESTONES inside notify_milestones itself.
+                try:
+                    print("Checking milestones")
+                    league = fantasyLeague()
+                    stat_cols = ["PTS", "3PTM", "REB", "AST", "STL", "BLK"]
+                    rank_cols = [cat + "_rank" for cat in stat_cols]
+                    cols = ["Team"] + stat_cols + rank_cols
+                    dfs = {
+                        "Career": league.get_totals_df()[cols],
+                        "RS": league.get_totals_df(PO=False)[cols],
+                        "PO": league.get_totals_df(RS=False)[cols],
+                    }
+                    notify_milestones(dfs)
+                except Exception as milestones_exc:
+                    print(f"milestones warning: {milestones_exc}")
 
                 target_dt = now.replace(hour=18, minute=0, second=0, microsecond=0)
                 delta = target_dt - now

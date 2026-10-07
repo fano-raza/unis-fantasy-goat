@@ -28,7 +28,10 @@ if [[ "$USE_DOCKER" == "1" ]]; then
   fi
 
   echo "[deploy] restarting docker services"
-  docker compose -f infra/docker/docker-compose.yml up -d --build
+  # --remove-orphans: stop/remove containers for services no longer in
+  # docker-compose.yml (e.g. gdoc-updater, retired 2026-10-07) instead of
+  # leaving them running alongside the current service set.
+  docker compose -f infra/docker/docker-compose.yml up -d --build --remove-orphans
 
   # Routine post-deploy cleanup -- every deploy leaves the previous image
   # version's layers unreferenced. Prune them now instead of letting them

@@ -1,24 +1,8 @@
 services:
-  gdoc-updater:
-    build:
-      context: ../..
-      dockerfile: infra/docker/Dockerfile
-    container_name: unisfantasy-gdoc-updater
-    command: ["python", "-m", "services.gdoc_updater.entrypoint"]
-    env_file:
-      - ./env/gdoc-updater.env
-    volumes:
-      - /srv/unisfantasy/data:/srv/unisfantasy/data
-      - /srv/unisfantasy/state:/srv/unisfantasy/state
-      - /srv/unisfantasy/secrets:/srv/unisfantasy/secrets:ro
-    restart: unless-stopped
-    ports:
-      - "5000:5000"
-
-  # Stat-refresh loop decoupled from Google Sheets output -- gdoc-updater
-  # above still does both (fetch stats + push to Sheets); this service does
-  # only the fetch-and-precompute half, now that the web app has replaced
-  # Sheets as the live presentation layer. See stat_updater.py.
+  # The one production update loop (stat CSVs, draft refresh, dashboard
+  # exports, roster/rank history, Discord milestones) -- see
+  # stat_updater.py. The old gdoc-updater service (which additionally
+  # pushed to Google Sheets) was retired 2026-10-07; see legacy/gdoc/README.md.
   stat-updater:
     build:
       context: ../..

@@ -1,7 +1,7 @@
 """Atomic file writes for the precomputed CSV exports under Ref/.
 
 dashboard_site re-reads these files periodically (a background refresh
-loop, plus on-demand lazy loads) while the GDoc-updater pipeline
+loop, plus on-demand lazy loads) while the stat-updater pipeline
 periodically regenerates them. A plain `open(path, "w")`/`df.to_csv(path)`
 truncates the file immediately and writes it in place, so a reader that
 opens the file mid-write can see a truncated or otherwise malformed row

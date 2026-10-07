@@ -735,8 +735,9 @@ class LeagueStore:
         """RS-only standings for the Standings page: real matchup W/L, real
         matchup category W/L, and "League Wins" (all-play -- every team vs.
         every other team every week, hypothetically) W/L and Cats. Mirrors
-        the GDoc "Overall Rank" sheet's four sections (GDoc/GDoc_Week.py::
-        updateStandings), computed for an arbitrary week range rather than
+        the retired Google Sheets "Overall Rank" tab's four sections
+        (legacy/gdoc/GDoc_Week.py::updateStandings), computed for an
+        arbitrary week range rather than
         a fixed cutoff. The all-play columns (LEAGUE_WL_*/LEAGUE_CATS_*)
         are already computed per team per week in
         StatsStore._build_matchup_features's "All-play schedule context"

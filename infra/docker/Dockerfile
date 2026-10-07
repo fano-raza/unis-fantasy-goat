@@ -15,4 +15,4 @@ RUN pip install --no-cache-dir -r /tmp/requirements-deploy.txt
 COPY . /app
 
 # Default command can be overridden per-service in compose.
-CMD ["python", "-m", "services.gdoc_updater.entrypoint"]
+CMD ["python", "-m", "services.stat_updater.entrypoint"]

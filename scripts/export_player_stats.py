@@ -20,12 +20,12 @@ scoped to any one fantasy roster) already gives the full active-player
 name<->id universe, so no separate player-identity source is needed.
 
 Despite not needing `Models`, this is no longer a "lightweight" export: it
-needs `espn_leagueID`/`espn_s2`/`espn_swid` from `constants.py`, which builds
-a live `gspread` service-account client at import time. That's a non-issue in
-practice since this already runs inside the `gdoc-updater` container, which
-has the full heavy dependency chain (valid Google credentials included)
-regardless -- just noting it's no longer avoiding that chain the way the
-nba_api version's docstring used to claim.
+needs `espn_leagueID`/`espn_s2`/`espn_swid` from `constants.py`. (Until
+2026-10-07, importing `constants.py` also built a live `gspread`
+service-account client at import time -- that's been split out to
+legacy/gdoc/gdoc_auth.py, so this export no longer needs Google
+credentials at all.) Just noting it's no longer avoiding the `constants.py`
+import the way the nba_api version's docstring used to claim.
 
 Uses the same `espn_leagueID` this league used before migrating to Yahoo in
 2024 -- verified live that ESPN's player-card data isn't gated by whether

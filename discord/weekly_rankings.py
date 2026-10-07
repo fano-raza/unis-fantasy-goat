@@ -74,7 +74,7 @@ async def determine_last_completed_week(
     api_post: ApiPost, year: int, now_eastern: datetime | None = None
 ) -> int | None:
     """The week that most recently ended, as of right now (Eastern time) --
-    mirrors GDoc/GDoc_updater.py's own calendar-lookup + 2AM-cutoff logic
+    mirrors stat_updater.py's own calendar-lookup + 2AM-cutoff logic
     (Sunday games extending past midnight still count as the prior day),
     but via the already-exposed /league/week_calendar endpoint instead of
     reading the calendar CSV directly (stat-bot has no filesystem access

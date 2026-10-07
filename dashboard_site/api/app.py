@@ -62,10 +62,10 @@ async def add_short_cache_header(request: Request, call_next):
 store = StatsStore()
 league_store = get_league_store(store)
 
-# gdoc-updater (a separate container) recomputes the CSVs under FANTASY_REF_DIR
+# stat-updater (a separate container) recomputes the CSVs under FANTASY_REF_DIR
 # on its own schedule -- but NOT all on the same schedule: *_CompStats.csv
 # updates every ~2 minutes during game hours (a separate, more frequent loop
-# in GDoc_updater.py), while draft results / player_stats.csv / team_summary.csv
+# in stat_updater.py), while draft results / player_stats.csv / team_summary.csv
 # only refresh once during the once-daily(-ish) branch. A single global
 # "newest file" timestamp was misleading -- it almost always reflected the
 # fast-moving CompStats files, so a page showing yesterday's draft data could

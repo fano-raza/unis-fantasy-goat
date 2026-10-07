@@ -1,5 +1,4 @@
 flask
-gspread
 pandas
 numpy
 scikit-learn
