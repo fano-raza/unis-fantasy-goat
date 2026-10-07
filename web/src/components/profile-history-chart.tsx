@@ -29,6 +29,14 @@ export function ProfileHistoryChart({ team, meta }: { team: string; meta: League
   useEffect(() => {
     let cancelled = false;
 
+    // Clear immediately (not just once the new team's fetch resolves) --
+    // otherwise the chart keeps rendering the PREVIOUS team's points under
+    // the new team's header/name until the fetch finishes, which can look
+    // like the new team's data (bug report, 2026-10-07: switched from
+    // Fano's profile to Saamrit's, toggled to RS Place Finish, and saw
+    // Fano's graph for a while since Saamrit's fetch hadn't resolved yet).
+    setPoints(null);
+
     getAnalysisRows({ teams: [team], RS: true, PO: false }).then(async (rows) => {
       if (cancelled) return;
 
