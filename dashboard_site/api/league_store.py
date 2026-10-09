@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import random
 import sys
 from pathlib import Path
 
@@ -62,6 +61,7 @@ class LeagueStore:
         self._nba_schedule_df: pd.DataFrame | None = None
         self._week_calendar_df: pd.DataFrame | None = None
         self._weekly_recaps_df: pd.DataFrame | None = None
+        self._playoff_recaps_df: pd.DataFrame | None = None
         self._category_history: dict | None = None
         self._rs_finish_history: dict | None = None
         self._po_lookup = self._load_po_real_matchup_lookup()
@@ -553,14 +553,19 @@ class LeagueStore:
         to show alongside a completed week. Regular-season weeks read
         discord/weekly_rankings.py's precomputed Ref/weekly_recaps.csv
         (rank table, Beatdowns/Upsets/Milestones bullets, Playoff Race
-        paragraph); playoff weeks are delegated to _playoff_weekly_recap
-        (bracket matchup results/advancement, final standings on the last
-        round) -- see that method's docstring for why playoff weeks don't
-        use the CSV at all. Unlike week_calendar()/roster_ranks() (which
-        raise if their export was never run), a missing file OR a missing
-        row for this specific (year, week) is a normal "not posted yet"
-        case -- returns None, not an error, so the frontend can treat it
-        the same way either way (hide the card)."""
+        paragraph); playoff weeks are delegated to _playoff_weekly_recap,
+        which reads the parallel Ref/playoff_recaps.csv the same way --
+        both are pure CSV readers, nothing computed live here (see
+        _playoff_weekly_recap's docstring: this used to build the playoff
+        recap live from the bracket, but dashboard-api's read-only volume
+        mount meant it could never persist the randomly-chosen narrative
+        text, so generation moved entirely into discord/weekly_rankings.py,
+        which runs in the read-write stat-bot container). Unlike
+        week_calendar()/roster_ranks() (which raise if their export was
+        never run), a missing file OR a missing row for this specific
+        (year, week) is a normal "not posted yet" case -- returns None,
+        not an error, so the frontend can treat it the same way either way
+        (hide the card)."""
         rs_week_count = self.meta().get("rs_week_count", {}).get(year)
         if rs_week_count is not None and week > rs_week_count:
             return self._playoff_weekly_recap(year, week)
@@ -587,118 +592,37 @@ class LeagueStore:
     def _playoff_weekly_recap(self, year: int, week: int) -> dict | None:
         """Playoff-week counterpart to the RS Monday recap -- feature
         request, 2026-10-07: "focused on the results of the matchups, who
-        is advancing, final playoff results if it is the last week." Built
-        live from scripts/export_playoff_brackets.py's precomputed
-        Ref/playoff_brackets.json (matchup results, seeding, final
-        standings) rather than weekly_recaps.csv -- unlike the RS recap,
-        there's no LLM commentary step to freeze at post time, the bracket
-        data already IS the recap content, so nothing needs a separate
-        "posted" snapshot. Returns None if this year has no bracket data
-        yet, no round lines up with this week, or that round's games
-        haven't been decided yet -- all normal "nothing to show" cases,
-        not errors.
+        is advancing, final playoff results if it is the last week,"
+        2026-10-09 follow-up: the per-matchup narrative text (margin-
+        reactive verb_phrase + advancement) must be generated ONCE and
+        persisted, never re-rolled on every page load.
 
-        Each matchup gets a `verb_phrase` (margin-reactive, e.g. "beats
-        convincingly") and `advancement` ("advance to the Final" / "win
-        the 2026 championship" / "claim 3rd place") computed HERE, once,
-        rather than by each consumer -- feature request, 2026-10-07
-        follow-up. discord/weekly_rankings.py's post_playoff_weekly_recap
-        reads this same endpoint (not /league/playoff_brackets directly
-        anymore) so the Discord message and the web card always use
-        identical wording for the same game, never independently-rolled
-        random phrasing."""
-        brackets = self.playoff_brackets()
-        year_data = brackets.get(str(year))
-        if not year_data:
+        Purely a reader of discord/weekly_rankings.py's precomputed
+        Ref/playoff_recaps.csv -- mirrors _ensure_weekly_recaps_df's RS
+        counterpart exactly, deliberately NOT computing anything live
+        here (that used to live in this method; moved out because
+        dashboard-api's volume mount is read-only -- see
+        infra/docker/docker-compose.yml -- so this process could never
+        have persisted the random choice even if it wanted to). Returns
+        None if nothing has been posted for this (year, week) yet, same
+        "not posted yet" convention as the RS recap, not an error."""
+        df = self._ensure_playoff_recaps_df()
+        if df is None:
             return None
-        rounds = year_data.get("rounds") or []
-        round_data = next((r for r in rounds if r.get("week") == week), None)
-        if round_data is None:
+        row = df[(df["year"] == year) & (df["week"] == week)]
+        if row.empty:
             return None
-        matchups = [m for m in round_data.get("matchups", []) if m.get("winner")]
-        if not matchups:
-            return None
-
-        is_last_round = rounds[-1] is round_data
-        next_round_label = None
-        if not is_last_round:
-            idx = rounds.index(round_data)
-            if idx + 1 < len(rounds):
-                next_round_label = rounds[idx + 1].get("label")
-
-        enriched_matchups = [
-            {**m, **self._matchup_narrative(year, m, is_last_round, next_round_label)} for m in matchups
-        ]
-
-        result: dict = {
+        r = row.iloc[-1]  # last write wins if ever somehow duplicated
+        return {
             "kind": "playoff",
-            "year": year,
-            "week": week,
-            "round_label": round_data.get("label"),
-            "byes": round_data.get("byes") or [],
-            "matchups": enriched_matchups,
-            "champion": None,
-            "final_standings": None,
+            "year": int(r["year"]),
+            "week": int(r["week"]),
+            "round_label": r["round_label"],
+            "byes": json.loads(r["byes_json"]) if pd.notna(r["byes_json"]) else [],
+            "matchups": json.loads(r["matchups_json"]),
+            "champion": r["champion"] if pd.notna(r["champion"]) and r["champion"] else None,
+            "final_standings": json.loads(r["final_standings_json"]) if pd.notna(r["final_standings_json"]) else None,
         }
-        if is_last_round and year_data.get("status") == "Complete":
-            result["champion"] = year_data.get("champion")
-            result["final_standings"] = year_data.get("standings")
-        return result
-
-    # margin = winner's category wins minus winner's category losses, within
-    # one playoff matchup -- a tied category count (decided by tiebreak) is
-    # its own tier regardless of the margin math, since "tiebreak_applied"
-    # is a more honest signal of how close the game actually was than a
-    # margin of 0 alone (ties in the category count itself also land here).
-    _TIE_VERB_PHRASES = (
-        "barely edges out",
-        "narrowly survives against",
-        "needs a tiebreaker to get past",
-        "escapes with a win over",
-    )
-    _CLOSE_VERB_PHRASES = ("defeats", "beats", "edges past", "gets past")  # margin == 1
-    _SOLID_VERB_PHRASES = (  # margin 2-3
-        "convincingly beats",
-        "cruises past",
-        "comfortably defeats",
-        "pulls away from",
-        "ousts",
-    )
-    _BLOWOUT_VERB_PHRASES = (  # margin >= 4
-        "demolishes",
-        "blows out",
-        "routs",
-        "dominates",
-        "runs away with it against",
-    )
-
-    def _matchup_narrative(
-        self, year: int, m: dict, is_last_round: bool, next_round_label: str | None
-    ) -> dict:
-        # m["wins"]/m["losses"] are team1's perspective (see
-        # weekly_rankings.py's build_playoff_recap_message for the same
-        # fix) -- flip to the WINNER's perspective before computing margin.
-        team1_won = m["winner"] == m["team1"]
-        winner_wins, winner_losses = (m["wins"], m["losses"]) if team1_won else (m["losses"], m["wins"])
-        margin = winner_wins - winner_losses
-        if m.get("tiebreak_applied") or margin <= 0:
-            pool = self._TIE_VERB_PHRASES
-        elif margin == 1:
-            pool = self._CLOSE_VERB_PHRASES
-        elif margin <= 3:
-            pool = self._SOLID_VERB_PHRASES
-        else:
-            pool = self._BLOWOUT_VERB_PHRASES
-        verb_phrase = random.choice(pool)
-
-        if is_last_round:
-            advancement = "claim 3rd place" if m.get("slot") == "3rd Place" else f"win the {year} championship"
-        elif next_round_label:
-            advancement = f"advance to the {next_round_label}"
-        else:
-            advancement = "advance to the next round"
-
-        return {"verb_phrase": verb_phrase, "advancement": advancement}
 
     def _ensure_weekly_recaps_df(self) -> pd.DataFrame | None:
         if self._weekly_recaps_df is not None:
@@ -709,6 +633,16 @@ class LeagueStore:
             return None
         self._weekly_recaps_df = pd.read_csv(path)
         return self._weekly_recaps_df
+
+    def _ensure_playoff_recaps_df(self) -> pd.DataFrame | None:
+        if self._playoff_recaps_df is not None:
+            return self._playoff_recaps_df
+        ref_dir = getattr(self.store, "ref_dir", None)
+        path = Path(ref_dir) / "playoff_recaps.csv" if ref_dir else None
+        if path is None or not path.exists():
+            return None
+        self._playoff_recaps_df = pd.read_csv(path)
+        return self._playoff_recaps_df
 
     def nba_schedule(self, start_date: str, end_date: str) -> list[dict]:
         """Real NBA games (date/time, home/away team) in [start_date,

@@ -80,6 +80,19 @@ def weekly_recaps_csv_path() -> Path:
     return REF_DIR / "weekly_recaps.csv"
 
 
+def playoff_recaps_csv_path() -> Path:
+    """Playoff-week counterpart to weekly_recaps_csv_path() -- one row per
+    (year, week) StatBot has posted a playoff recap for, including each
+    matchup's randomly-chosen verb_phrase/advancement narrative text. User
+    request, 2026-10-09: that text must be generated once and persisted,
+    not re-rolled on every page load -- dashboard-api's volume mount is
+    read-only (infra/docker/docker-compose.yml), so the write has to
+    happen here, in stat-bot (read-write), at post time; LeagueStore.
+    weekly_recap() only ever reads this file for playoff weeks, never
+    computes anything live. See discord/weekly_rankings.py."""
+    return REF_DIR / "playoff_recaps.csv"
+
+
 def roster_rank_history_csv_path() -> Path:
     """One row per (year, week, player) snapshot of that player's live
     fantasy rank, dated -- see scripts/export_roster_ranks.py's

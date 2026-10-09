@@ -29,10 +29,11 @@ from __future__ import annotations
 import csv
 import json
 import os
+import random
 from pathlib import Path
 from typing import Awaitable, Callable
 
-from shared.runtime_config import weekly_recaps_csv_path
+from shared.runtime_config import playoff_recaps_csv_path, weekly_recaps_csv_path
 
 RANKINGS_CHANNEL_ID = 1029164739558903928
 WEB_APP_BASE_URL = os.getenv("WEB_APP_BASE_URL", "https://unis-fantasy-goat.vercel.app")
@@ -655,18 +656,188 @@ async def post_weekly_recap(bot, api_post: ApiPost, api_get: ApiGet, year: int, 
     return True
 
 
+PLAYOFF_CSV_FIELDS = [
+    "year",
+    "week",
+    "round_label",
+    "byes_json",
+    "matchups_json",
+    "champion",
+    "final_standings_json",
+    "posted_at",
+]
+
+# margin = winner's category wins minus winner's category losses, within one
+# playoff matchup -- a tied category count (decided by tiebreak) is its own
+# tier regardless of the margin math, since "tiebreak_applied" is a more
+# honest signal of how close the game actually was than a margin of 0 alone
+# (ties in the category count itself also land here). User feedback,
+# 2026-10-09: "beats convincingly" is bad grammar in the "{winner} {phrase}
+# {loser}" slot -- fixed to "convincingly beats" (adverb before the verb).
+_TIE_VERB_PHRASES = (
+    "barely edges out",
+    "narrowly survives against",
+    "needs a tiebreaker to get past",
+    "escapes with a win over",
+)
+_CLOSE_VERB_PHRASES = ("defeats", "beats", "edges past", "gets past")  # margin == 1
+_SOLID_VERB_PHRASES = (  # margin 2-3
+    "convincingly beats",
+    "cruises past",
+    "comfortably defeats",
+    "pulls away from",
+    "ousts",
+)
+_BLOWOUT_VERB_PHRASES = (  # margin >= 4
+    "demolishes",
+    "blows out",
+    "routs",
+    "dominates",
+    "runs away with it against",
+)
+
+
+def _matchup_narrative(year: int, m: dict, is_last_round: bool, next_round_label: str | None) -> dict:
+    """verb_phrase (margin-reactive) + advancement (what the winner earns)
+    for one decided playoff matchup -- feature request, 2026-10-07 follow-
+    up. random.choice() only ever runs from HERE, called exactly once per
+    matchup by _build_playoff_recap below, itself only ever called once
+    per (year, week) by post_playoff_weekly_recap/force_regenerate_
+    playoff_recap -- never on a read path. Moved here from
+    dashboard_site/api/league_store.py, 2026-10-09: that process's volume
+    mount is read-only, so it could never have persisted the choice even
+    if it wanted to; generation has to happen in this module, which runs
+    in the read-write stat-bot container."""
+    # m["wins"]/m["losses"] are team1's perspective (matches
+    # playoff_brackets.json directly) -- flip to the WINNER's perspective
+    # before computing margin.
+    team1_won = m["winner"] == m["team1"]
+    winner_wins, winner_losses = (m["wins"], m["losses"]) if team1_won else (m["losses"], m["wins"])
+    margin = winner_wins - winner_losses
+    if m.get("tiebreak_applied") or margin <= 0:
+        pool = _TIE_VERB_PHRASES
+    elif margin == 1:
+        pool = _CLOSE_VERB_PHRASES
+    elif margin <= 3:
+        pool = _SOLID_VERB_PHRASES
+    else:
+        pool = _BLOWOUT_VERB_PHRASES
+    verb_phrase = random.choice(pool)
+
+    if is_last_round:
+        advancement = "claim 3rd place" if m.get("slot") == "3rd Place" else f"win the {year} championship"
+    elif next_round_label:
+        advancement = f"advance to the {next_round_label}"
+    else:
+        advancement = "advance to the next round"
+
+    return {"verb_phrase": verb_phrase, "advancement": advancement}
+
+
+def _build_playoff_recap(year: int, week: int, year_data: dict) -> dict | None:
+    """Builds the full recap dict (same shape LeagueStore.weekly_recap()
+    used to return live) for one (year, week) from raw /league/
+    playoff_brackets data -- the ONE place this computation happens.
+    Returns None if no round lines up with this week or that round's
+    games haven't been decided yet."""
+    rounds = year_data.get("rounds") or []
+    round_data = next((r for r in rounds if r.get("week") == week), None)
+    if round_data is None:
+        return None
+    matchups = [m for m in round_data.get("matchups", []) if m.get("winner")]
+    if not matchups:
+        return None
+
+    is_last_round = rounds[-1] is round_data
+    next_round_label = None
+    if not is_last_round:
+        idx = rounds.index(round_data)
+        if idx + 1 < len(rounds):
+            next_round_label = rounds[idx + 1].get("label")
+
+    enriched_matchups = [{**m, **_matchup_narrative(year, m, is_last_round, next_round_label)} for m in matchups]
+
+    recap: dict = {
+        "kind": "playoff",
+        "year": year,
+        "week": week,
+        "round_label": round_data.get("label"),
+        "byes": round_data.get("byes") or [],
+        "matchups": enriched_matchups,
+        "champion": None,
+        "final_standings": None,
+    }
+    if is_last_round and year_data.get("status") == "Complete":
+        recap["champion"] = year_data.get("champion")
+        recap["final_standings"] = year_data.get("standings")
+    return recap
+
+
+def _ensure_playoff_csv(path: Path) -> None:
+    if path.exists():
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        csv.DictWriter(f, fieldnames=PLAYOFF_CSV_FIELDS).writeheader()
+
+
+def _existing_playoff_recap_keys(path: Path) -> set[tuple[str, str]]:
+    with path.open(newline="", encoding="utf-8") as f:
+        return {(row["year"], row["week"]) for row in csv.DictReader(f)}
+
+
+def _remove_playoff_recap_row(path: Path, year: int, week: int) -> None:
+    """Used only by force_regenerate_playoff_recap -- normal posting never
+    overwrites a prior row (append-only, same convention as
+    append_weekly_recap). Rewrites the file without the matching row; a
+    no-op if the file or the row doesn't exist."""
+    if not path.exists():
+        return
+    with path.open(newline="", encoding="utf-8") as f:
+        rows = [row for row in csv.DictReader(f) if not (row["year"] == str(year) and row["week"] == str(week))]
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=PLAYOFF_CSV_FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def append_playoff_recap(recap: dict, posted_at: str) -> None:
+    """Appends one row -- never overwrites prior weeks' rows (same
+    append-only convention as append_weekly_recap). A no-op if this exact
+    (year, week) was already recorded, so a retried post can't write a
+    duplicate row -- callers that genuinely want to replace an existing
+    row (force_regenerate_playoff_recap) must remove it first."""
+    path = playoff_recaps_csv_path()
+    _ensure_playoff_csv(path)
+    key = (str(recap["year"]), str(recap["week"]))
+    if key in _existing_playoff_recap_keys(path):
+        return
+
+    row = {
+        "year": recap["year"],
+        "week": recap["week"],
+        "round_label": recap.get("round_label") or "",
+        "byes_json": json.dumps(recap.get("byes") or []),
+        "matchups_json": json.dumps(recap["matchups"]),
+        "champion": recap.get("champion") or "",
+        "final_standings_json": json.dumps(recap["final_standings"]) if recap.get("final_standings") else "",
+        "posted_at": posted_at,
+    }
+    with path.open("a", newline="", encoding="utf-8") as f:
+        csv.DictWriter(f, fieldnames=PLAYOFF_CSV_FIELDS).writerow(row)
+
+
 def build_playoff_recap_message(recap: dict) -> str:
     """Playoff-week counterpart to build_weekly_recap_message -- feature
     request, 2026-10-07: "focused on the results of the matchups, who is
     advancing, final playoff results if it is the last week." `recap` is
-    exactly /league/weekly_recap's response for a playoff week (same dict
-    dashboard_site/api/league_store.py::_playoff_weekly_recap() returns,
-    including each matchup's backend-computed `verb_phrase`/`advancement`
-    -- 2026-10-07 follow-up request for margin-reactive wording + what the
-    winner earns by winning). No AI commentary (unlike the RS recap's
-    Beatdowns/Upsets/Milestones) -- the bracket result already says
-    everything that matters, deterministically, same reasoning as
-    build_standings_section()."""
+    the same dict shape _build_playoff_recap returns / Ref/playoff_recaps.
+    csv persists, including each matchup's verb_phrase/advancement
+    (2026-10-07 follow-up request for margin-reactive wording + what the
+    winner earns by winning -- generated once, see _matchup_narrative).
+    No AI commentary (unlike the RS recap's Beatdowns/Upsets/Milestones)
+    -- the bracket result already says everything that matters,
+    deterministically, same reasoning as build_standings_section()."""
     year = recap["year"]
     link = f"{WEB_APP_BASE_URL}/?year={year}&week={recap['week']}"
     label = recap.get("round_label") or "Playoffs"
@@ -704,26 +875,65 @@ def build_playoff_recap_message(recap: dict) -> str:
     return "\n\n".join(parts)
 
 
-async def post_playoff_weekly_recap(bot, api_post: ApiPost, year: int, week: int) -> bool:
-    """Playoff-week counterpart to post_weekly_recap. Reads
-    /league/weekly_recap (the same endpoint and exact same precomputed
-    response dashboard_site/api/league_store.py::_playoff_weekly_recap()
-    builds for the web app's Weekly Stats page) rather than
-    /league/playoff_brackets directly, so the Discord message and the app
-    card always show identical matchup wording -- including the
-    margin-reactive verb_phrase/advancement text, which is randomly
-    chosen once per matchup; re-deriving it independently here would risk
-    the two channels disagreeing on the same game. No CSV row to append
-    (unlike the RS recap, there's no LLM-generated content that needs
-    freezing at post time -- the bracket data already IS the recap, and
-    it's already durably stored in Ref/playoff_brackets.json). Returns
-    True on success (message sent), False if this (year, week) doesn't
-    line up with a decided playoff round yet."""
-    status, recap = await api_post("/league/weekly_recap", {"year": year, "week": week})
-    if status != 200 or not recap or recap.get("kind") != "playoff":
+async def post_playoff_weekly_recap(bot, api_get: ApiGet, year: int, week: int) -> bool:
+    """Playoff-week counterpart to post_weekly_recap. User request,
+    2026-10-09: the narrative text must be generated ONCE and persisted,
+    not re-rolled every time the week is viewed -- so unlike the earlier
+    version of this function, this reads the raw /league/playoff_brackets
+    bracket data (not /league/weekly_recap), builds the recap via
+    _build_playoff_recap (which calls _matchup_narrative's random.choice
+    exactly once per matchup), and immediately persists it to
+    Ref/playoff_recaps.csv via append_playoff_recap BEFORE posting --
+    LeagueStore.weekly_recap() only ever reads that file afterward, never
+    computes anything live (dashboard-api's volume mount is read-only
+    anyway, so it couldn't persist even if it tried). append_playoff_
+    recap's own no-op-if-already-recorded guard is the defense-in-depth
+    backstop; the real dedup guard is stat_bot.py's hourly-loop cursor,
+    which only ever calls this once per (year, week). Returns True on
+    success (message sent), False if this (year, week) doesn't line up
+    with a decided playoff round yet."""
+    from datetime import datetime, timezone
+
+    brackets = await api_get("/league/playoff_brackets")
+    year_data = brackets.get(str(year))
+    if not year_data:
         return False
+    recap = _build_playoff_recap(year, week, year_data)
+    if recap is None:
+        return False
+
+    append_playoff_recap(recap, datetime.now(timezone.utc).isoformat())
 
     message = build_playoff_recap_message(recap)
     channel = bot.get_channel(RANKINGS_CHANNEL_ID) or await bot.fetch_channel(RANKINGS_CHANNEL_ID)
     await channel.send(message)
     return True
+
+
+async def force_regenerate_playoff_recap(api_get: ApiGet, year: int, week: int) -> dict | None:
+    """User request, 2026-10-09: the persisted narrative stays forever
+    "unless I specifically ask for it to be changed" -- this is that
+    escape hatch (invoked manually, e.g. via a one-off script, not by any
+    automatic loop). Re-rolls verb_phrase/advancement for every matchup
+    in this (year, week) via a fresh _build_playoff_recap call, replaces
+    the existing Ref/playoff_recaps.csv row (append_playoff_recap alone
+    won't overwrite -- same append-only convention as the RS recap), and
+    returns the new recap dict (including a freshly-built Discord message
+    the caller can choose to post) rather than posting anything itself --
+    whether/where to repost is a judgment call for whoever's running this,
+    not something to automate silently."""
+    from datetime import datetime, timezone
+
+    brackets = await api_get("/league/playoff_brackets")
+    year_data = brackets.get(str(year))
+    if not year_data:
+        return None
+    recap = _build_playoff_recap(year, week, year_data)
+    if recap is None:
+        return None
+
+    path = playoff_recaps_csv_path()
+    _ensure_playoff_csv(path)
+    _remove_playoff_recap_row(path, year, week)
+    append_playoff_recap(recap, datetime.now(timezone.utc).isoformat())
+    return recap

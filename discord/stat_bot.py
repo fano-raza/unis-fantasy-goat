@@ -184,7 +184,7 @@ def run_bot() -> None:
             if week <= rs_week_count:
                 posted = await weekly_rankings.post_weekly_recap(bot, _api_post, _api_get, year, week)
             else:
-                posted = await weekly_rankings.post_playoff_weekly_recap(bot, _api_post, year, week)
+                posted = await weekly_rankings.post_playoff_weekly_recap(bot, _api_get, year, week)
             if posted:
                 _write_last_weekly_rankings_run(year, week)
                 print(f"Weekly rankings posted for {year} week {week}")
