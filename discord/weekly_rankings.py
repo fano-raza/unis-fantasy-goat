@@ -186,11 +186,29 @@ def _team_history_from_weeks(weeks_desc: list[tuple[int, list[dict]]], team: str
     }
 
 
-async def _standings_snapshot(api_post: ApiPost, year: int, week: int) -> dict[str, int]:
+async def _season_standings_key(api_get, year: int) -> str:
+    """Which of /league/standings' "wl" (matchup win-loss) / "cats"
+    (category win-loss) keys is this season's REAL standings/seeding
+    format -- varies per year (Models/seasons.py's self.is_WL / meta()'s
+    season_format), not a constant. Bug found 2026-10-09 (user-reported
+    wrong team name in a Playoff Race paragraph): every standings-derived
+    fact in this module hardcoded "wl" regardless of season format.
+    Confirmed live that 2026's real playoff seeding (Fano/Chirayu/Amil/
+    Rohil/Sama/Juan) matches "cats" standings exactly, not "wl" (under
+    "wl" alone, Ange outranks three of those six real playoff teams) --
+    meta()'s season_format already correctly flags 2026 (and 2024) as
+    "cats" seasons, this module just never consulted it. Defaults to "wl"
+    if season_format is missing for some reason."""
+    meta = await api_get("/league/meta")
+    season_format = (meta.get("season_format") or {}).get(str(year))
+    return season_format if season_format in ("wl", "cats") else "wl"
+
+
+async def _standings_snapshot(api_post: ApiPost, year: int, week: int, standings_key: str) -> dict[str, int]:
     status, standings = await api_post("/league/standings", {"year": year, "min_week": 1, "max_week": week})
     if status != 200:
         return {}
-    return {r["team"]: r["rank"] for r in standings.get("wl", [])}
+    return {r["team"]: r["rank"] for r in standings.get(standings_key, [])}
 
 
 async def _call_llm(system_prompt: str, facts: dict, usage_label: str, max_output_tokens: int = 300) -> str | None:
@@ -329,11 +347,13 @@ async def _is_final_third_of_season(api_get, year: int, week: int) -> bool:
     return week > (2 / 3) * rs_week_count
 
 
-async def _playoff_race_facts(api_post: ApiPost, year: int, week: int) -> dict | None:
+async def _playoff_race_facts(api_post: ApiPost, year: int, week: int, standings_key: str) -> dict | None:
     """Top-8 standings + the games-back margin at the two spots that matter
     for a 6-team playoff bubble (5th-vs-6th, 6th-vs-7th), for the "final
     third of the season" playoff-race emphasis. Games-back uses the
-    standard ((W1-L1)-(W2-L2))/2 formula.
+    standard ((W1-L1)-(W2-L2))/2 formula. `standings_key` ("wl" or "cats")
+    picks the season's REAL standings format -- see
+    _season_standings_key's docstring for the bug this fixes.
 
     Uses LIST POSITION after sorting, not the `rank` field's value --
     standings() shares one rank number across tied teams (confirmed live:
@@ -345,10 +365,10 @@ async def _playoff_race_facts(api_post: ApiPost, year: int, week: int) -> dict |
     status, standings = await api_post("/league/standings", {"year": year, "min_week": 1, "max_week": week})
     if status != 200:
         return None
-    wl_rows = standings.get("wl", [])
-    if not wl_rows:
+    rows = standings.get(standings_key, [])
+    if not rows:
         return None
-    sorted_rows = sorted(wl_rows, key=lambda r: (r["rank"], r["team"]))
+    sorted_rows = sorted(rows, key=lambda r: (r["rank"], r["team"]))
 
     def games_back(a: dict | None, b: dict | None) -> float | None:
         if not a or not b:
@@ -361,7 +381,7 @@ async def _playoff_race_facts(api_post: ApiPost, year: int, week: int) -> dict |
     return {
         "top_8_standings": [
             {"team": r["team"], "rank": r["rank"], "record": f"{r['wins']}-{r['losses']}-{r['ties']}"}
-            for r in sorted(wl_rows, key=lambda r: r["rank"])
+            for r in sorted(rows, key=lambda r: r["rank"])
             if r["rank"] <= 8
         ],
         "games_back_5th_vs_6th": games_back(fifth, sixth),
@@ -392,8 +412,9 @@ async def build_weekly_recap_league_facts(api_post: ApiPost, api_get, year: int,
     if not ranked:
         return {}
 
-    this_week_ranks = await _standings_snapshot(api_post, year, week)
-    last_week_ranks = await _standings_snapshot(api_post, year, week - 1) if week > 1 else {}
+    standings_key = await _season_standings_key(api_get, year)
+    this_week_ranks = await _standings_snapshot(api_post, year, week, standings_key)
+    last_week_ranks = await _standings_snapshot(api_post, year, week - 1, standings_key) if week > 1 else {}
 
     major_victories: list[dict] = []
     underdog_victories: list[dict] = []
@@ -490,7 +511,7 @@ async def build_weekly_recap_league_facts(api_post: ApiPost, api_get, year: int,
 
     playoff_race_context = None
     if await _is_final_third_of_season(api_get, year, week):
-        playoff_race_context = await _playoff_race_facts(api_post, year, week)
+        playoff_race_context = await _playoff_race_facts(api_post, year, week, standings_key)
 
     return {
         "week": week,
