@@ -181,7 +181,34 @@ class LeagueStore:
         total_matchup_count = {y: rs_week_count.get(y, 0) + playoff_rounds.get(y, 0) for y in years}
 
         members = sorted(t for t in df["Team"].dropna().astype(str).unique().tolist() if t != "BYE")
+
+        # Loud, not silent: SEASON_IS_WL/PLAYOFF_TEAM_COUNT are hand-maintained
+        # mirrors of constants.py (duplicated to avoid dashboard-api's heavy
+        # gspread import chain -- see their own comments). A season missing
+        # from one of them silently defaulting to a guess is exactly the bug
+        # class that produced 2026-10-09's wrong-team-eliminated incident
+        # (there it was discord/weekly_rankings.py never consulting
+        # season_format at all; this guards the narrower but still real case
+        # of a brand-new year showing up in the data before these dicts are
+        # updated for it). Printed once per background reload (this method
+        # is cached by meta(), not called per-request), so it's visible in
+        # the container logs without being spammy.
+        for y in years:
+            if y not in SEASON_IS_WL:
+                print(
+                    f"[meta WARNING] year {y} has no SEASON_IS_WL entry -- defaulting to 'wl' format. "
+                    "Add it to dashboard_site/api/league_store.py's SEASON_IS_WL (mirroring constants.py) "
+                    "if this year is actually category-scored, or standings/recap facts for it may be wrong."
+                )
+            if y not in PLAYOFF_TEAM_COUNT:
+                print(
+                    f"[meta WARNING] year {y} has no PLAYOFF_TEAM_COUNT entry -- defaulting to 6 playoff "
+                    "teams. Add it to dashboard_site/api/league_store.py's PLAYOFF_TEAM_COUNT (mirroring "
+                    "constants.py's playoffTeamCount) if this year's playoff field size differs."
+                )
+
         season_format = {y: ("wl" if SEASON_IS_WL.get(y, True) else "cats") for y in years}
+        playoff_team_count = {y: PLAYOFF_TEAM_COUNT.get(y, 6) for y in years}
         return {
             "years": years,
             "members": members,
@@ -192,6 +219,7 @@ class LeagueStore:
             "total_matchup_count": total_matchup_count,
             "categories": MAIN_CATS,
             "season_format": season_format,
+            "playoff_team_count": playoff_team_count,
             "goat": self.goat(),
         }
 
@@ -858,7 +886,7 @@ class LeagueStore:
         }
 
         if min_week == 1:
-            cutoff = PLAYOFF_TEAM_COUNT.get(year, 6)
+            cutoff = self.meta().get("playoff_team_count", {}).get(year, 6)
             rs_week_count = self.meta().get("rs_week_count", {}).get(year)
             real_key = self.meta().get("season_format", {}).get(year, "wl")
             if cutoff > 0 and rs_week_count is not None:
