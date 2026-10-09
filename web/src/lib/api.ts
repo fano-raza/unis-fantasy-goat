@@ -254,6 +254,12 @@ export interface StandingsRow {
   losses: number;
   ties: number;
   rank: number;
+  // Only present on whichever of wl/cats is this season's REAL
+  // standings/seeding format, and only for the full-season (min_week=1)
+  // view -- see league_store.py::standings()'s docstring. Feature
+  // request, 2026-10-09.
+  clinched?: boolean;
+  eliminated?: boolean;
 }
 
 export interface StandingsResponse {

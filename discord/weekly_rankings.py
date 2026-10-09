@@ -286,6 +286,16 @@ WEEKLY_RECAP_SYSTEM_PROMPT = (
     "top 6 standings spots -- lean into excitement specifically when games_back_5th_vs_6th or "
     "games_back_6th_vs_7th is small (a tight race), and stay more matter-of-fact when it isn't; calibrate "
     "to the actual numbers, don't manufacture drama that isn't there. "
+    "top_8_standings entries and the clinched_teams/eliminated_teams lists tell you who is mathematically "
+    "locked in or out ALREADY, as of right now -- this is settled fact, not a prediction. For any team in "
+    "eliminated_teams, say they're OUT / eliminated / done -- never describe them as still fighting, "
+    "pushing, climbing, or having a shot, even if their games-back number looks small; a team can be "
+    "eliminated while still 'close' in the standings if it has run out of games to play. For any team in "
+    "clinched_teams, say they've LOCKED UP / secured / clinched their spot -- never describe them as still "
+    "needing to hold on or defend it. If every team in the top_8_standings list is either clinched or "
+    "eliminated, the regular season's playoff picture is fully decided (most likely because this is the "
+    "final week) -- write the paragraph as a settled recap of who made it and who didn't, not as an ongoing "
+    "race with tension left in it. "
     "If major_victories/underdog_victories/milestones is an empty list, its matching output array must "
     "be an empty array -- never write a sentence claiming nothing happened. "
     "Each sentence stands alone (these become individual bullet points, not a flowing paragraph) -- do NOT "
@@ -378,14 +388,28 @@ async def _playoff_race_facts(api_post: ApiPost, year: int, week: int, standings
     fifth = sorted_rows[PLAYOFF_CUTOFF - 2] if len(sorted_rows) > PLAYOFF_CUTOFF - 2 else None
     sixth = sorted_rows[PLAYOFF_CUTOFF - 1] if len(sorted_rows) > PLAYOFF_CUTOFF - 1 else None
     seventh = sorted_rows[PLAYOFF_CUTOFF] if len(sorted_rows) > PLAYOFF_CUTOFF else None
+
+    # clinched/eliminated are computed by league_store.py::standings() --
+    # see _apply_playoff_status there for the math (feature request,
+    # 2026-10-09: catches cases like "the last week of the regular season
+    # just ended" where remaining games = 0, which collapses cleanly to
+    # "already decided" rather than needing special-casing here).
     return {
         "top_8_standings": [
-            {"team": r["team"], "rank": r["rank"], "record": f"{r['wins']}-{r['losses']}-{r['ties']}"}
+            {
+                "team": r["team"],
+                "rank": r["rank"],
+                "record": f"{r['wins']}-{r['losses']}-{r['ties']}",
+                "clinched": bool(r.get("clinched")),
+                "eliminated": bool(r.get("eliminated")),
+            }
             for r in sorted(rows, key=lambda r: r["rank"])
             if r["rank"] <= 8
         ],
         "games_back_5th_vs_6th": games_back(fifth, sixth),
         "games_back_6th_vs_7th": games_back(sixth, seventh),
+        "clinched_teams": sorted(r["team"] for r in rows if r.get("clinched")),
+        "eliminated_teams": sorted(r["team"] for r in rows if r.get("eliminated")),
     }
 
 

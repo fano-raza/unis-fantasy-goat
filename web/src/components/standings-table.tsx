@@ -71,9 +71,21 @@ export function StandingsTable({
                 </span>
               </TableCell>
               <TableCell className="font-sans font-extrabold tracking-wide uppercase">
-                <Link href={`/team/profile?team=${encodeURIComponent(row.team)}`} className="hover:underline">
-                  {row.team}
-                </Link>
+                <span className="inline-flex items-center gap-1.5">
+                  <Link href={`/team/profile?team=${encodeURIComponent(row.team)}`} className="hover:underline">
+                    {row.team}
+                  </Link>
+                  {row.clinched && (
+                    <span className="rounded-sm bg-win/15 px-1 py-0.5 text-[9px] font-bold tracking-wide text-win">
+                      CLINCHED
+                    </span>
+                  )}
+                  {row.eliminated && (
+                    <span className="rounded-sm bg-loss/15 px-1 py-0.5 text-[9px] font-bold tracking-wide text-loss">
+                      ELIMINATED
+                    </span>
+                  )}
+                </span>
               </TableCell>
               <TableCell className="text-right">
                 {row.wins}-{row.losses}-{row.ties}

@@ -23,6 +23,12 @@ NEG_CATS = ["TO"]
 PCT_CATS = ["FG%", "FT%"]
 SUM_CATS = ["3PTM", "REB", "AST", "STL", "BLK", "TO", "PTS"]
 RATING_COLS = [f"{c}_rating" for c in MAIN_CATS]
+
+# Mirrors constants.py's playoffTeamCount -- a fixed, rarely-changing league
+# configuration value (not derived from game results), duplicated here for
+# the same reason as MAIN_CATS above. Used by standings()'s clinch/
+# elimination math (feature request, 2026-10-09).
+PLAYOFF_TEAM_COUNT = {2019: 4, 2020: 0, 2021: 4, 2022: 6, 2023: 6, 2024: 6, 2025: 6, 2026: 6}
 RANK_COLS = [f"{c}_rank" for c in MAIN_CATS]
 
 # Mirrors constants.seasonInfo's 3rd tuple element (is W/L scoring) per
@@ -809,7 +815,17 @@ class LeagueStore:
         full-season W/L standings only) -- ties share a rank instead, the
         same convention used elsewhere in this app (e.g. Weekly Stats'
         display-rank fix). See _planning/web-app-build-plan.md for the
-        full reasoning."""
+        full reasoning.
+
+        When min_week == 1, each row in whichever of "wl"/"cats" is this
+        season's REAL standings/seeding format (meta().season_format --
+        see _season_standings_key's twin in discord/weekly_rankings.py for
+        the bug this distinction fixed) also gets "clinched"/"eliminated"
+        booleans -- feature request, 2026-10-09. See
+        _apply_playoff_status's docstring for the math. Not computed for
+        the other (non-binding) standings type, or for a mid-season
+        min_week > 1 window (clinch/elimination is only a meaningful
+        concept against the full season-to-date record)."""
         df = self._ensure_weekly_df()
         df = df[
             (df["Season"] == "RS")
@@ -834,12 +850,73 @@ class LeagueStore:
             ]
             return self._rank_standings(rows)
 
-        return {
+        result = {
             "wl": _standings("MATCHUP_WINS", "MATCHUP_LOSSES", "MATCHUP_DRAWS"),
             "cats": _standings("CAT_WINS", "CAT_LOSSES", "CAT_TIES"),
             "league_wl": _standings("LEAGUE_WL_WINS", "LEAGUE_WL_LOSSES", "LEAGUE_WL_DRAWS"),
             "league_cats": _standings("LEAGUE_CATS_WINS", "LEAGUE_CATS_LOSSES", "LEAGUE_CATS_DRAWS"),
         }
+
+        if min_week == 1:
+            cutoff = PLAYOFF_TEAM_COUNT.get(year, 6)
+            rs_week_count = self.meta().get("rs_week_count", {}).get(year)
+            real_key = self.meta().get("season_format", {}).get(year, "wl")
+            if cutoff > 0 and rs_week_count is not None:
+                remaining_weeks = max(0, rs_week_count - max_week)
+                per_week_boost = len(MAIN_CATS) if real_key == "cats" else 1
+                self._apply_playoff_status(result[real_key], cutoff, remaining_weeks, per_week_boost)
+
+        return result
+
+    @staticmethod
+    def _apply_playoff_status(rows: list[dict], cutoff: int, remaining_weeks: int, per_week_boost: int) -> None:
+        """Mutates each row in place, adding "clinched"/"eliminated"
+        booleans -- feature request, 2026-10-09: "calculate when a team has
+        been eliminated from playoff contention (it means that with their
+        current record, even if they were to win all their remaining games
+        9-0 ... they still could not make the playoffs) ... if a team has
+        secured a playoff position no matter what, we should highlight
+        that."
+
+        Standard best-case-ceiling / current-score-floor magic-number
+        math, same shape as the classic "elimination number" concept:
+        - ceiling(team) = current score + remaining_weeks * per_week_boost
+          (win out from here -- per_week_boost is 9 for a category-scored
+          season going 9-0 every remaining week, or 1 for a win-loss
+          season winning every remaining matchup).
+        - A team's score can only ever go UP from here (wins/cat-wins are
+          cumulative), so its own current score already IS its floor --
+          no separate "loses out" simulation needed.
+        - eliminated: >= cutoff other teams already have a CURRENT score
+          at or above this team's own CEILING -- it cannot possibly pass
+          enough teams even in the best case.
+        - clinched: fewer than cutoff other teams could possibly reach a
+          CEILING above this team's CURRENT score -- nobody left can catch
+          it even in their own best case.
+
+        This is each team's own ceiling/floor only, not a full
+        combinatorial solve of every remaining matchup's possible outcome
+        (which would also need to account for teams taking wins directly
+        off each other) -- the standard simplified definition, and what
+        the user's own "win out" framing describes. Mutates in place
+        rather than returning a new list so this can apply to exactly the
+        one (wl or cats) list that's this season's real format, leaving
+        the other untouched."""
+        if cutoff <= 0 or not rows:
+            return
+
+        def score(r: dict) -> float:
+            return r["wins"] + 0.49 * r["ties"]
+
+        current = {r["team"]: score(r) for r in rows}
+        ceiling = {team: val + remaining_weeks * per_week_boost for team, val in current.items()}
+
+        for row in rows:
+            team = row["team"]
+            others_current = [v for t, v in current.items() if t != team]
+            others_ceiling = [v for t, v in ceiling.items() if t != team]
+            row["eliminated"] = sum(1 for v in others_current if v >= ceiling[team]) >= cutoff
+            row["clinched"] = sum(1 for v in others_ceiling if v > current[team]) < cutoff
 
     def standings_history(self, year: int, min_week: int, max_week: int) -> dict:
         """For each week w in [min_week, max_week], the standings rank of
