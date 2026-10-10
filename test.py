@@ -38,7 +38,7 @@ def gdoc():
 def espn():
     pass
     year = 2021
-    espnLeague = League(espn_leagueID, year, espn_s2, espn_swid)
+    espnLeague = League(espnLeagueIDs[year], year, espn_s2, espn_swid)
 
     league_data = espnLeague._fetch_league()
     # for key in league_data:
@@ -57,7 +57,7 @@ def espn():
     # FIGURE OUT ESPN TEAM IDS
     # csvList = []
     # for year in range(2019,2024):
-    #     espnLeague = League(espn_leagueID, year, espn_s2, espn_swid)
+    #     espnLeague = League(espnLeagueIDs[year], year, espn_s2, espn_swid)
     #     league_data = espnLeague._fetch_league()
     #     memberDict = {}
     #     for member in league_data.get('members'):

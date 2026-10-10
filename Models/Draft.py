@@ -80,7 +80,7 @@ class Draft:
 
             # If ESPN league
             if self.is_espn:
-                self.espnLeague = League(espn_leagueID, self.year, espn_s2, espn_swid)
+                self.espnLeague = League(espnLeagueIDs[self.year], self.year, espn_s2, espn_swid)
                 self.player_dict = {}
                 player_data = self.espnLeague.espn_request.get_pro_players()
                 for player in player_data:

@@ -60,7 +60,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from constants import calendar_csv_path, espn_leagueID, espn_s2, espn_swid, seasonInfo  # noqa: E402
+from constants import calendar_csv_path, espnLeagueIDs, espn_s2, espn_swid, seasonInfo  # noqa: E402
 from shared.atomic_write import atomic_write  # noqa: E402
 from shared.runtime_config import REF_DIR  # noqa: E402
 
@@ -93,7 +93,7 @@ def _week_bounds_from_lengths(open_date: datetime.date, lengths: list[int]) -> l
 def _espn_week_calendar(year: int) -> list[dict]:
     from espn_fr.basketball.league import League
 
-    league = League(espn_leagueID, year, espn_s2=espn_s2, swid=espn_swid)
+    league = League(espnLeagueIDs[year], year, espn_s2=espn_s2, swid=espn_swid)
     matchup_periods = league.settings.matchup_periods
     lengths = [len(v) for _, v in sorted(matchup_periods.items(), key=lambda kv: int(kv[0]))]
     bounds = _week_bounds_from_lengths(SEASON_OPEN[year], lengths)

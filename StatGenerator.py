@@ -54,7 +54,7 @@ def genWeekStatDict(year, week):
 
     ## If the year is on ESPN
     if si[year]['is_espn']:
-        espnLeague = League(espn_leagueID, year, espn_s2, espn_swid)
+        espnLeague = League(espnLeagueIDs[year], year, espn_s2, espn_swid)
         league_data = espnLeague._fetch_league()
         sched = league_data.get("schedule")
         weekSched = sched[(week - 1) * -(-teamCount[year] // 2) : week * -(-teamCount[year] // 2)]
@@ -108,7 +108,7 @@ def genStatDict(year):
 
     ## If the year was on ESPN
     if si[year]["is_espn"]:
-        espnLeague = League(espn_leagueID, year, espn_s2, espn_swid)
+        espnLeague = League(espnLeagueIDs[year], year, espn_s2, espn_swid)
         league_data = espnLeague._fetch_league()
         sched = league_data.get("schedule")
 
@@ -233,7 +233,7 @@ def updateStatCSV(year, startWeek = 0, endWeek = 0, extStatList = []):
             return None
 
         if si[year]['is_espn']:
-            espnLeague = League(espn_leagueID, year, espn_s2, espn_swid)
+            espnLeague = League(espnLeagueIDs[year], year, espn_s2, espn_swid)
             league_data = espnLeague._fetch_league()
             sched = league_data.get("schedule")
             weekSched = sched[(startWeek - 1) * -(-teamCount[year] // 2):] ## double negative floor division to ceiling divide

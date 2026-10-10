@@ -64,7 +64,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from constants import currentYear, espn_leagueID, espn_s2, espn_swid, espnTeamIDs, seasonInfo, yTeamIDs  # noqa: E402
+from constants import currentYear, espnLeagueIDs, espn_s2, espn_swid, espnTeamIDs, seasonInfo, yTeamIDs  # noqa: E402
 from shared.atomic_write import atomic_write  # noqa: E402
 from shared.runtime_config import REF_DIR  # noqa: E402
 
@@ -83,7 +83,7 @@ def _espn_roster_ranks_for_year(year: int) -> list[dict]:
     from espn_fr.basketball.league import League
     from espn_fr.basketball.player import Player
 
-    league = League(espn_leagueID, year, espn_s2=espn_s2, swid=espn_swid)
+    league = League(espnLeagueIDs[year], year, espn_s2=espn_s2, swid=espn_swid)
     team_map = espnTeamIDs.get(year, {})
 
     params = {"view": "kona_player_info", "scoringPeriodId": league.finalScoringPeriod}

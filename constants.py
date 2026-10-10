@@ -9,7 +9,21 @@ from shared.runtime_config import calendar_csv_path
 
 
 ## ESPN league/login info
-espn_leagueID = 82864377
+# Per-year, not a single constant -- the league is NOT continuous across all
+# ESPN seasons. 2019-2023 was one ESPN league (which then moved to Yahoo for
+# 2024-2026); 2027 is a BRAND NEW ESPN league (confirmed via the real ESPN
+# API, 2026-10-10), not a continuation of the 2019-2023 one, so it has its
+# own league ID. espn_s2/espn_swid below are tied to the ESPN ACCOUNT, not a
+# specific league, so the same auth still works across both leagues (verified
+# live against 1293241885).
+espnLeagueIDs = {
+    2019: 82864377,
+    2020: 82864377,
+    2021: 82864377,
+    2022: 82864377,
+    2023: 82864377,
+    2027: 1293241885,
+}
 # `os.getenv(key, default)` only falls back to `default` when the var is
 # entirely UNSET -- an env var explicitly set to "" (as ESPN_S2/ESPN_SWID
 # are on the droplet, likely a leftover from the Yahoo migration cleanup)
@@ -80,6 +94,17 @@ replacement_stats = [{"year":2026, "week":14, "team":"Zahir", "FG%":0.4859, "FT%
 
 ## season info dict has tuple as value for each key
 ## each tuple will contain ((team1, team2, ...), is ESPN (T/F), is W/L scoring (T/F))
+# 2027 is INTENTIONALLY MISSING here -- the league is real (ESPN league
+# 1293241885, "UNIS Democratic Fantasy", confirmed is_espn=True,
+# is_WL=True from its real H2H_MOST_CATEGORIES scoring_type setting,
+# 2026-10-10) but only 1 of 10 teams has actually been claimed by an
+# owner so far (the other 9 are still unowned "Team 2".."Team 10"
+# placeholders), so the real teams tuple isn't known yet. User's explicit
+# call: wait until everyone joins rather than guess. Add the 2027 entry
+# (and espnTeamIDs[2027] below) once the roster is confirmed -- every
+# other 2027 season-shape constant (RS_weekCountDict, playoffTeamCount,
+# playoffRoundLength, espnLeagueIDs) is already filled in from the real
+# ESPN settings and doesn't need to wait.
 seasonInfo = {
     2019: (sorted(('Jesse', 'Ange', 'Juan', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir')),True,True),
     2020: (sorted(('Jesse', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir')),True,True),
@@ -115,6 +140,8 @@ draftOrder = {
 }
 
 # number of REGULAR SEASON weeks per year
+# 2027: real ESPN league settings (reg_season_count), verified live against
+# the new league (1293241885), 2026-10-10 -- see espnLeagueIDs above.
 RS_weekCountDict = {
     2019:20,
     2020:18,
@@ -124,9 +151,11 @@ RS_weekCountDict = {
     2024:18,
     2025:18,
     2026:18,
+    2027:18,
 }
 
 # number of playoff teams per year
+# 2027: real ESPN settings (playoff_team_count), same source as above.
 playoffTeamCount = {
     2019:4,
     2020:0,
@@ -136,12 +165,16 @@ playoffTeamCount = {
     2024:6,
     2025:6,
     2026:6,
+    2027:6,
 }
 
 # number of rounds in playoffs per year
 playoffRounds = {year:math.ceil(playoffTeamCount[year] / 2) for year in playoffTeamCount}
 
 # number of weeks per round of playoffs per year
+# 2027: real ESPN settings (playoff_matchup_period_length), same source as
+# above -- also cross-checked against matchup_periods (21 total = 18 RS + 3
+# playoff rounds of 1 week each, consistent with playoff_team_count=6).
 playoffRoundLength = {
     2019:2,
     2020:2,
@@ -151,6 +184,7 @@ playoffRoundLength = {
     2024:1,
     2025:1,
     2026:1,
+    2027:1,
 }
 
 totalMatchupCount = {year: RS_weekCountDict[year] + playoffRounds[year] for year in RS_weekCountDict}

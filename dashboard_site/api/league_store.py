@@ -28,7 +28,12 @@ RATING_COLS = [f"{c}_rating" for c in MAIN_CATS]
 # configuration value (not derived from game results), duplicated here for
 # the same reason as MAIN_CATS above. Used by standings()'s clinch/
 # elimination math (feature request, 2026-10-09).
-PLAYOFF_TEAM_COUNT = {2019: 4, 2020: 0, 2021: 4, 2022: 6, 2023: 6, 2024: 6, 2025: 6, 2026: 6}
+# 2027: real ESPN league settings (playoff_team_count), verified live
+# against the new league (1293241885), 2026-10-10 -- won't actually be
+# looked up until real 2027 stat data exists (these dicts are only ever
+# keyed by years present in the data), but filled in now so the
+# meta()-time warning never has a reason to fire once it does.
+PLAYOFF_TEAM_COUNT = {2019: 4, 2020: 0, 2021: 4, 2022: 6, 2023: 6, 2024: 6, 2025: 6, 2026: 6, 2027: 6}
 RANK_COLS = [f"{c}_rank" for c in MAIN_CATS]
 
 # Mirrors constants.seasonInfo's 3rd tuple element (is W/L scoring) per
@@ -36,7 +41,9 @@ RANK_COLS = [f"{c}_rank" for c in MAIN_CATS]
 # aggregate category wins ("Cats"). Used only to pick a sensible default
 # toggle state on the Standings page; keep in sync with constants.py by
 # hand if that ever changes (same tradeoff already accepted for
-# MAIN_CATS/etc. above).
+# MAIN_CATS/etc. above). 2027: real ESPN scoring_type is
+# H2H_MOST_CATEGORIES, which is this codebase's matchup-win-loss
+# convention (same as how 2019-2023's ESPN seasons scored) -- True.
 SEASON_IS_WL = {
     2019: True,
     2020: True,
@@ -46,6 +53,7 @@ SEASON_IS_WL = {
     2024: False,
     2025: True,
     2026: False,
+    2027: True,
 }
 
 

@@ -20,17 +20,20 @@ scoped to any one fantasy roster) already gives the full active-player
 name<->id universe, so no separate player-identity source is needed.
 
 Despite not needing `Models`, this is no longer a "lightweight" export: it
-needs `espn_leagueID`/`espn_s2`/`espn_swid` from `constants.py`. (Until
+needs `espnLeagueIDs`/`espn_s2`/`espn_swid` from `constants.py`. (Until
 2026-10-07, importing `constants.py` also built a live `gspread`
 service-account client at import time -- that's been split out to
 legacy/gdoc/gdoc_auth.py, so this export no longer needs Google
 credentials at all.) Just noting it's no longer avoiding the `constants.py`
 import the way the nba_api version's docstring used to claim.
 
-Uses the same `espn_leagueID` this league used before migrating to Yahoo in
-2024 -- verified live that ESPN's player-card data isn't gated by whether
-this specific fantasy league is still active there; both the 2025 and 2026
-seasons resolved fine through the old league ID.
+Looks up espnLeagueIDs[year] per year like every other ESPN call site now
+(2026-10-10, the per-year ESPN league ID migration) -- originally used the
+old 2019-2023 league ID even for Yahoo-era years, verified live that ESPN's
+player-card data isn't gated by whether a specific fantasy league is still
+active there (both the 2025 and 2026 seasons resolved fine through it
+despite this league having moved to Yahoo by then). That property likely
+still holds with any valid ESPN league ID, including the new 2027 one.
 
 Run this whenever the other precomputed exports run (same cadence).
 """
@@ -47,7 +50,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from constants import currentYear, espn_leagueID, espn_s2, espn_swid  # noqa: E402
+from constants import currentYear, espnLeagueIDs, espn_s2, espn_swid  # noqa: E402
 from espn_fr.basketball.league import League  # noqa: E402
 from shared.atomic_write import atomic_write  # noqa: E402
 from shared.runtime_config import REF_DIR  # noqa: E402
@@ -118,7 +121,14 @@ def main() -> None:
         "d90": today - datetime.timedelta(days=90),
     }
 
-    league = League(espn_leagueID, year, espn_s2, espn_swid)
+    # currentYear can be a Yahoo-era year (2024-2026) with no entry in
+    # espnLeagueIDs at all -- falls back to the oldest known-stable ESPN
+    # league ID rather than KeyError-ing, since this export's whole point
+    # (see module docstring) is that ANY valid ESPN league ID works fine
+    # for generic player-card data, regardless of which year/league it's
+    # nominally tied to.
+    espn_league_id = espnLeagueIDs.get(year) or espnLeagueIDs[2019]
+    league = League(espn_league_id, year, espn_s2, espn_swid)
     name_to_id = {k: v for k, v in league.player_map.items() if isinstance(k, str)}
     all_ids = list(name_to_id.values())
     id_to_name = {v: k for k, v in name_to_id.items()}
