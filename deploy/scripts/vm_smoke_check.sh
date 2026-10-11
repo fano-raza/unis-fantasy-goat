@@ -14,10 +14,6 @@ echo "[smoke] stat-updater recent logs"
 docker compose -f "$COMPOSE_FILE" logs --since=5m --tail=120 stat-updater || true
 
 echo
-echo "[smoke] discord-bot recent logs"
-docker compose -f "$COMPOSE_FILE" logs --since=5m --tail=120 discord-bot || true
-
-echo
 echo "[smoke] updater status endpoint"
 curl -fsS http://127.0.0.1:5001/status
 echo
