@@ -834,6 +834,85 @@ def top_scores(
     return plays[:n]
 
 
+# Valid non-numeric spelling of the "worst score of the day" rank, compared
+# case-insensitively -- "last" or "l".
+RANK_LAST_ARG_VALUES = ("last", "l")
+RANK_LABELS = {1: "1st", 2: "2nd", "last": "Last"}
+
+
+def parse_rank_arg(raw: Optional[str]) -> tuple[int | str, str]:
+    """Returns (rank, label) for /champ-<game>'s `rank` option. rank is 1
+    or 2 (meaning the Nth-highest distinct score recorded on a given day)
+    or the literal string "last" (the lowest score recorded that day).
+    Defaults to 1. Raises ValueError (message meant to be shown to the
+    user) on anything else -- only 1, 2, and "last" are supported since
+    those are the only ranks that stay meaningful regardless of how many
+    people played a given day."""
+    if raw is None or not raw.strip():
+        return 1, RANK_LABELS[1]
+    val = raw.strip().lower()
+    if val in RANK_LAST_ARG_VALUES:
+        return "last", RANK_LABELS["last"]
+    try:
+        n = int(val)
+    except ValueError:
+        raise ValueError(f'Invalid rank "{raw}" -- use 1, 2, or "last".')
+    if n not in (1, 2):
+        raise ValueError('Rank must be 1, 2, or "last".')
+    return n, RANK_LABELS[n]
+
+
+def champion_counts(game: str, rank: int | str) -> list[dict]:
+    """[{uid, count}] -- for every day game was played, finds the distinct
+    score at the requested rank (1 = that day's highest score, 2 = that
+    day's second-highest *distinct* score, "last" = that day's lowest
+    score) and credits every player whose score matches it, then sums
+    those credits per player across all of history. Sorted by count
+    (best/most first).
+
+    Ties share credit: if 3 players tie for the day's top score, all 3
+    get a rank-1 credit for that day (not just one of them) -- the same
+    "ties share the rank" convention real leaderboards use, extended to
+    mean the *next* rank is the next distinct value, not the next player.
+    A day with fewer distinct scores than the requested rank (e.g. only
+    one score recorded, and rank=2 was requested) contributes no credit to
+    anyone for that day, rather than guessing.
+
+    Always uses score (the final score), never raw_score -- unlike
+    top_scores(), this has no raw= option; MapTap's raw/final score split
+    isn't meaningful for "who had the best day" in the same way it is for
+    a single best play. Only valid for TOP_SCORE_GAMES, same as
+    top_scores() -- raises ValueError for any other game."""
+    if game not in TOP_SCORE_GAMES:
+        raise ValueError(
+            f'"{GAME_LABELS.get(game, game)}" tracks number of tries, not a score -- no champion count for it.'
+        )
+    rows = load_history_rows(game)
+    by_date: dict[str, list[tuple[int, float]]] = {}
+    for r in rows:
+        if r.get("score") in ("", None):
+            continue
+        by_date.setdefault(r["date"], []).append((int(r["discord_user_id"]), float(r["score"])))
+
+    counts: dict[int, int] = {}
+    for plays in by_date.values():
+        distinct_scores = sorted({score for _, score in plays}, reverse=True)
+        if rank == "last":
+            target = distinct_scores[-1]
+        else:
+            idx = rank - 1
+            if idx >= len(distinct_scores):
+                continue
+            target = distinct_scores[idx]
+        for uid, score in plays:
+            if score == target:
+                counts[uid] = counts.get(uid, 0) + 1
+
+    board = [{"uid": uid, "count": count} for uid, count in counts.items()]
+    board.sort(key=lambda item: -item["count"])
+    return board
+
+
 # For the 3 games that can be incomplete (Worldle/Flagle/Travle), a plain
 # avg-tries sort has a real blind spot: a player who's completed 1 of 11
 # games can outrank someone with a genuine track record, purely because

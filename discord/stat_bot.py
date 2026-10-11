@@ -239,6 +239,11 @@ def run_bot() -> None:
             f"`/top-{game} [count]` — top {daily_games.GAME_LABELS[game]} scores of all time (default: top 10)"
             for game in daily_games.TOP_SCORE_GAMES
         )
+        champ_lines = "\n".join(
+            f"`/champ-{game} [rank]` — how many days each player's had the day's best {daily_games.GAME_LABELS[game]} "
+            'score (default: rank 1, all-time; rank can be 1, 2, or "last")'
+            for game in daily_games.TOP_SCORE_GAMES
+        )
         await message.channel.send(
             "🤖 **StatBot commands:**\n\n"
             "**Fantasy Commands:**\n"
@@ -250,7 +255,7 @@ def run_bot() -> None:
             "`/rival-check <user>` — career head-to-head record\n"
             "`/trophy-case [user]` — career trophy summary\n"
             "`/goat-check` — who's the league GOAT?\n\n"
-            "**Daily Games Commands:**\n" + game_lines + "\n" + top_score_lines + "\n"
+            "**Daily Games Commands:**\n" + game_lines + "\n" + top_score_lines + "\n" + champ_lines + "\n"
             "`/dg-update` — force an immediate #daily-games stats update\n"
             "_(leaderboards auto-refresh if data is over 10 min stale)_"
         )
@@ -640,6 +645,61 @@ def run_bot() -> None:
                     await _top_scores_leaderboard(inter, game, count, min_date=min_date, max_date=max_date)
 
         _register_top()
+
+    async def _champion_leaderboard(
+        inter: disnake.ApplicationCommandInteraction,
+        game: str,
+        rank_raw: Optional[str],
+    ) -> None:
+        try:
+            rank, rank_label = daily_games.parse_rank_arg(rank_raw)
+        except ValueError as e:
+            await inter.response.send_message(f"⚠️ {e}", ephemeral=True)
+            return
+
+        # Deferred for the same reason as _game_leaderboard/_top_scores_leaderboard.
+        await inter.response.defer()
+        try:
+            channel = bot.get_channel(daily_games.CHANNEL_ID) or await bot.fetch_channel(daily_games.CHANNEL_ID)
+            await daily_games.ensure_fresh(channel)
+        except Exception as exc:
+            print(f"Daily games freshness check failed, showing cached data: {exc}")
+
+        board = daily_games.champion_counts(game, rank)
+        label = daily_games.GAME_LABELS[game]
+        if not board:
+            await inter.followup.send(f"No {label} data recorded yet.")
+            return
+
+        display_names = daily_games.load_display_names()
+        lines = [f"🏆 **{label} — {rank_label} Place Champions** (all-time)"]
+        for i, entry in enumerate(board, start=1):
+            name = display_names.get(str(entry["uid"]), f"<@{entry['uid']}>")
+            lines.append(f"{i}. **{name}** — {entry['count']} time{'s' if entry['count'] != 1 else ''}")
+        await inter.followup.send("\n".join(lines))
+
+    # One /champ-<game> slash command per daily_games.TOP_SCORE_GAMES entry
+    # -- counts how many days each player has recorded the Nth-best score
+    # of the day (default: 1st/highest, over all recorded history; optional
+    # `rank` of 1, 2, or "last" -- see daily_games.parse_rank_arg).
+    for _champ_game in daily_games.TOP_SCORE_GAMES:
+
+        def _register_champ(game: str = _champ_game) -> None:
+            @bot.slash_command(
+                name=f"champ-{game}",
+                description=(
+                    f"How many times each player has had the day's best {daily_games.GAME_LABELS[game]} "
+                    "score (default: 1st place, all-time)."
+                ),
+                **slash_kwargs,
+            )
+            async def _champion_command(
+                inter: disnake.ApplicationCommandInteraction,
+                rank: Optional[str] = None,
+            ):
+                await _champion_leaderboard(inter, game, rank)
+
+        _register_champ()
 
     @bot.slash_command(
         name="dg-update",
