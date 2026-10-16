@@ -68,13 +68,13 @@ yLeagueIDs = {
     2026:79557,
 }
 
-currentYear = 2026
+currentYear = 2027
 
 ## ALL MEMBERS EVER
-allMembers = sorted(['Jesse', 'Ange', 'Juan', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Amil', 'Sama', 'Sai'])
+allMembers = sorted(['Jesse', 'Ange', 'Juan', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Amil', 'Sama', 'Sai', 'Adam'])
 abbMembers = {'Jesse':'JS', 'Ange':'AB', 'Juan':'JA', 'Rohil':'RB',
               'Saamrit':'SR', 'Fano':'FR', 'Chirayu':'CP', 'Zahir':'ZZ',
-              'Amil':'AO', 'Sama':'SKa', 'Sai':'SKo'}
+              'Amil':'AO', 'Sama':'SKa', 'Sai':'SKo', 'Adam':'AD'}
 
 mainCats = ['FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PTS']
 statCats = ['FG%', 'FT%', '3PTM', 'REB', 'AST', 'STL', 'BLK', 'TO', 'PTS', 'FGM', 'FGA', 'FTM', 'FTA', '3PTA', '3PT%']
@@ -94,17 +94,10 @@ replacement_stats = [{"year":2026, "week":14, "team":"Zahir", "FG%":0.4859, "FT%
 
 ## season info dict has tuple as value for each key
 ## each tuple will contain ((team1, team2, ...), is ESPN (T/F), is W/L scoring (T/F))
-# 2027 is INTENTIONALLY MISSING here -- the league is real (ESPN league
-# 1293241885, "UNIS Democratic Fantasy", confirmed is_espn=True,
-# is_WL=True from its real H2H_MOST_CATEGORIES scoring_type setting,
-# 2026-10-10) but only 1 of 10 teams has actually been claimed by an
-# owner so far (the other 9 are still unowned "Team 2".."Team 10"
-# placeholders), so the real teams tuple isn't known yet. User's explicit
-# call: wait until everyone joins rather than guess. Add the 2027 entry
-# (and espnTeamIDs[2027] below) once the roster is confirmed -- every
-# other 2027 season-shape constant (RS_weekCountDict, playoffTeamCount,
-# playoffRoundLength, espnLeagueIDs) is already filled in from the real
-# ESPN settings and doesn't need to wait.
+# 2027: real ESPN league (1293241885, "UNIS Democratic Fantasy"),
+# is_espn=True, is_WL=True from its real H2H_MOST_CATEGORIES scoring_type
+# setting. Roster confirmed live against the league's 10 team slots
+# 2026-10-16 -- Sai is sitting out this season, replaced by new member Adam.
 seasonInfo = {
     2019: (sorted(('Jesse', 'Ange', 'Juan', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir')),True,True),
     2020: (sorted(('Jesse', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir')),True,True),
@@ -113,7 +106,8 @@ seasonInfo = {
     2023: (sorted(('Amil', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Sai')),True,True),
     2024: (sorted(('Amil', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Sai')),False,False),
     2025: (sorted(('Amil', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Sai')),False,True),
-    2026: (sorted(('Amil', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Sai')),False,False)
+    2026: (sorted(('Amil', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Sai')),False,False),
+    2027: (sorted(('Amil', 'Ange', 'Juan', 'Sama', 'Saamrit', 'Rohil', 'Chirayu', 'Fano', 'Zahir', 'Adam')),True,True),
 }
 
 # was too lazy to rewrite seasonInfo as a dict, but everything should be using this Dict as reference
@@ -136,7 +130,15 @@ draftOrder = {
     2023: ('Sama', 'Amil', 'Ange', 'Zahir', 'Saamrit', 'Chirayu', 'Fano', 'Juan', 'Rohil', 'Sai'),
     2024: ('Ange', 'Zahir', 'Saamrit', 'Sama', 'Amil', 'Juan', 'Rohil', 'Fano', 'Sai', 'Chirayu'),
     2025: ('Juan', 'Amil', 'Sai', 'Sama', 'Rohil', 'Ange', 'Fano', 'Saamrit', 'Chirayu', 'Zahir'),
-    2026: ('Rohil', 'Chirayu', 'Ange', 'Fano', 'Sai', 'Amil', 'Sama', 'Juan', 'Zahir', 'Saamrit')
+    2026: ('Rohil', 'Chirayu', 'Ange', 'Fano', 'Sai', 'Amil', 'Sama', 'Juan', 'Zahir', 'Saamrit'),
+    # 2027: real ESPN league's pre-set MANUAL/SNAKE draftSettings.pickOrder
+    # ([7,9,8,5,4,2,1,6,3,10] by ESPN team ID), translated through
+    # espnTeamIDs[2027] -- confirmed live 2026-10-16, draft itself happens
+    # 2026-10-18. Unlike other years, this one is read BEFORE the draft
+    # occurs (so the Monday auto-pull in stat_updater.py's daily loop has
+    # it ready), relying on ESPN's order being locked in as MANUAL rather
+    # than randomized at draft time.
+    2027: ('Amil', 'Juan', 'Saamrit', 'Ange', 'Sama', 'Rohil', 'Fano', 'Chirayu', 'Adam', 'Zahir'),
 }
 
 # number of REGULAR SEASON weeks per year
@@ -211,6 +213,8 @@ espnTeamIDs = {
     2021: {1: 'Fano', 2: 'Amil', 3: 'Chirayu', 4: 'Saamrit', 5: 'Ange', 6: 'Zahir', 7: 'Juan', 8: 'Rohil', 9: 'Sama'},
     2022: {1: 'Fano', 2: 'Jesse', 3: 'Chirayu', 4: 'Saamrit', 5: 'Ange', 6: 'Zahir', 7: 'Juan', 8: 'Rohil', 9: 'Sama', 10: 'Sai', 11: 'Amil'},
     2023: {1: 'Fano', 2: 'Jesse', 3: 'Chirayu', 4: 'Saamrit', 5: 'Ange', 6: 'Zahir', 7: 'Juan', 8: 'Rohil', 9: 'Sama', 10: 'Sai', 11: 'Amil'},
+    # 2027: real ESPN league (1293241885) team-slot ownership, confirmed live 2026-10-16.
+    2027: {1: 'Fano', 2: 'Rohil', 3: 'Adam', 4: 'Sama', 5: 'Ange', 6: 'Chirayu', 7: 'Amil', 8: 'Saamrit', 9: 'Juan', 10: 'Zahir'},
 }
 # Add flipped keys to dict
 for year in espnTeamIDs:
