@@ -400,6 +400,14 @@ class LeagueStore:
 
         out: dict[str, dict] = {}
         for cat in MAIN_CATS:
+            # Every team NaN for this cat (e.g. 2027 before any real games
+            # exist -- a mean() of all-NaN input stays NaN for every row)
+            # -- idxmax()/idxmin() on an all-NaN column returns nan itself,
+            # and .loc[nan] then raises KeyError rather than giving back a
+            # row. No leader to report yet, so skip the category instead
+            # of crashing the whole response.
+            if grouped[cat].isna().all():
+                continue
             higher_is_better = cat not in NEG_CATS
             best_row = grouped.loc[grouped[cat].idxmax() if higher_is_better else grouped[cat].idxmin()]
             worst_row = grouped.loc[grouped[cat].idxmin() if higher_is_better else grouped[cat].idxmax()]
@@ -1214,24 +1222,33 @@ class LeagueStore:
 
     @staticmethod
     def _analysis_row_to_dict(row: pd.Series) -> dict:
+        # A real matchup row with no real stats yet (e.g. 2027 before the
+        # season starts -- Count/Opp are real, but the underlying box
+        # score is blank) ranks/rates as NaN across the board, same
+        # failure mode _week_row_to_dict's _opt_int/_opt_float already
+        # guard against -- None instead of crashing on int(nan)/float(nan).
+        def _opt_int(value) -> int | None:
+            return None if pd.isna(value) else int(value)
+
+        def _opt_float(value, digits: int = 2) -> float | None:
+            return None if pd.isna(value) else round(float(value), digits)
+
         return {
             "team": str(row["Team"]),
             "opponent": str(row["Opp"]),
             "year": int(row["Year"]),
             "week": int(row["Week"]),
             "season": str(row["Season"]),
-            "stats": {cat: float(row[cat]) for cat in MAIN_CATS},
-            "ratings": {cat: round(float(row[f"{cat}_rating"]), 2) for cat in MAIN_CATS},
-            "ranks": {cat: int(row[f"{cat}_rank"]) for cat in MAIN_CATS},
-            "week_rating": round(float(row["week_rating"]), 2),
-            "week_rank": int(row["week_rank"]),
+            "stats": {cat: _opt_float(row[cat]) for cat in MAIN_CATS},
+            "ratings": {cat: _opt_float(row[f"{cat}_rating"]) for cat in MAIN_CATS},
+            "ranks": {cat: _opt_int(row[f"{cat}_rank"]) for cat in MAIN_CATS},
+            "week_rating": _opt_float(row["week_rating"]),
+            "week_rank": _opt_int(row["week_rank"]),
             "cat_wins": int(row["CAT_WINS"]),
             "cat_losses": int(row["CAT_LOSSES"]),
             "cat_ties": int(row["CAT_TIES"]),
             "matchup_win": bool(row["MATCHUP_WINS"]),
-            "opponent_rating": (
-                round(float(row["opp_week_rating"]), 2) if pd.notna(row["opp_week_rating"]) else None
-            ),
+            "opponent_rating": _opt_float(row["opp_week_rating"]),
         }
 
     @staticmethod
