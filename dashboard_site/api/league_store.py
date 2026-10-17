@@ -140,7 +140,15 @@ class LeagueStore:
         # and only flip to True when the lookup explicitly confirms it.
         # Defaulting to the raw Count flag instead would silently let
         # consolation-bracket teams (absent from the lookup entirely) count.
-        po_mask = df["Season"] == "PO"
+        # Excludes Team == "BYE": a bye is never a real bracket participant
+        # (never in the lookup, always resolves to False either way), and
+        # "BYE" is the one team value that legitimately repeats within a
+        # single (Year, Week, Season) -- whenever more than one real team
+        # draws a bye in the same PO week (e.g. 2022/2023 week 19), their
+        # BYE rows collide on the exact same key, which crashes the
+        # .reindex() below with "cannot handle a non-unique multi-index!"
+        # (confirmed by direct reproduction against production data).
+        po_mask = (df["Season"] == "PO") & (df["Team"] != "BYE")
         if not po_mask.any():
             return mask
         keys = pd.MultiIndex.from_arrays(
