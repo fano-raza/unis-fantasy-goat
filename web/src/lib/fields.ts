@@ -60,7 +60,7 @@ export const ANALYSIS_FIELDS: AnalysisField[] = [
       key: `stat:${cat}`,
       label: cat,
       group: "Stats",
-      get: (r) => r.stats[cat],
+      get: (r) => r.stats[cat] ?? undefined,
     }),
   ),
   ...MAIN_CATS.map(
@@ -68,7 +68,7 @@ export const ANALYSIS_FIELDS: AnalysisField[] = [
       key: `rating:${cat}`,
       label: `${cat} Rating`,
       group: "Ratings",
-      get: (r) => r.ratings[cat],
+      get: (r) => r.ratings[cat] ?? undefined,
     }),
   ),
 ];

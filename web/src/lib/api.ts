@@ -20,7 +20,14 @@ export const MAIN_CATS = [
 
 export type Category = (typeof MAIN_CATS)[number];
 
-export type CategoryStats = Partial<Record<Category, number>>;
+// `| null`, not just optional/absent: the backend sends an explicit null
+// for a category with no real data yet (e.g. a 2027 row before the season
+// starts -- every stat NaN, which FastAPI's jsonable_encoder renders as
+// JSON null rather than omitting the key). Consumers must treat null the
+// same as "missing" -- see stat-table.tsx's formatValue for the bug this
+// was fixed alongside (a bare `=== undefined` check let null slip through
+// to `.toFixed()` and crash the whole page, 2026-10-17).
+export type CategoryStats = Partial<Record<Category, number | null>>;
 
 export interface LeagueMeta {
   years: number[];

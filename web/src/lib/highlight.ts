@@ -13,8 +13,8 @@ export type Comparison = "better" | "worse" | "neutral";
 // row-centric ("better"/"worse" = how this row's own value compares to the
 // baseline) -- comparisonClass below is what actually inverts the color.
 export function compareCell(
-  value: number | undefined,
-  baseline: number | undefined,
+  value: number | null | undefined,
+  baseline: number | null | undefined,
   category: Category,
   options?: {
     // Ratings are already direction-normalized -- a higher rating always
@@ -28,7 +28,7 @@ export function compareCell(
     ratingMode?: boolean;
   },
 ): Comparison {
-  if (value === undefined || baseline === undefined) return "neutral";
+  if (value === undefined || value === null || baseline === undefined || baseline === null) return "neutral";
   if (value === baseline) return "neutral";
   const higherIsBetter = options?.ratingMode ? true : !NEG_CATS.includes(category);
   const isHigher = value > baseline;

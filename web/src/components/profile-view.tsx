@@ -95,11 +95,11 @@ const TOP3_EXCLUDED = new Set([
 function rankForCategory(cat: Category, rows: AggregateRow[], team: string): number | undefined {
   const target = rows.find((r) => r.team === team);
   const value = target?.stats[cat];
-  if (value === undefined) return undefined;
+  if (value == null) return undefined;
   const higherIsBetter = !NEG_CATS.includes(cat);
   const better = rows.filter((r) => {
     const v = r.stats[cat];
-    return v !== undefined && (higherIsBetter ? v > value : v < value);
+    return v != null && (higherIsBetter ? v > value : v < value);
   }).length;
   return better + 1;
 }

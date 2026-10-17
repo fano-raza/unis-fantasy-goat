@@ -64,8 +64,8 @@ interface StatTableProps {
 // categories with very different typical magnitudes (e.g. PTS vs. FT%). A
 // flat range of 0 (every row identical in this category) means nothing can
 // be meaningfully "close", so nothing highlights.
-function isCloseValue(value: number | undefined, baseline: number | undefined, range: number): boolean {
-  if (value === undefined || baseline === undefined || range <= 0) return false;
+function isCloseValue(value: number | null | undefined, baseline: number | null | undefined, range: number): boolean {
+  if (value == null || baseline == null || range <= 0) return false;
   return Math.abs(value - baseline) <= 0.1 * range;
 }
 
@@ -87,8 +87,12 @@ function allPlayRecord(
   return { w, l, t };
 }
 
-function formatValue(value: number | undefined, cat: Category, mode: StatDisplayMode): string {
-  if (value === undefined) return "—";
+function formatValue(value: number | null | undefined, cat: Category, mode: StatDisplayMode): string {
+  // `== null` catches both undefined (missing category) and null (the
+  // backend's explicit "no real data yet" value, e.g. a 2027 row before
+  // the season starts) -- a bare `=== undefined` check let null through
+  // to `.toFixed()` below and crashed the whole page, 2026-10-17.
+  if (value == null) return "—";
   if (mode === "rating") return value.toFixed(1);
   if (cat === "FG%" || cat === "FT%") return value.toFixed(3);
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
@@ -177,7 +181,7 @@ export function StatTable({
     for (const cat of MAIN_CATS) {
       const values = rows
         .map((r) => (mode === "stat" ? r.stats[cat] : r.ratings[cat]))
-        .filter((v): v is number => v !== undefined);
+        .filter((v): v is number => v != null);
       ranges[cat] = values.length ? Math.max(...values) - Math.min(...values) : 0;
     }
     return ranges;
@@ -222,7 +226,7 @@ export function StatTable({
         return score.wins - score.losses;
       }
       const source = mode === "stat" ? row.stats : row.ratings;
-      return source[key];
+      return source[key] ?? undefined;
     }
 
     return [...rows].sort((a, b) => {
