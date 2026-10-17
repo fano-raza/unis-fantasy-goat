@@ -9,7 +9,15 @@ export const revalidate = 30;
 export default async function PlayersPage() {
   let initialPlayers: PlayerStat[] | null = null;
   try {
-    initialPlayers = await getPlayerStats({ next: { revalidate: 30 } });
+    // Deliberately no `next: { revalidate }` here unlike the other SSR
+    // fetches on this page's siblings -- this payload is ~2.9MB, always
+    // over Next's 2MB Data Cache per-item limit, so opting into that cache
+    // throws an unhandled rejection from Next's own cache-write internals
+    // (observed crashing the whole lambda in production, 2026-10-16)
+    // instead of just skipping the cache. Omitting `next.revalidate`
+    // keeps this a plain per-request fetch, same as trade-hub.tsx's own
+    // client-side call to the same endpoint.
+    initialPlayers = await getPlayerStats();
   } catch {
     // Backend unreachable at render time -- TradeHub falls back to its
     // own client-side fetch.
