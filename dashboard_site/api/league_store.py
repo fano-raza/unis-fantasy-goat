@@ -1264,16 +1264,26 @@ class LeagueStore:
 
     @staticmethod
     def _agg_df_to_list(df: pd.DataFrame) -> list[dict]:
+        # A team with no real games yet in the filtered range (e.g. 2027
+        # before the season starts) aggregates to NaN across every stat/
+        # rating/rank -- None instead of crashing on int(nan)/float(nan),
+        # same reasoning as _week_row_to_dict's _opt_int/_opt_float.
+        def _opt_float(value, digits: int = 4) -> float | None:
+            return None if pd.isna(value) else round(float(value), digits)
+
+        def _opt_int(value) -> int | None:
+            return None if pd.isna(value) else int(value)
+
         df = df.sort_values("Rank")
         return [
             {
                 "team": str(row["Team"]),
-                "stats": {cat: float(row[cat]) for cat in MAIN_CATS},
+                "stats": {cat: _opt_float(row[cat], 2) for cat in MAIN_CATS},
                 # NOTE: aggregate_rating()'s per-category _rating is 0-1 scaled (no *100,
                 # unlike per_week_rating()'s) -- matches avg_rating's existing convention.
-                "ratings": {cat: round(float(row[f"{cat}_rating"]), 4) for cat in MAIN_CATS},
-                "rating": round(float(row["avg_rating"]), 4),
-                "rank": int(row["Rank"]),
+                "ratings": {cat: _opt_float(row[f"{cat}_rating"]) for cat in MAIN_CATS},
+                "rating": _opt_float(row["avg_rating"]),
+                "rank": _opt_int(row["Rank"]),
             }
             for _, row in df.iterrows()
         ]
