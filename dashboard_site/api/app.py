@@ -129,6 +129,14 @@ threading.Thread(target=_refresh_loop, daemon=True).start()
 
 @app.get("/health")
 def health() -> dict[str, str]:
+    # Used to be a dumb static check -- "the process is up" -- which is
+    # exactly why it didn't catch any of the real incidents today (empty
+    # CSV, non-unique multi-index, NaN crashes): the uvicorn process was
+    # always up, league_store.meta() was what kept throwing. Now actually
+    # exercises the data path the deploy script's post-deploy check (and
+    # every /league/* endpoint) depends on -- cheap after the first call,
+    # since meta() caches itself on the LeagueStore instance.
+    league_store.meta()
     return {"status": "ok"}
 
 

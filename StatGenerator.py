@@ -222,6 +222,16 @@ def updateStatCSV(year, startWeek = 0, endWeek = 0, extStatList = []):
     try:
         with (open(pathname, 'r') as csvfile):
             csvList = list(csv.reader(csvfile))
+            if not csvList:
+                # Empty file (a prior run crashed mid-write, or got
+                # truncated by something external) -- same recovery path
+                # as a missing file below. Without this, every retry hits
+                # csvList[-1] on an empty list, which raises IndexError
+                # forever: the file never gets rewritten because nothing
+                # ever reaches the write below it. Confirmed this exact
+                # loop in production (2026 CompStats went empty 2026-10-14,
+                # stayed empty until manually rebuilt two days later).
+                raise FileNotFoundError(f"{pathname} exists but is empty")
             startWeek = int(csvList[-1][1]) if startWeek <= 0 else startWeek
             # Default behavior: refresh through current detected week.
             # If caller provides endWeek explicitly, honor it (used by manual forced refresh).

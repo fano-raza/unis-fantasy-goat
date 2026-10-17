@@ -372,6 +372,11 @@ class LeagueStore:
         grouped = df.groupby("Team", as_index=False).agg(agg_dict)
         out: dict[str, dict] = {}
         for cat in MAIN_CATS:
+            # Same all-NaN guard as season_leaders() below -- a user can
+            # filter this to years=[2027] (or any other year with no real
+            # games yet) via the Career Stats page's own year picker.
+            if grouped[cat].isna().all():
+                continue
             ascending = cat in NEG_CATS
             row = grouped.loc[grouped[cat].idxmin() if ascending else grouped[cat].idxmax()]
             out[cat] = {"team": str(row["Team"]), "value": float(row[cat])}
@@ -800,10 +805,21 @@ class LeagueStore:
         if df.empty:
             raise ValueError("No data available for the given filters")
 
-        best_week_overall = self._week_row_to_dict(df.loc[df["week_rating"].idxmax()])
+        # Same all-NaN guard as season_leaders()/leaders() -- a user can
+        # filter this to years=[2027] (or any other year with no real
+        # games yet) via the Records page's own year picker, and
+        # idxmax()/idxmin() on an all-NaN column returns nan itself,
+        # which then raises on .loc[nan] instead of giving back a row.
+        best_week_overall = (
+            self._week_row_to_dict(df.loc[df["week_rating"].idxmax()])
+            if not df["week_rating"].isna().all()
+            else None
+        )
 
         best_week_by_category = {}
         for cat in MAIN_CATS:
+            if df[cat].isna().all():
+                continue
             ascending = cat in NEG_CATS
             row = df.loc[df[cat].idxmin() if ascending else df[cat].idxmax()]
             best_week_by_category[cat] = {
