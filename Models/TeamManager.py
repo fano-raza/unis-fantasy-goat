@@ -153,16 +153,33 @@ class teamManager():
                 try:
                     self.career_RS_totals[category] = sum(statsByCat[statCats.index('FGM')]) / sum(statsByCat[statCats.index('FGA')])
                 except TypeError:
-                    FG_sumproduct = sum(x * y for x, y in zip(weeks_played_in_year, statsByCat[statCats.index('FG%')]))
-                    self.career_RS_totals[category] = FG_sumproduct/sum(weeks_played_in_year)
+                    # A year with no real games yet (e.g. 2027 before it
+                    # starts) has "N/A" for FG% too (get_team_totals' own
+                    # blank-stat guard) and 0 weeks played -- skip it from
+                    # the sumproduct (x==0 would otherwise multiply into a
+                    # string-repeat '' via 0 * "N/A", not a real zero) and
+                    # guard the same all-zero-weeks case get_career_PO_totals
+                    # already guards below.
+                    if sum(weeks_played_in_year) == 0:
+                        self.career_RS_totals[category] = 0
+                    else:
+                        FG_sumproduct = sum(
+                            x * y for x, y in zip(weeks_played_in_year, statsByCat[statCats.index('FG%')]) if x
+                        )
+                        self.career_RS_totals[category] = FG_sumproduct/sum(weeks_played_in_year)
                 self.career_RS_averages[category] = self.career_RS_totals[category]
             elif category == 'FT%':
                 try:
                     self.career_RS_totals[category] = (sum(statsByCat[statCats.index('FTM')]) /
                                                        sum(statsByCat[statCats.index('FTA')]))
                 except TypeError:
-                    FT_sumproduct = sum(x * y for x, y in zip(weeks_played_in_year, statsByCat[statCats.index('FT%')]))
-                    self.career_RS_totals[category] = FT_sumproduct / sum(weeks_played_in_year)
+                    if sum(weeks_played_in_year) == 0:
+                        self.career_RS_totals[category] = 0
+                    else:
+                        FT_sumproduct = sum(
+                            x * y for x, y in zip(weeks_played_in_year, statsByCat[statCats.index('FT%')]) if x
+                        )
+                        self.career_RS_totals[category] = FT_sumproduct / sum(weeks_played_in_year)
                 self.career_RS_averages[category] = self.career_RS_totals[category]
             else:
                 try:
