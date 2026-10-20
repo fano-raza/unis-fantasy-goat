@@ -112,6 +112,13 @@ def team_roster_history_csv_path() -> Path:
     return REF_DIR / "team_roster_history.csv"
 
 
+def team_sentiment_tally_csv_path() -> Path:
+    """One row per message classified as a "my team is good/bad"
+    self-assessment in #nba_fantasy_general or #rankings -- see
+    discord/team_sentiment.py. Feature request, 2026-10-19."""
+    return DATA_ROOT / "team_sentiment_tally.csv"
+
+
 def daily_games_last_synced_at_path() -> Path:
     """Last-synced-at UTC timestamp (ISO 8601), written on every successful
     scan_and_record() call regardless of caller. Distinct from

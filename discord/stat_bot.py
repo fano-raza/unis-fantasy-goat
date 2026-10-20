@@ -20,7 +20,7 @@ import aiohttp
 import disnake
 from disnake.ext import commands, tasks
 
-from discord import daily_games, weekly_rankings
+from discord import daily_games, team_sentiment, weekly_rankings
 from discord.bot_env import build_ssl_connector, ensure_ssl_ca_bundle, load_local_env, parse_test_guild_ids
 from shared.runtime_config import daily_games_last_run_path, weekly_rankings_last_run_path
 
@@ -212,6 +212,10 @@ def run_bot() -> None:
     async def on_message(message: disnake.Message):
         if message.author.bot or not bot.user:
             return
+        # Silent background tally (feature request, 2026-10-19) -- runs on
+        # every message in the tracked channels, independent of whether
+        # the bot was mentioned, and never shows this command menu.
+        await team_sentiment.maybe_record(message)
         if bot.user not in message.mentions:
             return
         # Discord's reply-ping (the default "mention author" toggle on a
@@ -254,7 +258,8 @@ def run_bot() -> None:
             "`/score-check` — your current matchup score\n"
             "`/rival-check <user>` — career head-to-head record\n"
             "`/trophy-case [user]` — career trophy summary\n"
-            "`/goat-check` — who's the league GOAT?\n\n"
+            "`/goat-check` — who's the league GOAT?\n"
+            "`/team-mood-check [user]` — tally of who calls their team good/bad\n\n"
             "**Daily Games Commands:**\n" + game_lines + "\n" + top_score_lines + "\n" + champ_lines + "\n"
             "`/dg-update` — force an immediate #daily-games stats update\n"
             "_(leaderboards auto-refresh if data is over 10 min stale)_"
@@ -298,6 +303,41 @@ def run_bot() -> None:
             await inter.response.send_message("No GOAT determined yet.", ephemeral=True)
             return
         await inter.response.send_message(f"🐐 The league GOAT is **{goat}**.")
+
+    @bot.slash_command(
+        name="team-mood-check",
+        description="Tally of who calls their own team good vs. bad in chat.",
+        **slash_kwargs,
+    )
+    async def team_mood_check(
+        inter: disnake.ApplicationCommandInteraction,
+        user: Optional[disnake.User] = None,
+    ):
+        display_names = daily_games.load_display_names()
+        if user is not None:
+            pos, neg = team_sentiment.user_counts(str(user.id))
+            name = display_names.get(str(user.id), user.display_name)
+            await inter.response.send_message(
+                f"😤 **{name}** has called their team **good** {pos} time{'s' if pos != 1 else ''} "
+                f"and **bad** {neg} time{'s' if neg != 1 else ''}."
+            )
+            return
+
+        def _format_board(board: list[tuple[str, int]]) -> str:
+            if not board:
+                return "_none yet_"
+            return "\n".join(
+                f"{i}. **{display_names.get(uid, f'<@{uid}>')}** — {count}"
+                for i, (uid, count) in enumerate(board, start=1)
+            )
+
+        good_board = team_sentiment.leaderboard("positive", limit=10)
+        bad_board = team_sentiment.leaderboard("negative", limit=10)
+        await inter.response.send_message(
+            "📣 **Team Mood Tally**\n\n"
+            "**Calls their team GOOD most:**\n" + _format_board(good_board) + "\n\n"
+            "**Calls their team BAD most:**\n" + _format_board(bad_board)
+        )
 
     @bot.slash_command(name="champ-check", description="Has this user's team ever won a championship?", **slash_kwargs)
     async def champ_check(
