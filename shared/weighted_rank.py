@@ -6,13 +6,24 @@ import pandas as pd
 
 def _minmax(values: np.ndarray) -> np.ndarray:
     """Scale a 1D array to [0, 1]. Matches sklearn.preprocessing.MinMaxScaler,
-    including its zero-variance edge case (constant input maps to all zeros)."""
-    values = values.astype(float)
-    lo, hi = values.min(), values.max()
+    including its zero-variance edge case (constant input maps to all zeros).
+
+    Coerces to numeric first (errors="coerce") with NaN-skipping min/max,
+    rather than a direct .astype(float) -- a week with no real games yet
+    (e.g. the 2027 season before it starts) has literal empty-string stat
+    cells, not NaN, which .astype(float) raised on outright instead of
+    letting NaN propagate the way the rest of this codebase already
+    expects for missing-data weeks (see dashboard_site/api/league_store.py's
+    eb4b6ab fix, which null-safely handles the resulting all-NaN rank/
+    rating columns downstream of here)."""
+    series = pd.to_numeric(pd.Series(values), errors="coerce")
+    lo, hi = series.min(), series.max()
     span = hi - lo
+    if pd.isna(span):
+        return np.full(len(series), np.nan)
     if span == 0:
-        return np.zeros_like(values)
-    return (values - lo) / span
+        return np.zeros(len(series))
+    return ((series - lo) / span).to_numpy()
 
 
 def per_week_rating(
