@@ -926,16 +926,27 @@ class team_reg_season(regSeason):
             if category == 'Opp':
                 pass
             elif category == 'FG%':
-                if statsByCat[statCats.index('FGM')][0] == None or statsByCat[statCats.index('FGM')][0] == '':
-                    self.teamTotals[category] = sum(statsByCat[statCats.index(category)])/(endWeek+1-startWeek)
-                else:
-                    self.teamTotals[category] = sum(statsByCat[statCats.index('FGM')]) / sum(statsByCat[statCats.index('FGA')])
+                # Same "no real games yet" TypeError guard as the generic
+                # category branch below (e.g. the 2027 season before it
+                # starts: scheduled weeks exist but every stat cell is a
+                # blank string, and sum() of blanks raises) -- this branch
+                # previously had no such guard and crashed outright.
+                try:
+                    if statsByCat[statCats.index('FGM')][0] == None or statsByCat[statCats.index('FGM')][0] == '':
+                        self.teamTotals[category] = sum(statsByCat[statCats.index(category)])/(endWeek+1-startWeek)
+                    else:
+                        self.teamTotals[category] = sum(statsByCat[statCats.index('FGM')]) / sum(statsByCat[statCats.index('FGA')])
+                except TypeError:
+                    self.teamTotals[category] = "N/A"
                 self.teamAverages[category] = self.teamTotals[category]
             elif category == 'FT%':
-                if statsByCat[statCats.index('FTM')][0] == None or statsByCat[statCats.index('FTM')][0] == '':
-                    self.teamTotals[category] = sum(statsByCat[statCats.index(category)])/(endWeek+1-startWeek)
-                else:
-                    self.teamTotals[category] = sum(statsByCat[statCats.index('FTM')]) / sum(statsByCat[statCats.index('FTA')])
+                try:
+                    if statsByCat[statCats.index('FTM')][0] == None or statsByCat[statCats.index('FTM')][0] == '':
+                        self.teamTotals[category] = sum(statsByCat[statCats.index(category)])/(endWeek+1-startWeek)
+                    else:
+                        self.teamTotals[category] = sum(statsByCat[statCats.index('FTM')]) / sum(statsByCat[statCats.index('FTA')])
+                except TypeError:
+                    self.teamTotals[category] = "N/A"
                 self.teamAverages[category] = self.teamTotals[category]
             else:
                 try:
