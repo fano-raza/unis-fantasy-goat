@@ -54,6 +54,17 @@ def per_week_rating(
     to keep in sync).
     """
     df = df.copy()
+    # A week with no real games yet (e.g. the 2027 season before it starts)
+    # has literal empty-string stat cells, not NaN -- coerce every stat
+    # column to numeric up front (errors="coerce" turns '' into NaN) rather
+    # than letting raw strings reach arithmetic further down (e.g. the
+    # negation of neg_cats below, which raised "bad operand type for
+    # unary -: 'str'" before this). NaN then propagates through rank/
+    # rating the way the rest of this codebase already expects for
+    # missing-data weeks (see league_store.py's eb4b6ab fix).
+    for col in main_cats:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
     pos_cats = [c for c in main_cats if c not in neg_cats]
 
     def minmax_rank_scale(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
