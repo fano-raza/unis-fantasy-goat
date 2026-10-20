@@ -70,9 +70,7 @@ TEAM_ABBR_NORMALIZE = {
     "WSH": "WAS",
 }
 
-# How far ahead to pull, in ~1-month chunks (defensive against the API
-# capping a single huge date-range request -- not yet observed to happen,
-# but a full ~1230-game season hasn't existed to test against yet either).
+# How far ahead to pull.
 MONTHS_AHEAD = 9
 
 
@@ -80,21 +78,20 @@ def _normalize(abbr: str) -> str:
     return TEAM_ABBR_NORMALIZE.get(abbr, abbr)
 
 
-def _month_ranges(start: date, months: int) -> list[tuple[date, date]]:
-    ranges = []
-    cursor = start
-    for _ in range(months):
-        chunk_end = cursor + timedelta(days=29)
-        ranges.append((cursor, chunk_end))
-        cursor = chunk_end + timedelta(days=1)
-    return ranges
+def _day_list(start: date, months: int) -> list[date]:
+    end = start + timedelta(days=30 * months)
+    return [start + timedelta(days=i) for i in range((end - start).days + 1)]
 
 
-def _fetch_range(start: date, end: date) -> list[dict]:
-    params = {
-        "dates": f"{start.strftime('%Y%m%d')}-{end.strftime('%Y%m%d')}",
-        "limit": 1000,
-    }
+def _fetch_day(day: date) -> list[dict]:
+    # ESPN's scoreboard endpoint used to accept a "YYYYMMDD-YYYYMMDD" date
+    # range (this script originally pulled ~1-month chunks that way) but no
+    # longer does -- confirmed live, every range query now 400s with
+    # "Failed to get events endpoint." regardless of span (even 2 days) or
+    # period (past or future), while a single "YYYYMMDD" date still works
+    # fine. One request per day instead of per month -- slower, but it's
+    # the only query shape ESPN's public API currently accepts.
+    params = {"dates": day.strftime("%Y%m%d"), "limit": 1000}
     resp = requests.get(SCOREBOARD_URL, params=params, timeout=30)
     resp.raise_for_status()
     data = resp.json()
@@ -132,18 +129,20 @@ def main(backfill: bool = False) -> None:
 
     rows: list[dict] = []
     seen_keys: set[str] = set()
-    for start, end in _month_ranges(start_date, months):
-        chunk_rows = _fetch_range(start, end)
-        # ESPN's date-range chunking can overlap at boundaries -- dedupe by
-        # the (Date, HomeTeam, AwayTeam) triple rather than trust the chunks
-        # are cleanly disjoint.
-        for row in chunk_rows:
+    days = _day_list(start_date, months)
+    for i, day in enumerate(days):
+        day_rows = _fetch_day(day)
+        for row in day_rows:
             key = f"{row['Date']}|{row['HomeTeam']}|{row['AwayTeam']}"
             if key in seen_keys:
                 continue
             seen_keys.add(key)
             rows.append(row)
-        print(f"{start} - {end}: {len(chunk_rows)} games")
+        # One request per day now (see _fetch_day) -- a print per request
+        # would be too noisy over an 8-year backfill, so mark progress
+        # roughly monthly instead.
+        if (i + 1) % 30 == 0 or day == days[-1]:
+            print(f"...through {day}: {len(rows)} games so far")
 
     new_df = pd.DataFrame(rows, columns=COLUMNS)
 
