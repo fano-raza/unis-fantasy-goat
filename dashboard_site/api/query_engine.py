@@ -165,6 +165,7 @@ class StatsStore:
         self._matchup_df: pd.DataFrame | None = None
         self._draft_df: pd.DataFrame | None = None
         self._draft_picks_df: pd.DataFrame | None = None
+        self._real_matchup_flags, self._po_official_winner = self._load_real_matchup_flags()
 
     @staticmethod
     def _resolve_ref_dir(ref_dir: str | None) -> Path:
@@ -315,8 +316,47 @@ class StatsStore:
             self._draft_picks_df = self._load_draft_picks()
         return self._draft_picks_df
 
-    @staticmethod
-    def _build_matchup_features(base_df: pd.DataFrame) -> pd.DataFrame:
+    def _load_real_matchup_flags(
+        self,
+    ) -> tuple[dict[tuple[int, int, str, str], bool], dict[tuple[int, int, str, str], bool]]:
+        """Count==True marks consolation-bracket PO games right alongside
+        real championship-bracket games -- see dashboard_site/api/
+        league_store.py's _load_po_real_matchup_lookup, which solves this
+        identical problem for /league/* endpoints by reading this same
+        precomputed scripts/export_real_matchup_flags.py output. Mirrored
+        here rather than shared, since StatsStore and LeagueStore are
+        deliberately independent classes. Falls back to empty dicts (no
+        extra filtering beyond Count) if the file hasn't been generated
+        yet -- degraded but not broken.
+
+        Also returns the tiebreak-resolved official winner per real PO
+        matchup (the file's `is_winner` column, blank for non-real rows) --
+        a category-count tie in a real playoff game is actually resolved by
+        the league's tiebreak order (H2H record -> H2H cats -> seeding,
+        Models/seasons.py's _resolve_playoff_tie), which the raw CompStats
+        category counts alone can't recover. Without this, a tied real game
+        was reported as a draw in MATCHUP_WINS/LOSSES instead of its actual
+        resolved result (confirmed for real: Fano's 2026 wk21 4-4 tie vs
+        Juan, a tiebreak win for Fano, was undercounting Fano's playoff win
+        total on the Team Comparison page by one)."""
+        path = self.ref_dir / "real_matchup_flags.csv"
+        if not path.exists():
+            return {}, {}
+        lookup_df = pd.read_csv(path).dropna(subset=["Year", "Week", "Season", "Team"])
+        real_matchup = {
+            (int(r.Year), int(r.Week), r.Season, r.Team): bool(r.real_matchup)
+            for r in lookup_df.itertuples()
+        }
+        official_winner = {}
+        if "is_winner" in lookup_df.columns:
+            winner_rows = lookup_df.dropna(subset=["is_winner"])
+            official_winner = {
+                (int(r.Year), int(r.Week), r.Season, r.Team): bool(r.is_winner)
+                for r in winner_rows.itertuples()
+            }
+        return real_matchup, official_winner
+
+    def _build_matchup_features(self, base_df: pd.DataFrame) -> pd.DataFrame:
         cats_pos = ["FG%", "FT%", "3PTM", "REB", "AST", "STL", "BLK", "PTS"]
         cat_neg = ["TO"]
 
@@ -324,6 +364,27 @@ class StatsStore:
         use = base_df.copy()
         if "Count" in use.columns:
             use = use[use["Count"] == True]
+
+        # Of the Count==True rows, playoff weeks also include consolation/
+        # placement-bracket games alongside real championship-bracket ones
+        # (and sometimes a team playing at all in a year it never made the
+        # real bracket -- see the "Playoff Wins" bug this fixed: Amil's
+        # Team Comparison total was counting 2023 consolation wins despite
+        # not having made that year's real playoff field). Drop any PO row
+        # not confirmed real by the lookup -- same default-False-unless-
+        # confirmed semantics as league_store.py's _real_matchup_mask, so
+        # a PO row with no lookup entry at all is excluded, not kept.
+        if self._real_matchup_flags and "Season" in use.columns:
+            po_mask = use["Season"] == "PO"
+            if po_mask.any():
+                is_real = [
+                    self._real_matchup_flags.get((int(y), int(w), s, t), False)
+                    for y, w, s, t in zip(
+                        use.loc[po_mask, "Year"], use.loc[po_mask, "Week"], use.loc[po_mask, "Season"], use.loc[po_mask, "Team"]
+                    )
+                ]
+                drop_idx = use.loc[po_mask].index[~pd.Series(is_real, index=use.loc[po_mask].index)]
+                use = use.drop(index=drop_idx)
 
         cols = ["Year", "Week", "Season", "Team", "Opp"] + cats_pos + cat_neg
         use = use[cols].copy()
@@ -358,6 +419,27 @@ class StatsStore:
         merged["MATCHUP_WINS"] = (wins > losses).astype(float)
         merged["MATCHUP_LOSSES"] = (wins < losses).astype(float)
         merged["MATCHUP_DRAWS"] = (wins == losses).astype(float)
+
+        # Override with the tiebreak-resolved official result wherever one's
+        # recorded (real PO rows only -- see _load_real_matchup_flags). Cat-
+        # count agrees with the official result on every non-tied game by
+        # construction (the tiebreak logic only ever runs on an exact tie),
+        # so this only changes rows that were otherwise wrongly a draw.
+        if self._po_official_winner:
+            po_rows = merged["Season"] == "PO"
+            if po_rows.any():
+                po_idx = merged.loc[po_rows].index
+                keys = zip(
+                    merged.loc[po_rows, "Year"], merged.loc[po_rows, "Week"], merged.loc[po_rows, "Season"], merged.loc[po_rows, "Team"]
+                )
+                for idx, (y, w, s, t) in zip(po_idx, keys):
+                    is_winner = self._po_official_winner.get((int(y), int(w), s, t))
+                    if is_winner is None:
+                        continue
+                    merged.at[idx, "MATCHUP_WINS"] = float(is_winner)
+                    merged.at[idx, "MATCHUP_LOSSES"] = float(not is_winner)
+                    merged.at[idx, "MATCHUP_DRAWS"] = 0.0
+
         merged["MATCHUP_POINTS"] = merged["MATCHUP_WINS"] + 0.49 * merged["MATCHUP_DRAWS"]
 
         # All-play schedule context per week -- vectorized via numpy
