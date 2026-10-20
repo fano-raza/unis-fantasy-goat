@@ -325,7 +325,7 @@ async def run_top6_role_update(bot: commands.Bot) -> None:
 async def _announce_top6_newcomers(bot: commands.Bot, user_ids: list[str]) -> None:
     mentions = ", ".join(f"<@{uid}>" for uid in user_ids)
     noun = "member" if len(user_ids) == 1 else "members"
-    message = f"Let's all extend a top 6 welcome to the newest {noun} of the playoff tree, {mentions}"
+    message = f"Let's all extend a **TOP 6** welcome to the newest {noun} of the playoff picture, {mentions}!"
     try:
         channel = bot.get_channel(TOP6_CHANNEL_ID) or await bot.fetch_channel(TOP6_CHANNEL_ID)
         await channel.send(message)
