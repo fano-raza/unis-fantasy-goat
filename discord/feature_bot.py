@@ -160,9 +160,14 @@ def append_msg_claude(
 # skipped. A role that isn't configured (no *_ROLE_ID/*_ROLE_NAME match) is
 # just skipped, not an error -- lets these 3 roles be turned on one at a
 # time.
+#
+# Top 6 role grants also post a welcome message (tagging the newcomer(s))
+# to TOP6_CHANNEL_ID -- only on new additions, never on removals or a
+# no-change run. Champs/Current Champ stay silent, role-only.
 
 EASTERN = ZoneInfo("America/New_York")
 WEEKLY_SYNC_RUN_HOUR = 9  # local (America/New_York) hour to run on Mondays
+TOP6_CHANNEL_ID = 1034156233067868161  # where the "Top 6" role is gated -- welcome message for newly-added members goes here
 
 
 def _read_last_weekly_sync_date() -> date | None:
@@ -215,7 +220,10 @@ async def _sync_role_membership(
     should_have_teams: set[str],
     by_team: dict[str, list[str]],
     label: str,
-) -> None:
+) -> list[str]:
+    """Returns the user IDs newly granted the role this run (not those who
+    already had it), so callers can e.g. announce only the newcomers."""
+    newly_added: list[str] = []
     for team, user_ids in by_team.items():
         should_have = team in should_have_teams
         for user_id in user_ids:
@@ -230,6 +238,7 @@ async def _sync_role_membership(
                 try:
                     await member.add_roles(role, reason=f"{label} role update")
                     print(f"{label} role update: added to {member} ({team})")
+                    newly_added.append(user_id)
                 except disnake.HTTPException as exc:
                     print(f"{label} role update: failed to add role to {member}: {exc}")
             elif has_role and not should_have:
@@ -238,6 +247,7 @@ async def _sync_role_membership(
                     print(f"{label} role update: removed from {member} ({team})")
                 except disnake.HTTPException as exc:
                     print(f"{label} role update: failed to remove role from {member}: {exc}")
+    return newly_added
 
 
 async def _compute_top6_teams() -> list[str] | None:
@@ -305,8 +315,22 @@ async def run_top6_role_update(bot: commands.Bot) -> None:
         return
 
     _, by_team = _load_user_team_maps()
-    await _sync_role_membership(guild, role, set(top6_teams), by_team, "Top 6")
+    newly_added = await _sync_role_membership(guild, role, set(top6_teams), by_team, "Top 6")
     print(f"Top 6 role update: done. Top 6 = {top6_teams}")
+
+    if newly_added:
+        await _announce_top6_newcomers(bot, newly_added)
+
+
+async def _announce_top6_newcomers(bot: commands.Bot, user_ids: list[str]) -> None:
+    mentions = ", ".join(f"<@{uid}>" for uid in user_ids)
+    noun = "member" if len(user_ids) == 1 else "members"
+    message = f"Let's all extend a top 6 welcome to the newest {noun} of the playoff tree, {mentions}"
+    try:
+        channel = bot.get_channel(TOP6_CHANNEL_ID) or await bot.fetch_channel(TOP6_CHANNEL_ID)
+        await channel.send(message)
+    except disnake.HTTPException as exc:
+        print(f"Top 6 role update: failed to post welcome message: {exc}")
 
 
 async def run_champs_role_update(bot: commands.Bot) -> None:
