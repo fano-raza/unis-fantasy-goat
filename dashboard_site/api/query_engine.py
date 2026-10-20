@@ -356,7 +356,17 @@ class StatsStore:
             }
         return real_matchup, official_winner
 
-    def _build_matchup_features(self, base_df: pd.DataFrame) -> pd.DataFrame:
+    @staticmethod
+    def _build_matchup_features(base_df: pd.DataFrame) -> pd.DataFrame:
+        # Deliberately stateless/static: dashboard_site/api/league_store.py
+        # also calls this directly as StatsStore._build_matchup_features(df)
+        # (an unbound call on an already-filtered df, independent of any
+        # StatsStore instance) -- giving this access to instance state like
+        # self._real_matchup_flags broke that caller outright ("missing 1
+        # required positional argument: 'base_df'"). The PO consolation-
+        # bracket filter and tiebreak-winner override that depend on that
+        # instance state live in _ensure_matchup_df below instead, which is
+        # the only caller that needs them.
         cats_pos = ["FG%", "FT%", "3PTM", "REB", "AST", "STL", "BLK", "PTS"]
         cat_neg = ["TO"]
 
@@ -364,27 +374,6 @@ class StatsStore:
         use = base_df.copy()
         if "Count" in use.columns:
             use = use[use["Count"] == True]
-
-        # Of the Count==True rows, playoff weeks also include consolation/
-        # placement-bracket games alongside real championship-bracket ones
-        # (and sometimes a team playing at all in a year it never made the
-        # real bracket -- see the "Playoff Wins" bug this fixed: Amil's
-        # Team Comparison total was counting 2023 consolation wins despite
-        # not having made that year's real playoff field). Drop any PO row
-        # not confirmed real by the lookup -- same default-False-unless-
-        # confirmed semantics as league_store.py's _real_matchup_mask, so
-        # a PO row with no lookup entry at all is excluded, not kept.
-        if self._real_matchup_flags and "Season" in use.columns:
-            po_mask = use["Season"] == "PO"
-            if po_mask.any():
-                is_real = [
-                    self._real_matchup_flags.get((int(y), int(w), s, t), False)
-                    for y, w, s, t in zip(
-                        use.loc[po_mask, "Year"], use.loc[po_mask, "Week"], use.loc[po_mask, "Season"], use.loc[po_mask, "Team"]
-                    )
-                ]
-                drop_idx = use.loc[po_mask].index[~pd.Series(is_real, index=use.loc[po_mask].index)]
-                use = use.drop(index=drop_idx)
 
         cols = ["Year", "Week", "Season", "Team", "Opp"] + cats_pos + cat_neg
         use = use[cols].copy()
@@ -419,27 +408,6 @@ class StatsStore:
         merged["MATCHUP_WINS"] = (wins > losses).astype(float)
         merged["MATCHUP_LOSSES"] = (wins < losses).astype(float)
         merged["MATCHUP_DRAWS"] = (wins == losses).astype(float)
-
-        # Override with the tiebreak-resolved official result wherever one's
-        # recorded (real PO rows only -- see _load_real_matchup_flags). Cat-
-        # count agrees with the official result on every non-tied game by
-        # construction (the tiebreak logic only ever runs on an exact tie),
-        # so this only changes rows that were otherwise wrongly a draw.
-        if self._po_official_winner:
-            po_rows = merged["Season"] == "PO"
-            if po_rows.any():
-                po_idx = merged.loc[po_rows].index
-                keys = zip(
-                    merged.loc[po_rows, "Year"], merged.loc[po_rows, "Week"], merged.loc[po_rows, "Season"], merged.loc[po_rows, "Team"]
-                )
-                for idx, (y, w, s, t) in zip(po_idx, keys):
-                    is_winner = self._po_official_winner.get((int(y), int(w), s, t))
-                    if is_winner is None:
-                        continue
-                    merged.at[idx, "MATCHUP_WINS"] = float(is_winner)
-                    merged.at[idx, "MATCHUP_LOSSES"] = float(not is_winner)
-                    merged.at[idx, "MATCHUP_DRAWS"] = 0.0
-
         merged["MATCHUP_POINTS"] = merged["MATCHUP_WINS"] + 0.49 * merged["MATCHUP_DRAWS"]
 
         # All-play schedule context per week -- vectorized via numpy
@@ -505,9 +473,68 @@ class StatsStore:
 
         return merged
 
+    def _filter_real_po_rows(self, base_df: pd.DataFrame) -> pd.DataFrame:
+        """Of the rows _build_matchup_features treats as real (Count==True),
+        playoff weeks also include consolation/placement-bracket games
+        alongside real championship-bracket ones (and sometimes a team
+        playing at all in a year it never made the real bracket -- see the
+        "Playoff Wins" bug this fixed: Amil's Team Comparison total was
+        counting 2023 consolation wins despite not having made that year's
+        real playoff field). Applied BEFORE _build_matchup_features, not
+        after, so the per-week all-play computations (ALL_PLAY_*,
+        SCHEDULE_LUCK, LEAGUE_*) also exclude consolation teams from that
+        week's group, not just MATCHUP_WINS. Drop any PO row not confirmed
+        real by the lookup -- same default-False-unless-confirmed semantics
+        as league_store.py's _real_matchup_mask, so a PO row with no lookup
+        entry at all is excluded, not kept."""
+        if not self._real_matchup_flags or "Season" not in base_df.columns:
+            return base_df
+        po_mask = base_df["Season"] == "PO"
+        if not po_mask.any():
+            return base_df
+        is_real = [
+            self._real_matchup_flags.get((int(y), int(w), s, t), False)
+            for y, w, s, t in zip(
+                base_df.loc[po_mask, "Year"], base_df.loc[po_mask, "Week"], base_df.loc[po_mask, "Season"], base_df.loc[po_mask, "Team"]
+            )
+        ]
+        drop_idx = base_df.loc[po_mask].index[~pd.Series(is_real, index=base_df.loc[po_mask].index)]
+        return base_df.drop(index=drop_idx)
+
+    def _apply_po_official_winner(self, matchup_df: pd.DataFrame) -> pd.DataFrame:
+        """Override MATCHUP_WINS/LOSSES/DRAWS/POINTS with the tiebreak-
+        resolved official result wherever one's recorded (real PO rows
+        only -- see _load_real_matchup_flags). Cat-count agrees with the
+        official result on every non-tied game by construction (the
+        tiebreak logic only ever runs on an exact tie), so this only
+        changes rows that were otherwise wrongly a draw."""
+        if not self._po_official_winner:
+            return matchup_df
+        po_rows = matchup_df["Season"] == "PO"
+        if not po_rows.any():
+            return matchup_df
+        po_idx = matchup_df.loc[po_rows].index
+        keys = zip(
+            matchup_df.loc[po_rows, "Year"],
+            matchup_df.loc[po_rows, "Week"],
+            matchup_df.loc[po_rows, "Season"],
+            matchup_df.loc[po_rows, "Team"],
+        )
+        for idx, (y, w, s, t) in zip(po_idx, keys):
+            is_winner = self._po_official_winner.get((int(y), int(w), s, t))
+            if is_winner is None:
+                continue
+            matchup_df.at[idx, "MATCHUP_WINS"] = float(is_winner)
+            matchup_df.at[idx, "MATCHUP_LOSSES"] = float(not is_winner)
+            matchup_df.at[idx, "MATCHUP_DRAWS"] = 0.0
+        matchup_df["MATCHUP_POINTS"] = matchup_df["MATCHUP_WINS"] + 0.49 * matchup_df["MATCHUP_DRAWS"]
+        return matchup_df
+
     def _ensure_matchup_df(self) -> pd.DataFrame:
         if self._matchup_df is None:
-            self._matchup_df = self._build_matchup_features(self.df)
+            base_df = self._filter_real_po_rows(self.df)
+            matchup_df = self._build_matchup_features(base_df)
+            self._matchup_df = self._apply_po_official_winner(matchup_df)
         return self._matchup_df
 
     def available_meta(self) -> dict:
