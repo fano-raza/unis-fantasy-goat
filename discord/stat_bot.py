@@ -259,7 +259,7 @@ def run_bot() -> None:
             "`/rival-check <user>` — career head-to-head record\n"
             "`/trophy-case [user]` — career trophy summary\n"
             "`/goat-check` — who's the league GOAT?\n"
-            "`/team-mood-check [user]` — tally of who calls their team good/bad\n\n"
+            "`/team-mood-check [user] [year]` — tally of who calls their team good/bad\n\n"
             "**Daily Games Commands:**\n" + game_lines + "\n" + top_score_lines + "\n" + champ_lines + "\n"
             "`/dg-update` — force an immediate #daily-games stats update\n"
             "_(leaderboards auto-refresh if data is over 10 min stale)_"
@@ -312,13 +312,16 @@ def run_bot() -> None:
     async def team_mood_check(
         inter: disnake.ApplicationCommandInteraction,
         user: Optional[disnake.User] = None,
+        year: Optional[int] = None,
     ):
+        meta = await _api_get("/league/meta")
+        year = year if year in meta["years"] else meta["current_year"]
         display_names = daily_games.load_display_names()
         if user is not None:
-            pos, neg = team_sentiment.user_counts(str(user.id))
+            pos, neg = team_sentiment.user_counts(str(user.id), year=year)
             name = display_names.get(str(user.id), user.display_name)
             await inter.response.send_message(
-                f"😤 **{name}** has called their team **good** {pos} time{'s' if pos != 1 else ''} "
+                f"😤 **{name}**'s {year} team mood: called their team **good** {pos} time{'s' if pos != 1 else ''} "
                 f"and **bad** {neg} time{'s' if neg != 1 else ''}."
             )
             return
@@ -331,13 +334,37 @@ def run_bot() -> None:
                 for i, (uid, count) in enumerate(board, start=1)
             )
 
-        good_board = team_sentiment.leaderboard("positive", limit=10)
-        bad_board = team_sentiment.leaderboard("negative", limit=10)
+        good_board = team_sentiment.leaderboard("positive", limit=10, year=year)
+        bad_board = team_sentiment.leaderboard("negative", limit=10, year=year)
         await inter.response.send_message(
-            "📣 **Team Mood Tally**\n\n"
+            f"📣 **{year} Team Mood Tally**\n\n"
             "**Calls their team GOOD most:**\n" + _format_board(good_board) + "\n\n"
             "**Calls their team BAD most:**\n" + _format_board(bad_board)
         )
+
+    @bot.slash_command(
+        name="team-mood-backfill",
+        description="One-time scan of channel history to backfill the team-mood tally.",
+        default_member_permissions=disnake.Permissions(administrator=True),
+        **slash_kwargs,
+    )
+    async def team_mood_backfill(inter: disnake.ApplicationCommandInteraction):
+        # default_member_permissions above is only Discord's *default* --
+        # enforced again here, same reasoning as dg_update below.
+        member_perms = getattr(inter.author, "guild_permissions", None)
+        if not member_perms or not member_perms.administrator:
+            await inter.response.send_message("🚫 This command is admin-only.", ephemeral=True)
+            return
+        await inter.response.defer()
+        total = 0
+        try:
+            for channel_id in team_sentiment.TRACKED_CHANNEL_IDS:
+                channel = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
+                total += await team_sentiment.scan_and_record(channel)
+        except Exception as exc:
+            await inter.followup.send(f"⚠️ Backfill failed: {exc}")
+            return
+        await inter.followup.send(f"✅ Team-mood backfill complete -- {total} new row(s) added.")
 
     @bot.slash_command(name="champ-check", description="Has this user's team ever won a championship?", **slash_kwargs)
     async def champ_check(

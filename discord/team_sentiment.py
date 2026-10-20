@@ -25,12 +25,13 @@ from __future__ import annotations
 
 import csv
 import re
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
 import disnake
 
-from shared.runtime_config import team_sentiment_tally_csv_path
+from shared.runtime_config import calendar_csv_path, team_sentiment_tally_csv_path
 
 # #nba_fantasy_general and #rankings -- see discord/weekly_rankings.py for
 # the latter's own copy of this id (not imported from there, to keep this
@@ -233,6 +234,46 @@ async def maybe_record(message: disnake.Message) -> Optional[str]:
         return None
 
 
+def _existing_message_ids(csv_path: Path) -> set[str]:
+    with csv_path.open(newline="", encoding="utf-8") as f:
+        return {row["message_id"] for row in csv.DictReader(f)}
+
+
+async def scan_and_record(channel: disnake.abc.Messageable) -> int:
+    """One-time/backfill counterpart to maybe_record -- walks a tracked
+    channel's full history, classifies every message, and appends any not
+    already on disk (message_id-deduped, same approach as
+    daily_games.scan_and_record, so it's safe to re-run e.g. to pick up
+    messages posted before tracking went live). Returns rows added."""
+    csv_path = team_sentiment_tally_csv_path()
+    _ensure_csv(csv_path)
+    seen_ids = _existing_message_ids(csv_path)
+
+    new_rows: list[dict] = []
+    async for message in channel.history(limit=None, oldest_first=True):
+        if message.author.bot or str(message.id) in seen_ids:
+            continue
+        result = classify_message(message.content)
+        if result is None:
+            continue
+        polarity, matched_phrase = result
+        new_rows.append(
+            {
+                "message_id": message.id,
+                "discord_user_id": message.author.id,
+                "channel_id": message.channel.id,
+                "timestamp": message.created_at.isoformat(),
+                "polarity": polarity,
+                "matched_phrase": matched_phrase,
+            }
+        )
+
+    if new_rows:
+        with csv_path.open("a", newline="", encoding="utf-8") as f:
+            csv.DictWriter(f, fieldnames=CSV_FIELDS).writerows(new_rows)
+    return len(new_rows)
+
+
 def _load_rows() -> list[dict]:
     path = team_sentiment_tally_csv_path()
     if not path.exists():
@@ -241,10 +282,55 @@ def _load_rows() -> list[dict]:
         return list(csv.DictReader(f))
 
 
-def user_counts(discord_user_id: str) -> tuple[int, int]:
-    """(positive_count, negative_count) for one user."""
+def _season_start_date(year: int) -> Optional[date]:
+    path = Path(calendar_csv_path(year))
+    if not path.exists():
+        return None
+    with path.open(newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            if row.get("week") == "1":
+                return date(int(row["start year"]), int(row["start mon"]), int(row["start day"]))
+    return None
+
+
+def season_bounds(year: int) -> tuple[Optional[date], Optional[date]]:
+    """[start, end) calendar-date bounds for a fantasy year's season.
+    Year N's season starts partway through calendar year N-1 (the draft
+    is in October) -- e.g. "2027"'s Week 1 started 2026-10-20 -- so this
+    reads each year's actual Week 1 start date off its matchup calendar
+    rather than assuming a Jan 1 boundary. The end bound is exclusive and
+    is year N+1's own Week 1 start date; None if that calendar doesn't
+    exist yet, meaning "no upper bound" (the following season hasn't
+    started/been drafted yet)."""
+    return _season_start_date(year), _season_start_date(year + 1)
+
+
+def _rows_for_year(year: Optional[int]) -> list[dict]:
+    rows = _load_rows()
+    if year is None:
+        return rows
+    start, end = season_bounds(year)
+    if start is None:
+        return []
+    out = []
+    for row in rows:
+        try:
+            d = datetime.fromisoformat(row["timestamp"]).date()
+        except (KeyError, ValueError):
+            continue
+        if d < start:
+            continue
+        if end is not None and d >= end:
+            continue
+        out.append(row)
+    return out
+
+
+def user_counts(discord_user_id: str, year: Optional[int] = None) -> tuple[int, int]:
+    """(positive_count, negative_count) for one user, optionally restricted
+    to one fantasy year's season window (see season_bounds)."""
     pos = neg = 0
-    for row in _load_rows():
+    for row in _rows_for_year(year):
         if row["discord_user_id"] != discord_user_id:
             continue
         if row["polarity"] == "positive":
@@ -254,11 +340,12 @@ def user_counts(discord_user_id: str) -> tuple[int, int]:
     return pos, neg
 
 
-def leaderboard(polarity: str, limit: int = 10) -> list[tuple[str, int]]:
+def leaderboard(polarity: str, limit: int = 10, year: Optional[int] = None) -> list[tuple[str, int]]:
     """[(discord_user_id, count), ...] for the given polarity, sorted
-    highest-count first."""
+    highest-count first, optionally restricted to one fantasy year's
+    season window (see season_bounds)."""
     counts: dict[str, int] = {}
-    for row in _load_rows():
+    for row in _rows_for_year(year):
         if row["polarity"] != polarity:
             continue
         counts[row["discord_user_id"]] = counts.get(row["discord_user_id"], 0) + 1
