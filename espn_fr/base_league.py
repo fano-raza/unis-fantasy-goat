@@ -28,8 +28,8 @@ class BaseLeague(ABC):
     def __repr__(self):
         return 'League(%s, %s)' % (self.league_id, self.year, )
 
-    def _fetch_league(self, SettingsClass = BaseSettings):
-        data = self.espn_request.get_league()
+    def _fetch_league(self, SettingsClass = BaseSettings, extra_views: list = None):
+        data = self.espn_request.get_league(extra_views=extra_views)
 
         self.currentMatchupPeriod = data['status']['currentMatchupPeriod']
         self.scoringPeriodId = data['scoringPeriodId']

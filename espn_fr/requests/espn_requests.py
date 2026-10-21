@@ -67,10 +67,23 @@ class EspnFantasyRequests(object):
             self.logger.log_request(endpoint=endpoint, params=params, headers=headers, response=r.json())
         return r.json()
 
-    def get_league(self):
-        '''Gets all of the leagues initial data (teams, roster, matchups, settings)'''
+    def get_league(self, extra_views: list = None):
+        '''Gets all of the leagues initial data (teams, roster, matchups, settings).
+
+        extra_views: additional ESPN API views to request alongside the
+        default set, e.g. "mLiveScoring" -- needed to get a matchup's
+        cumulativeScoreLive (the field that actually updates during a
+        live game; the default mMatchup-derived cumulativeScore is a
+        slower, officially-finalized rollup that can lag the real game by
+        hours). Opt-in via a parameter rather than always-on, so callers
+        that don't need it (this method has several, e.g. legacy/gdoc/
+        GDoc_Week.py, Models/Matchup.py) keep their existing response
+        shape/payload size unchanged.'''
+        views = ['mTeam', 'mRoster', 'mMatchup', 'mSettings', 'mStandings']
+        if extra_views:
+            views = views + list(extra_views)
         params = {
-            'view': ['mTeam', 'mRoster', 'mMatchup', 'mSettings', 'mStandings']
+            'view': views
         }
         data = self.league_get(params=params)
         return data

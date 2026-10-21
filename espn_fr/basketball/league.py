@@ -25,8 +25,8 @@ class League(BaseLeague):
 
         self.BoxScoreClass = get_box_scoring_type_class(self.settings.scoring_type)
 
-    def _fetch_league(self):
-        data = super()._fetch_league()
+    def _fetch_league(self, extra_views: list = None):
+        data = super()._fetch_league(extra_views=extra_views)
 
         self._fetch_players()
         self._map_matchup_ids(data['schedule'])

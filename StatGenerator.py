@@ -258,7 +258,17 @@ def updateStatCSV(year, startWeek = 0, endWeek = 0, extStatList = []):
 
         if si[year]['is_espn']:
             espnLeague = League(espnLeagueIDs[year], year, espn_s2, espn_swid)
-            league_data = espnLeague._fetch_league()
+            # mLiveScoring -> each matchup's cumulativeScoreLive, which
+            # actually updates during a live game. The default mMatchup
+            # view's cumulativeScore is a slower, officially-finalized
+            # rollup that can sit at 0 for hours after a game ends (and
+            # does: confirmed live on 2027's opening night -- DET @ BOS
+            # had already gone final while cumulativeScore still reported
+            # "gamesPlayed": 0 for its players). cumulativeScoreLive is
+            # the same per-player-summed total the ESPN app itself shows
+            # during a game -- confirmed its scoreByStat covers every key
+            # espnStatMap needs (0,1,2,3,6,11,17,19,20).
+            league_data = espnLeague._fetch_league(extra_views=['mLiveScoring'])
             sched = league_data.get("schedule")
             weekSched = sched[(startWeek - 1) * -(-teamCount[year] // 2):] ## double negative floor division to ceiling divide
 
@@ -290,15 +300,21 @@ def updateStatCSV(year, startWeek = 0, endWeek = 0, extStatList = []):
                 statDict[week][team1] = {'Opp': team2}
                 statDict[week][team2] = {'Opp': team1}
 
+                # Prefer cumulativeScoreLive (updates during the game) over
+                # cumulativeScore (the slower official rollup) -- see the
+                # extra_views comment above. Falls back to cumulativeScore
+                # if a given key is missing from the live one for any
+                # reason, rather than leaving the stat blank.
+                home_score = matchup.get('home', {}).get('cumulativeScoreLive') or matchup.get('home', {}).get('cumulativeScore')
+                away_score = matchup.get('away', {}).get('cumulativeScoreLive') or matchup.get('away', {}).get('cumulativeScore')
+
                 for stat in statCats:
                     try:
-                        statDict[week][team1][stat] = (matchup.get('home').get('cumulativeScore')
-                                                       .get('scoreByStat').get(espnStatMap.get(stat)).get('score'))
+                        statDict[week][team1][stat] = home_score.get('scoreByStat').get(espnStatMap.get(stat)).get('score')
                     except AttributeError:
                         pass
                     try:
-                        statDict[week][team2][stat] = (matchup.get('away').get('cumulativeScore')
-                                                       .get('scoreByStat').get(espnStatMap.get(stat)).get('score'))
+                        statDict[week][team2][stat] = away_score.get('scoreByStat').get(espnStatMap.get(stat)).get('score')
                     except:
                         pass
 
