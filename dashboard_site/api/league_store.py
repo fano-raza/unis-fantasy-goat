@@ -181,7 +181,19 @@ class LeagueStore:
         current_year = max(years) if years else None
         current_week = None
         if current_year is not None:
-            weeks = count_df.loc[count_df["Year"] == current_year, "Week"]
+            year_rows = count_df[count_df["Year"] == current_year]
+            # Count==True only means "real scheduled matchup," not "has
+            # actually been played" -- true for 2019-2026 (built up
+            # incrementally, so Count==True rows never got ahead of real
+            # life) but not for 2027, onboarded with its full season
+            # pre-seeded as blank-stat placeholder rows through week 18.
+            # Without this, current_week reported 18 (the season's last
+            # scheduled week) instead of 1 (the actual current week),
+            # which cascaded into every page that defaults to "the
+            # current week" showing nothing -- confirmed live.
+            if "PTS" in year_rows.columns:
+                year_rows = year_rows[year_rows["PTS"].notna()]
+            weeks = year_rows["Week"]
             current_week = int(weeks.max()) if not weeks.empty else None
 
         rs_week_count: dict[int, int] = {}
