@@ -273,7 +273,19 @@ def updateStatCSV(year, startWeek = 0, endWeek = 0, extStatList = []):
                     team2 = "BYE"
 
                 week = matchup.get('matchupPeriodId')
-                if week > RS_weekCountDict[year] + playoffRounds[year]:
+                # Was bounded only by the season's total length, not
+                # maxWeek -- harmless historically because startWeek used
+                # to land within a week or two of maxWeek on every call
+                # (see the startWeek-detection fix above), so this rarely
+                # walked far past maxWeek before hitting the total-season
+                # break. A season starting at week 1 with many weeks left
+                # exposed it for real: statDict was only pre-sized for
+                # range(startWeek, maxWeek+1), so reaching a future
+                # matchupPeriodId beyond maxWeek raised a bare KeyError on
+                # statDict[week] (confirmed live for 2027). ESPN's schedule
+                # already includes the full season upfront, not just
+                # what's been played -- stop here instead.
+                if week > maxWeek or week > RS_weekCountDict[year] + playoffRounds[year]:
                     break
                 statDict[week][team1] = {'Opp': team2}
                 statDict[week][team2] = {'Opp': team1}
