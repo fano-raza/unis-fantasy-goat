@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import date
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -174,6 +175,31 @@ class LeagueStore:
         self._meta = self._compute_meta()
         return self._meta
 
+    def _current_week_from_calendar(self, year: int) -> int | None:
+        """The real current week for `year`, as a function of today's
+        date against week_calendar.csv's real (Yahoo-exact or ESPN-
+        heuristic) date ranges -- the actual source of truth for "what
+        week is it right now," rather than inferring it from which
+        CompStats rows happen to have real stats recorded yet (fragile:
+        a week that's genuinely underway but hasn't had any live stats
+        land yet would otherwise look like it's still "in" the previous
+        week). Returns None (caller falls back to the stats-presence
+        heuristic) if week_calendar.csv has no rows for this year, or
+        today falls outside every row's range (e.g. a fully completed
+        past season, or between seasons)."""
+        try:
+            cal_df = self._ensure_week_calendar_df()
+        except ValueError:
+            return None
+        year_df = cal_df[cal_df["Year"] == year]
+        if year_df.empty:
+            return None
+        today = date.today().isoformat()
+        match = year_df[(year_df["StartDate"] <= today) & (today <= year_df["EndDate"])]
+        if match.empty:
+            return None
+        return int(match["Week"].iloc[0])
+
     def _compute_meta(self) -> dict:
         df = self.store.df
         years = sorted(df["Year"].dropna().astype(int).unique().tolist())
@@ -181,20 +207,21 @@ class LeagueStore:
         current_year = max(years) if years else None
         current_week = None
         if current_year is not None:
-            year_rows = count_df[count_df["Year"] == current_year]
-            # Count==True only means "real scheduled matchup," not "has
-            # actually been played" -- true for 2019-2026 (built up
-            # incrementally, so Count==True rows never got ahead of real
-            # life) but not for 2027, onboarded with its full season
-            # pre-seeded as blank-stat placeholder rows through week 18.
-            # Without this, current_week reported 18 (the season's last
-            # scheduled week) instead of 1 (the actual current week),
-            # which cascaded into every page that defaults to "the
-            # current week" showing nothing -- confirmed live.
-            if "PTS" in year_rows.columns:
-                year_rows = year_rows[year_rows["PTS"].notna()]
-            weeks = year_rows["Week"]
-            current_week = int(weeks.max()) if not weeks.empty else None
+            current_week = self._current_week_from_calendar(current_year)
+            if current_week is None:
+                # Fallback for a year week_calendar.csv has no usable
+                # entry for. Count==True only means "real scheduled
+                # matchup," not "has actually been played" -- true for
+                # 2019-2026 (built up incrementally, so Count==True rows
+                # never got ahead of real life) but not for 2027,
+                # onboarded with its full season pre-seeded as blank-stat
+                # placeholder rows through week 18. Requiring a real PTS
+                # value keeps this fallback correct for that case too.
+                year_rows = count_df[count_df["Year"] == current_year]
+                if "PTS" in year_rows.columns:
+                    year_rows = year_rows[year_rows["PTS"].notna()]
+                weeks = year_rows["Week"]
+                current_week = int(weeks.max()) if not weeks.empty else None
 
         rs_week_count: dict[int, int] = {}
         playoff_rounds: dict[int, int] = {}
