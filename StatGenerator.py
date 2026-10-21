@@ -232,7 +232,21 @@ def updateStatCSV(year, startWeek = 0, endWeek = 0, extStatList = []):
                 # loop in production (2026 CompStats went empty 2026-10-14,
                 # stayed empty until manually rebuilt two days later).
                 raise FileNotFoundError(f"{pathname} exists but is empty")
-            startWeek = int(csvList[-1][1]) if startWeek <= 0 else startWeek
+            if startWeek <= 0:
+                # NOT simply the last row's week -- a season onboarded with
+                # its full future schedule pre-seeded (e.g. 2027: every RS
+                # week's matchups were written up front as blank-stat
+                # placeholder rows, not built up incrementally the way
+                # 2019-2026 were) has a last row week far beyond anything
+                # actually played yet. Trusting it outright set startWeek
+                # past maxWeek every single run, so this returned None
+                # before ever fetching -- confirmed live: 2027_CompStats.csv
+                # sat untouched since onboarding while the game-hours loop
+                # "succeeded" every 2 minutes doing nothing. Use the last
+                # week that actually has a recorded PTS value instead
+                # (column 15); none yet (brand new season) -> week 1.
+                real_weeks = [int(row[1]) for row in csvList[1:] if len(row) > 15 and row[15] != ""]
+                startWeek = max(real_weeks) if real_weeks else 1
             # Default behavior: refresh through current detected week.
             # If caller provides endWeek explicitly, honor it (used by manual forced refresh).
             maxWeek = getLastWeek(year) if endWeek <= 0 else endWeek
@@ -309,7 +323,14 @@ def updateStatCSV(year, startWeek = 0, endWeek = 0, extStatList = []):
                     statDict[week][team2] = statDict2
 
         _apply_replacement_stats_all(statDict, year, statCats)
-        lastRow = 0 + 2*-(-teamCount[year] // 2) * (startWeek-1)
+        rowsPerWeek = 2*-(-teamCount[year] // 2)
+        lastRow = 0 + rowsPerWeek * (startWeek-1)
+        # Preserve any pre-seeded rows for weeks AFTER maxWeek (e.g. 2027's
+        # full-season placeholder rows written at onboarding -- see the
+        # startWeek-detection comment above) instead of silently dropping
+        # them. Only the startWeek..maxWeek range being refetched below
+        # should actually be replaced.
+        futureRows = csvList[1 + rowsPerWeek*maxWeek:]
         row = lastRow
         csvList = csvList[:lastRow+1]
         for week in statDict:
@@ -320,6 +341,7 @@ def updateStatCSV(year, startWeek = 0, endWeek = 0, extStatList = []):
                 statLine = [statDict[week][team].get(stat, "") for stat in statCats]
                 infoLine = [year, week, weekName, reg, count, team, statDict[week][team]['Opp']]
                 csvList.append(infoLine + statLine)
+        csvList.extend(futureRows)
 
         with open(pathname, 'w') as csvfile:
             writer = csv.writer(csvfile)
