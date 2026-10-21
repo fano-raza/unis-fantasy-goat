@@ -133,35 +133,35 @@ class LeagueStore:
         once at __init__ -- verified byte-identical against the original
         row-by-row output before this replaced it (see plan doc)."""
         mask = (df["Count"] == True) if "Count" in df.columns else pd.Series(True, index=df.index)  # noqa: E712
-        if self._po_lookup_series is None:
-            return mask
-        # The lookup only has entries for teams Models.League's own PO_teams
-        # seeding actually kept (it strips non-bracket teams internally
-        # before we ever export it) -- so for PO rows, default to "not real"
-        # and only flip to True when the lookup explicitly confirms it.
-        # Defaulting to the raw Count flag instead would silently let
-        # consolation-bracket teams (absent from the lookup entirely) count.
-        # Excludes Team == "BYE": a bye is never a real bracket participant
-        # (never in the lookup, always resolves to False either way), and
-        # "BYE" is the one team value that legitimately repeats within a
-        # single (Year, Week, Season) -- whenever more than one real team
-        # draws a bye in the same PO week (e.g. 2022/2023 week 19), their
-        # BYE rows collide on the exact same key, which crashes the
-        # .reindex() below with "cannot handle a non-unique multi-index!"
-        # (confirmed by direct reproduction against production data).
-        po_mask = (df["Season"] == "PO") & (df["Team"] != "BYE")
-        if not po_mask.any():
-            return mask
-        keys = pd.MultiIndex.from_arrays(
-            [
-                df.loc[po_mask, "Year"].astype(int),
-                df.loc[po_mask, "Week"].astype(int),
-                df.loc[po_mask, "Season"],
-                df.loc[po_mask, "Team"],
-            ]
-        )
-        resolved = self._po_lookup_series.reindex(keys, fill_value=False).to_numpy()
-        mask.loc[po_mask] = resolved
+        if self._po_lookup_series is not None:
+            # The lookup only has entries for teams Models.League's own
+            # PO_teams seeding actually kept (it strips non-bracket teams
+            # internally before we ever export it) -- so for PO rows,
+            # default to "not real" and only flip to True when the lookup
+            # explicitly confirms it. Defaulting to the raw Count flag
+            # instead would silently let consolation-bracket teams (absent
+            # from the lookup entirely) count. Excludes Team == "BYE": a
+            # bye is never a real bracket participant (never in the
+            # lookup, always resolves to False either way), and "BYE" is
+            # the one team value that legitimately repeats within a single
+            # (Year, Week, Season) -- whenever more than one real team
+            # draws a bye in the same PO week (e.g. 2022/2023 week 19),
+            # their BYE rows collide on the exact same key, which crashes
+            # the .reindex() below with "cannot handle a non-unique multi-
+            # index!" (confirmed by direct reproduction against production
+            # data).
+            po_mask = (df["Season"] == "PO") & (df["Team"] != "BYE")
+            if po_mask.any():
+                keys = pd.MultiIndex.from_arrays(
+                    [
+                        df.loc[po_mask, "Year"].astype(int),
+                        df.loc[po_mask, "Week"].astype(int),
+                        df.loc[po_mask, "Season"],
+                        df.loc[po_mask, "Team"],
+                    ]
+                )
+                resolved = self._po_lookup_series.reindex(keys, fill_value=False).to_numpy()
+                mask.loc[po_mask] = resolved
         return mask
 
     def meta(self) -> dict:
@@ -1069,7 +1069,18 @@ class LeagueStore:
         to Weekly Stats first."""
         m = self.meta()
         year = m.get("current_year")
-        max_week = m.get("rs_week_count", {}).get(year, 1) if year is not None else 1
+        # Cap at the real current week (date-derived, see
+        # _current_week_from_calendar), not rs_week_count -- the season's
+        # total scheduled weeks, which for a season in progress is still
+        # in the future. Confirmed live: this defaulted Standings to
+        # summing through 2027's unplayed week 18, making every team look
+        # simultaneously "clinched" and "eliminated" in week 1.
+        if year is not None:
+            total_weeks = m.get("rs_week_count", {}).get(year, 1)
+            current_week = m.get("current_week")
+            max_week = min(total_weeks, current_week) if current_week else total_weeks
+        else:
+            max_week = 1
         standings = None
         previous = None
         history = None
@@ -1134,7 +1145,14 @@ class LeagueStore:
         totals mode) -- see that method's docstring."""
         m = self.meta()
         year = m.get("current_year")
-        max_week = m.get("rs_week_count", {}).get(year, 1) if year is not None else 1
+        # Cap at the real current week, not rs_week_count -- see
+        # standings_bootstrap()'s identical fix for why.
+        if year is not None:
+            total_weeks = m.get("rs_week_count", {}).get(year, 1)
+            current_week = m.get("current_week")
+            max_week = min(total_weeks, current_week) if current_week else total_weeks
+        else:
+            max_week = 1
         weeks = list(range(1, max_week + 1))
         rows: list[dict] = []
         previous_rows: list[dict] = []
@@ -1237,6 +1255,22 @@ class LeagueStore:
         # scoped to this module so the generic /query endpoint's existing
         # Count-based matchup semantics are untouched.
         real_df = self.store.df[self._real_matchup_mask(self.store.df)]
+        # Count==True (and, for PO, _real_matchup_mask's lookup) only
+        # answer "is this a real scheduled matchup," not "has it actually
+        # happened" -- a season onboarded with its full future schedule
+        # pre-seeded (e.g. 2027 through week 18) has Count==True rows with
+        # no real stats recorded yet. Without this, a future week's all-
+        # blank category comparison (0 wins == 0 losses, since neither >
+        # nor < is ever True against NaN) silently registered as a tie
+        # for every team once summed into a record -- confirmed live:
+        # Standings showed every team "clinched" or "eliminated" in week
+        # 1 because the default range summed through 2027's unplayed week
+        # 18. Scoped to just this method (not _real_matchup_mask itself,
+        # which also feeds meta()'s rs_week_count/playoff_rounds/
+        # total_matchup_count -- those are schedule-shape constants that
+        # must stay independent of how much real data exists yet).
+        if "PTS" in real_df.columns:
+            real_df = real_df[real_df["PTS"].notna()]
         matchup_df = StatsStore._build_matchup_features(real_df)
         rated_cols = ["Year", "Week", "Season", "Team", "week_rating", "week_rank"] + RATING_COLS + RANK_COLS
         rated_df = self._ensure_rated_df()[rated_cols]
