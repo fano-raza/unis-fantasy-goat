@@ -118,9 +118,18 @@ function StandingsPageInner({ initialBootstrap }: StandingsViewProps) {
       .finally(() => setBracketsLoading(false));
   }, []);
 
+  // For the current year, cap at the real current week (date-derived on
+  // the backend, see league_store.py's _current_week_from_calendar) --
+  // rs_week_count is the season's total scheduled weeks, which for a
+  // season still in progress is still in the future. Without this the
+  // slider defaulted (and could be dragged) all the way to the season's
+  // final week before it had actually happened. Past years have no such
+  // cap: the season's over, so the full rs_week_count range is real.
   const maxWeek = useMemo(() => {
     if (!meta || year == null) return 1;
-    return meta.rs_week_count[String(year)] ?? 1;
+    const totalWeeks = meta.rs_week_count[String(year)] ?? 1;
+    if (year === meta.current_year) return Math.min(totalWeeks, meta.current_week);
+    return totalWeeks;
   }, [meta, year]);
 
   // Default to whatever format that season actually used (some years were
