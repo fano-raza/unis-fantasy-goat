@@ -76,6 +76,13 @@ SEASON_OPEN: dict[int, datetime.date] = {
     2021: datetime.date(2020, 12, 22),
     2022: datetime.date(2021, 10, 19),
     2023: datetime.date(2022, 10, 18),
+    # 2024-2026 are Yahoo years (_yahoo_week_calendar_from_file), so this
+    # dict skips straight to 2027 -- the next ESPN year, onboarded without
+    # ever adding its opening night here. That KeyError was the actual
+    # cause of "2027: FAILED (2027) -- skipped" every export run.
+    # Confirmed live via ESPN's public scoreboard: DET @ BOS was the real
+    # season opener, played (and went Final) on 2026-10-20, a Tuesday.
+    2027: datetime.date(2026, 10, 20),
 }
 
 
