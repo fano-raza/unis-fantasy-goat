@@ -72,7 +72,16 @@ league_store = get_league_store(store)
 # still claim "Updated 2 minutes ago." Track per-source mtimes instead.
 # dashboard-api only reads these CSVs into memory once at boot, so without a
 # periodic reload it would keep serving a stale snapshot indefinitely.
-REFRESH_INTERVAL_SECONDS = 5 * 60
+# Was 5 minutes -- fine back when nothing refreshed meaningfully faster than
+# that, but stat_updater.py's game-hours loop now writes genuinely live
+# scores to *_CompStats.csv every ~2 minutes (this session's cumulativeScoreLive
+# fix). A 5-minute reload on top of that compounded to ~7 minutes of total
+# staleness between a real in-game stat and it reaching the API, while the
+# "Updated X ago" badge (which tracks the file's own mtime, not this reload)
+# looked much fresher -- confirmed live: reported "6 min ago" while Weekly
+# Stats was still serving an older snapshot. Lowered to stay close behind
+# the live file-write cadence instead of trailing it by more than double.
+REFRESH_INTERVAL_SECONDS = 90
 
 _state_lock = threading.Lock()
 _source_mtimes: dict[str, datetime | None] = {}
