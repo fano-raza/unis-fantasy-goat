@@ -71,20 +71,18 @@ league_store = get_league_store(store)
 # fast-moving CompStats files, so a page showing yesterday's draft data could
 # still claim "Updated 2 minutes ago." Track per-source mtimes instead.
 # dashboard-api only reads these CSVs into memory once at boot, so without a
-# periodic reload it would keep serving a stale snapshot indefinitely.
+# periodic reload it would keep serving a stale in-memory snapshot
+# indefinitely. Governs ONLY the actual data reload now -- /refresh_status's
+# freshness badge scans file mtimes live on every request instead of
+# reading this cycle's cached result (see refresh_status() below for why).
 # Was 5 minutes -- fine back when nothing refreshed meaningfully faster than
 # that, but stat_updater.py's game-hours loop now writes genuinely live
 # scores to *_CompStats.csv every ~2 minutes (this session's cumulativeScoreLive
-# fix). A 5-minute reload on top of that compounded to ~7 minutes of total
-# staleness between a real in-game stat and it reaching the API, while the
-# "Updated X ago" badge (which tracks the file's own mtime, not this reload)
-# looked much fresher -- confirmed live: reported "6 min ago" while Weekly
-# Stats was still serving an older snapshot. Lowered to stay close behind
-# the live file-write cadence instead of trailing it by more than double.
+# fix). Lowered to stay close behind that cadence instead of trailing it by
+# more than double.
 REFRESH_INTERVAL_SECONDS = 90
 
 _state_lock = threading.Lock()
-_source_mtimes: dict[str, datetime | None] = {}
 
 
 def _newest_mtime(paths: list[Path]) -> datetime | None:
@@ -96,8 +94,8 @@ def _newest_mtime(paths: list[Path]) -> datetime | None:
 
 def _scan_source_mtimes(ref_dir: Path, data_store: StatsStore) -> dict[str, datetime | None]:
     """Per-source freshness, one entry per distinct refresh cadence -- see
-    the "sources" docstring above `_source_mtimes` for why this replaced a
-    single global max. "draft" reuses StatsStore._resolve_draft_roots()'s
+    the comment above REFRESH_INTERVAL_SECONDS for why this is a per-source
+    dict rather than a single global max. "draft" reuses StatsStore._resolve_draft_roots()'s
     exact glob (not reinvented) so this stays in sync with wherever
     _load_draft_picks actually looks."""
     draft_paths: list[Path] = []
@@ -112,15 +110,13 @@ def _scan_source_mtimes(ref_dir: Path, data_store: StatsStore) -> dict[str, date
 
 
 def _refresh_data() -> None:
-    global store, league_store, _source_mtimes
+    global store, league_store
     new_store = StatsStore()
     reset_league_store()
     new_league_store = get_league_store(new_store)
-    mtimes = _scan_source_mtimes(new_store.ref_dir, new_store)
     with _state_lock:
         store = new_store
         league_store = new_league_store
-        _source_mtimes = mtimes
 
 
 def _refresh_loop() -> None:
@@ -132,7 +128,6 @@ def _refresh_loop() -> None:
             print(f"dashboard data refresh failed: {exc}")
 
 
-_source_mtimes = _scan_source_mtimes(store.ref_dir, store)
 threading.Thread(target=_refresh_loop, daemon=True).start()
 
 
@@ -151,13 +146,25 @@ def health() -> dict[str, str]:
 
 @app.get("/refresh_status")
 def refresh_status() -> dict[str, str | dict[str, str | None] | None]:
+    # Scans file mtimes live on every call instead of reading the
+    # _refresh_data() cache -- a stat() call is essentially free, and this
+    # is the "Updated X ago" freshness badge every page shows, so it should
+    # report the real, current file state rather than being gated by the
+    # same (slower) cadence as the actual in-memory data reload. Confirmed
+    # live: with the old cached version, the badge could claim "Updated 2
+    # min ago" while the data it was describing was still a stale snapshot
+    # from several minutes before that, since both numbers came from the
+    # same reload. Grabs `store` under the lock (a plain reference swap,
+    # cheap) so the scan always uses the StatsStore that's actually live
+    # right now, even if a reload is mid-flight.
     with _state_lock:
-        sources = {k: v.isoformat() if v else None for k, v in _source_mtimes.items()}
-        return {
-            # Kept for any existing consumer of the old flat shape.
-            "last_updated": sources.get("live"),
-            "sources": sources,
-        }
+        current_store = store
+    sources = {k: v.isoformat() if v else None for k, v in _scan_source_mtimes(current_store.ref_dir, current_store).items()}
+    return {
+        # Kept for any existing consumer of the old flat shape.
+        "last_updated": sources.get("live"),
+        "sources": sources,
+    }
 
 
 @app.get("/meta", response_model=MetaResponse)
