@@ -201,6 +201,35 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
     };
   }, [year, week]);
 
+  // Live-week polling: the backend's game-hours loop writes real stat
+  // updates to CompStats every ~2 min while the current week is in
+  // progress, but every fetch above only runs once per [year, week]
+  // selection -- without this, a tab left open on the current week would
+  // show frozen numbers indefinitely no matter how much new data lands
+  // underneath it (confirmed live: the backend itself was already correct
+  // and current, this was the only missing piece). Scoped to the live
+  // week only -- a past week's data never changes, so polling it would
+  // just be wasted requests. Silently keeps the last good rows on a
+  // transient failure rather than flipping an already-populated view into
+  // an error state.
+  useEffect(() => {
+    if (!meta || year == null || week == null) return;
+    if (year !== meta.current_year || week !== meta.current_week) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const r = await getWeeklyLeaderboard({ year, week });
+        setRows(r);
+        const season = seasonCacheRef.current.get(year);
+        if (season) season[String(week)] = r;
+      } catch {
+        // Transient failure -- leave the last good rows displayed.
+      }
+    }, 60_000);
+
+    return () => clearInterval(interval);
+  }, [meta, year, week]);
+
   const displayRanks = useMemo(() => computeDisplayRanks(rows), [rows]);
   const displayRows = useMemo(
     () => rows.map((r) => ({ ...r, rank: displayRanks.get(r.team) ?? null })),
