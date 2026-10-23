@@ -295,6 +295,31 @@ def run_bot() -> None:
             f"📊 **{year} Regular Season Standings** (through Week {week}, {label})\n" + "\n".join(lines)
         )
 
+    @bot.slash_command(name="ratings-check", description="Show league Weighted Rank ratings for a season.", **slash_kwargs)
+    async def ratings_check(
+        inter: disnake.ApplicationCommandInteraction,
+        year: Optional[int] = None,
+    ):
+        meta = await _api_get("/league/meta")
+        year = year if year in meta["years"] else meta["current_year"]
+        # No week cap needed here (unlike standings-check): totals()'s
+        # groupby sum/mean already skips a team's own not-yet-played future
+        # weeks (NaN, not a real 0) rather than needing them excluded by
+        # range -- every team has the same number of real weeks so far,
+        # so this can't skew one team's rating relative to another's.
+        status, rows = await _api_post("/league/totals", {"years": [year]})
+        if status != 200 or not isinstance(rows, list):
+            await inter.response.send_message("Couldn't load ratings right now.", ephemeral=True)
+            return
+
+        rows = [r for r in rows if r.get("rank") is not None and r.get("rating") is not None]
+        rows = sorted(rows, key=lambda r: r["rank"])
+        lines = [f"{r['rank']}. **{r['team']}** — {r['rating']:.2f}" for r in rows]
+        if not lines:
+            await inter.response.send_message(f"No ratings data yet for {year}.", ephemeral=True)
+            return
+        await inter.response.send_message(f"⭐ **{year} Weighted Rank Ratings**\n" + "\n".join(lines))
+
     @bot.slash_command(name="goat-check", description="Who's the league GOAT?", **slash_kwargs)
     async def goat_check(inter: disnake.ApplicationCommandInteraction):
         meta = await _api_get("/league/meta")
