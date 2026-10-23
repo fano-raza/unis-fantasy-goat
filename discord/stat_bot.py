@@ -314,7 +314,7 @@ def run_bot() -> None:
 
         rows = [r for r in rows if r.get("rank") is not None and r.get("rating") is not None]
         rows = sorted(rows, key=lambda r: r["rank"])
-        lines = [f"{r['rank']}. **{r['team']}** — {r['rating']:.2f}" for r in rows]
+        lines = [f"{r['rank']}. **{r['team']}** — {r['rating']:.3f}" for r in rows]
         if not lines:
             await inter.response.send_message(f"No ratings data yet for {year}.", ephemeral=True)
             return
