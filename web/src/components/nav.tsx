@@ -44,12 +44,12 @@ export function Nav() {
             key={link.href}
             href={link.href}
             className={cn(
-              // Folder-style tabs sitting on the header's bottom border: the
-              // active one is "open" -- same fill as the page below, its own
-              // bottom edge erased so it joins the content, blue lip on top.
-              "-mb-px flex shrink-0 items-center gap-1.5 rounded-t-md border border-b-0 px-4 py-2.5 text-sm font-medium transition-colors",
+              // Folder-style tabs: the header strip is the card surface with no
+              // bottom border, so the active tab (page-background fill, no
+              // bottom edge) flows straight into the page below. Blue lip on top.
+              "flex shrink-0 items-center gap-1.5 rounded-t-md border border-b-0 px-4 py-2.5 text-sm font-medium transition-colors",
               active
-                ? "border-border bg-background font-semibold text-foreground shadow-[inset_0_3px_0_var(--primary),0_1px_0_var(--background)]"
+                ? "border-border bg-background font-semibold text-foreground shadow-[inset_0_3px_0_var(--primary)]"
                 : "border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground",
             )}
           >
