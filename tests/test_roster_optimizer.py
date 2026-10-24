@@ -200,8 +200,9 @@ def punt_league():
         "t2": line(),
         "safe": line(PTS=10, REB=10, **SHOOT),
         "tank": line(PTS=11, REB=11, FGM=0, FGA=10, FTM=5, FTA=10),
+        "a0": line(), "b0": line(),  # empty padding: equal roster sizes, sums unchanged
     }
-    rosters = {"A": ["a1"], "B": ["b1"], "T": ["t1", "t2"]}
+    rosters = {"A": ["a1", "a0"], "B": ["b1", "b0"], "T": ["t1", "t2"]}
     return players_frame(lines), rosters, ["safe", "tank"]
 
 
@@ -227,8 +228,9 @@ def test_turnover_only_improvement_is_ignored():
     lines = {
         "a1": line(PTS=10, TO=5, **SHOOT), "b1": line(PTS=30, TO=1, **SHOOT),
         "t1": line(PTS=20, TO=2, **SHOOT), "t2": line(TO=8), "clean": line(TO=0),
+        "a0": line(), "b0": line(),
     }
-    rosters = {"A": ["a1"], "B": ["b1"], "T": ["t1", "t2"]}
+    rosters = {"A": ["a1", "a0"], "B": ["b1", "b0"], "T": ["t1", "t2"]}
     players = players_frame(lines)
     ignored = ro.optimize("T", players, rosters, ["clean"], ro.OptimizerConfig(other_weight=0.25))
     assert ignored.swaps == []
@@ -314,13 +316,16 @@ def brute_force_first_swap(team, players, rosters, fas, targets, config):
         rated = aggregate_rating(league_value_frame(rs), ro.MAIN_CATS, ["TO"]).set_index("Team").loc[team]
         return sum(weights[c] * rated[f"{c}_rating"] for c in ro.MAIN_CATS)
 
-    best = (score(rosters), None, None)
+    base = score(rosters)
+    best = (base, None, None)
     for drop, add in itertools.product(rosters[team], fas):
         trial = {t: list(ids) for t, ids in rosters.items()}
         trial[team] = [add if p == drop else p for p in trial[team]]
         s = score(trial)
         if s > best[0] + 1e-12:
             best = (s, drop, add)
+    if best[1] is not None and best[0] - base <= config.min_gain:
+        return (base, None, None)
     return best
 
 
@@ -377,6 +382,7 @@ def brute_force_greedy(team, players, rosters, fas, targets, config):
     sequence = []
     for _ in range(config.max_swaps):
         drop = add = None
+        step_base = best_score
         for d in [p for p in current[team] if p in original]:
             for a in pool:
                 trial = {t: list(ids) for t, ids in current.items()}
@@ -384,7 +390,7 @@ def brute_force_greedy(team, players, rosters, fas, targets, config):
                 s = score(trial)
                 if s > best_score + 1e-12:
                     best_score, drop, add = s, d, a
-        if drop is None:
+        if drop is None or best_score - step_base <= config.min_gain:
             break
         current[team] = [add if p == drop else p for p in current[team]]
         pool.remove(add)
@@ -435,37 +441,74 @@ def test_unsigned_free_agents_are_never_suggested():
     assert res.swaps[0].add == "tank"
 
 
-def test_injured_rostered_player_counts_at_small_weight_and_becomes_the_drop():
-    # t1 is the team's best player but OUT: at 10% weight T's PTS/REB fall
-    # from 20 to 11, so swapping him for 'safe' is now the best move.
+def test_availability_is_projected_games_over_season():
+    stats = pd.DataFrame([stats_row(1, "a", 0), stats_row(2, "b", 0), stats_row(3, "c", 0)])
+    proj = pd.DataFrame([
+        {**proj_row(1, PROJ), "proj_GP": 59}, {**proj_row(2, PROJ), "proj_GP": 90}, {**proj_row(3), "proj_GP": None},
+    ])
+    out = ro.blend_players(stats, proj, replacement_pool=pd.Index([1]))
+    assert out.loc[1, "availability"] == pytest.approx(59 / 82)
+    assert out.loc[2, "availability"] == 1.0                       # capped
+    assert out.loc[3, "availability"] == pytest.approx(59 / 82)   # no projection -> pool median
+
+
+def test_injured_star_with_good_availability_is_not_cut():
+    # t1 is OUT right now but ESPN projects 74 GP (90%): he still outvalues a
+    # healthy but weaker free agent, so no swap -- the old flat 10% injury
+    # weight would have cut him.
     lines = {
         "a1": line(PTS=10, REB=10, FGM=4, FGA=10, FTM=5, FTA=10),
         "b1": line(PTS=30, REB=30, FGM=6, FGA=10, FTM=5, FTA=10),
-        "t1": line(PTS=10, REB=10, **SHOOT),
-        "t2": line(PTS=10, REB=10, **SHOOT),
-        "safe": line(PTS=9, REB=9, **SHOOT),
+        "t1": line(PTS=10, REB=10, **SHOOT), "t2": line(PTS=10, REB=10, **SHOOT),
+        "healthy": line(PTS=8, REB=8, **SHOOT),
+        "a0": line(), "b0": line(),
     }
     players = players_frame(lines)
     players["InjuryStatus"] = ""
     players.loc["t1", "InjuryStatus"] = "OUT"
-    rosters = {"A": ["a1"], "B": ["b1"], "T": ["t1", "t2"]}
-    res = ro.optimize("T", players, rosters, ["safe"], ro.OptimizerConfig(injured_roster_weight=0.1), targets=TARGETS)
-    assert [(s.drop, s.add) for s in res.swaps] == [("t1", "safe")]
-    # Start: PTS = 1 + 10 = 11 -> (11-10)/20 = 0.05 for PTS and REB.
-    assert res.start_ratings["PTS"] == pytest.approx(0.05)
-    # Ignoring injuries (weight 1.0), 'safe' is worse than either starter.
-    res = ro.optimize("T", players, rosters, ["safe"], ro.OptimizerConfig(injured_roster_weight=1.0), targets=TARGETS)
+    players["availability"] = 1.0
+    players.loc["t1", "availability"] = 0.9
+    rosters = {"A": ["a1", "a0"], "B": ["b1", "b0"], "T": ["t1", "t2"]}
+    res = ro.optimize("T", players, rosters, ["healthy"], ro.OptimizerConfig(), targets=TARGETS)
     assert res.swaps == []
+    # A long-term absence (ESPN projects 20 GP, ~24%) does make him the drop.
+    players.loc["t1", "availability"] = 0.24
+    res = ro.optimize("T", players, rosters, ["healthy"], ro.OptimizerConfig(), targets=TARGETS)
+    assert [(s.drop, s.add) for s in res.swaps] == [("t1", "healthy")]
 
 
-def test_injured_weight_applies_to_other_teams_too():
+def test_availability_scales_free_agents_too():
+    players, rosters, fas = punt_league()
+    players["availability"] = 1.0
+    players.loc["tank", "availability"] = 0.5   # tank now adds ~5.5 PTS/REB, worse than safe
+    res = ro.optimize("T", players, rosters, fas, ro.OptimizerConfig(other_weight=0.0), targets=TARGETS)
+    assert res.swaps[0].add == "safe"
+
+
+def test_rosters_are_scaled_to_a_common_size():
+    # B carries a third, empty-ish player: without scaling it would sum the
+    # same as with two; scaled to 2 players, B's 30 PTS over 3 -> 20.
     lines = {
-        "a1": line(PTS=40, **SHOOT), "b1": line(PTS=20, **SHOOT),
-        "t1": line(PTS=30, **SHOOT),
+        "a1": line(PTS=5, **SHOOT), "a2": line(PTS=5, **SHOOT),
+        "b1": line(PTS=15, **SHOOT), "b2": line(PTS=15, **SHOOT), "b3": line(**SHOOT),
+        "t1": line(PTS=10, **SHOOT), "t2": line(PTS=5, **SHOOT),
     }
+    rosters = {"A": ["a1", "a2"], "B": ["b1", "b2", "b3"], "T": ["t1", "t2"]}
     players = players_frame(lines)
-    players["InjuryStatus"] = ["OUT", "", ""]
-    rosters = {"A": ["a1"], "B": ["b1"], "T": ["t1"]}
-    # A's star is OUT: A projects 4 PTS, so T (30) is the league's best.
+    assert ro.roster_scale(rosters) == {"A": 1.0, "B": pytest.approx(2 / 3), "T": 1.0}
+    sums = ro.team_component_sums(players, rosters)
+    assert sums.loc["B", "PTS"] == pytest.approx(20)
     res = ro.optimize("T", players, rosters, [], ro.OptimizerConfig(), targets=TARGETS)
-    assert res.start_ratings["PTS"] == pytest.approx(1.0)
+    # T 15 PTS between A 10 and B 20 (scaled) -> 0.5; unscaled B (30) gives 0.25.
+    assert res.start_ratings["PTS"] == pytest.approx(0.5)
+
+
+def test_tiny_swaps_are_not_suggested():
+    # 'nudge' adds 0.1 PTS: worth (0.1/20) = 0.005 in the PTS rating.
+    players, rosters, _ = punt_league()
+    players = players_frame({**{i: players.loc[i, C].to_dict() for i in players.index},
+                             "nudge": line(PTS=0.1, REB=0, FGA=0, FGM=0)})
+    assert ro.optimize("T", players, rosters, ["nudge"], targets=TARGETS).swaps == []
+    tiny = ro.optimize("T", players, rosters, ["nudge"], ro.OptimizerConfig(min_gain=0.0), targets=TARGETS)
+    assert [(s.drop, s.add) for s in tiny.swaps] == [("t2", "nudge")]
+    assert tiny.swaps[0].gain == pytest.approx(0.005)

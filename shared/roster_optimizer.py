@@ -57,16 +57,23 @@ class OptimizerConfig:
     # the first real-data run kept suggesting unsigned players off last
     # season's stats.
     exclude_unsigned: bool = True
-    # Rostered players with an excluded injury status count at this fraction
-    # of their projected line in their team's totals (every team, not just
-    # the target) -- an OUT player isn't producing, so he shouldn't prop up
-    # his team's projection, and on the target team he becomes a natural
-    # drop. Makes and attempts scale together, so his FG%/FT% just carries
-    # less weight. 1.0 = ignore injuries on rosters.
-    injured_roster_weight: float = 0.1
+    # Season-long availability: every player's per-game line is scaled by
+    # ESPN's projected games / season_games (Kyrie at 59 projected GP counts
+    # ~72%). Replaced a flat 10% weight on rostered OUT players, which made
+    # the optimizer cut injured stars (LeBron, Curry, ...) -- wrong for a
+    # season-long tool when the injury is short (user decision, 2026-10-24).
+    # Makes and attempts scale together, so FG%/FT% just carry less weight.
+    use_availability: bool = True
+    season_games: float = 82.0
+    # Every team's totals are scaled to this roster size, so a 14th player
+    # isn't a built-in counting-stat edge over 13-man teams. None = the
+    # league's most common roster size.
+    roster_size: int | None = None
     n_targets: int = 5
     max_swaps: int = 14
-    min_gain: float = 1e-9
+    # Swaps gaining less than this aren't worth suggesting (user: "if it's a
+    # tiny swap, it's not worth sharing"); the search stops there.
+    min_gain: float = 0.02
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +157,13 @@ def blend_players(
     out.insert(1, "NBATeam", stats["Team"].fillna("") if "Team" in stats else "")
     out["GP"] = gp
     out["w_real"] = w_real
+    # Share of the season ESPN expects the player to play. No projection ->
+    # the replacement pool's median availability.
+    proj_gp = pd.to_numeric(proj["proj_GP"], errors="coerce") if "proj_GP" in proj else pd.Series(np.nan, index=proj.index)
+    availability = (proj_gp / config.season_games).clip(0, 1)
+    pool_avail = availability.reindex(pool).dropna()
+    availability = availability.fillna(pool_avail.median() if len(pool_avail) else 1.0)
+    out["availability"] = availability
     out["InjuryStatus"] = proj["InjuryStatus"].fillna("") if "InjuryStatus" in proj else ""
     out["prior"] = np.select(
         [has_proj & (w_last > 0), has_proj, has_last],
@@ -193,9 +207,21 @@ def league_ratings(team_values: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(r, index=team_values.index, columns=MAIN_CATS)
 
 
-def team_component_sums(players: pd.DataFrame, rosters: dict[str, list]) -> pd.DataFrame:
+def roster_scale(rosters: dict[str, list], roster_size: int | None = None) -> dict[str, float]:
+    """Per-team multiplier that puts every team's totals on the same roster
+    size (default: the league's most common size; ties -> the larger)."""
+    sizes = [len(ids) for ids in rosters.values()]
+    if roster_size is None:
+        counts = pd.Series(sizes).value_counts()
+        roster_size = int(max(counts[counts == counts.max()].index))
+    return {team: roster_size / len(ids) for team, ids in rosters.items()}
+
+
+def team_component_sums(players: pd.DataFrame, rosters: dict[str, list], roster_size: int | None = None) -> pd.DataFrame:
+    """Each team's component totals, scaled to a common roster size."""
+    scale = roster_scale(rosters, roster_size)
     return pd.DataFrame(
-        {team: players.loc[ids, COMPONENTS].sum().to_numpy() for team, ids in rosters.items()},
+        {team: players.loc[ids, COMPONENTS].sum().to_numpy() * scale[team] for team, ids in rosters.items()},
         index=COMPONENTS,
     ).T
 
@@ -272,14 +298,13 @@ def optimize(
     out_now = pd.Series(False, index=players.index)
     if "InjuryStatus" in players:
         out_now = players["InjuryStatus"].isin(config.excluded_injury_statuses)
-    if out_now.any() and config.injured_roster_weight != 1.0:
+    if config.use_availability and "availability" in players:
         players = players.copy()
-        players[COMPONENTS] = players[COMPONENTS].astype(float)
-        players.loc[out_now, COMPONENTS] *= config.injured_roster_weight
+        players[COMPONENTS] = players[COMPONENTS].astype(float).mul(players["availability"], axis=0)
     comps = players[COMPONENTS].to_numpy(dtype=float)
     pos = {pid: i for i, pid in enumerate(players.index)}
 
-    sums = team_component_sums(players, rosters)
+    sums = team_component_sums(players, rosters, config.roster_size)
     values = pd.DataFrame(category_values(sums.to_numpy()), index=sums.index, columns=MAIN_CATS)
     start = league_ratings(values).loc[team]
     shown = considered_cats(config)
@@ -307,6 +332,7 @@ def optimize(
     if config.exclude_unsigned and "NBATeam" in players:
         injured |= set(players.index[players["NBATeam"] == "FA"])
     pool = [pid for pid in free_agents if pid in pos and pid not in original and pid not in injured]
+    scale = roster_scale(rosters, config.roster_size)[team]
     team_sum = sums.loc[team].to_numpy(dtype=float)
     current = float(_objective(rate(category_values(team_sum)), weights))
     result = OptimizerResult(
@@ -327,7 +353,7 @@ def optimize(
             break
         drop_rows = comps[[pos[p] for p in droppable]]        # (r, 11)
         add_rows = comps[[pos[q] for q in pool]]               # (n, 11)
-        cand = team_sum - drop_rows[:, None, :] + add_rows[None, :, :]  # (r, n, 11)
+        cand = team_sum + scale * (add_rows[None, :, :] - drop_rows[:, None, :])  # (r, n, 11)
         scores = _objective(rate(category_values(cand)), weights)
         i, j = np.unravel_index(np.nanargmax(scores), scores.shape)
         best = float(scores[i, j])
