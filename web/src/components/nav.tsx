@@ -47,10 +47,10 @@ export function Nav() {
               // Folder-style tabs: the header strip is the card surface with no
               // bottom border, so the active tab (page-background fill, no
               // bottom edge) flows straight into the page below. Blue lip on top.
-              "flex shrink-0 items-center gap-1.5 rounded-t-md border border-b-0 px-4 py-2.5 text-sm font-medium transition-colors",
+              "flex shrink-0 items-center gap-1.5 rounded-t-md px-4 py-2.5 text-sm font-medium transition-colors",
               active
-                ? "border-border bg-background font-semibold text-foreground shadow-[inset_0_3px_0_var(--primary)]"
-                : "border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                ? "bg-background font-semibold text-foreground shadow-[inset_0_3px_0_var(--primary)]"
+                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
             )}
           >
             {link.locked && <Lock className="size-3" />}
