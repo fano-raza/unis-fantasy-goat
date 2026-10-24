@@ -139,6 +139,19 @@ class OptimizerConfig:
     min_gain_share: float = 0.01
 
 
+def recommended_config(**overrides) -> "OptimizerConfig":
+    """The configuration the backtest supports (Phase 6, 2026-10-24): the
+    `standings` objective (equal parts weekly matchup-win probability and
+    expected category share), calibrated projections/availability (the
+    defaults), re-run weekly with at most 2 swaps per week. Over 138 cases
+    (2019-2023, checkpoints weeks 5/10/15, every team), weekly use vs standing
+    pat: +0.73 matchup wins [95% CI +0.46, +1.01] and +3.2 category wins
+    [+2.3, +4.1] per case, positive in all 5 seasons, and on the untouched
+    2022-23 hold-out on par with the league's real managers. One-time swaps
+    and the original min-max `ratings` objective showed no reliable gain."""
+    return OptimizerConfig(**{"objective": "standings", "max_swaps": 2, **overrides})
+
+
 # ---------------------------------------------------------------------------
 # 1. Player projections
 # ---------------------------------------------------------------------------

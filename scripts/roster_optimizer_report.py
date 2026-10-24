@@ -32,7 +32,8 @@ def _load(path: str) -> pd.DataFrame:
     return pd.read_csv(path)
 
 
-def load_league(stats_path: str, rosters_path: str, projections_path: str, year: int, config: ro.OptimizerConfig, window: str):
+def load_league(stats_path: str, rosters_path: str, projections_path: str, year: int, config: ro.OptimizerConfig,
+                window: str, days_elapsed: float | None = None):
     stats = _load(stats_path)
     roster_rows = _load(rosters_path)
     roster_rows = roster_rows[roster_rows["Year"] == year]
@@ -55,7 +56,8 @@ def load_league(stats_path: str, rosters_path: str, projections_path: str, year:
 
     rostered = {pid for ids in rosters.values() for pid in ids}
     free_agents = [pid for pid in stats["PlayerId"] if pid not in rostered]
-    players = ro.blend_players(stats, projections, config, window=window, replacement_pool=pd.Index(free_agents))
+    players = ro.blend_players(stats, projections, config, window=window, replacement_pool=pd.Index(free_agents),
+                               days_elapsed=days_elapsed)
     return players, rosters, free_agents
 
 
@@ -64,14 +66,18 @@ def fmt_ratings(ratings: dict, targets: list[str]) -> str:
 
 
 def report(team: str, players, rosters, free_agents, base: ro.OptimizerConfig, balanced_weight: float) -> None:
-    variants = [("Full punt", 0.0), (f"Balanced (other x{balanced_weight:g})", balanced_weight)]
-    results = []
-    for label, w in variants:
-        cfg = ro.OptimizerConfig(**{**base.__dict__, "other_weight": w})
-        results.append((label, ro.optimize(team, players, rosters, free_agents, cfg)))
+    # Recommended (backtested) objective first; the target-5 punt framework
+    # (category-wins scoring) alongside for comparison.
+    variants = [
+        ("Recommended (standings objective)", ro.recommended_config(max_swaps=base.max_swaps)),
+        ("Target-5 punt (category wins)", ro.OptimizerConfig(objective="category_wins", other_weight=0.0, max_swaps=base.max_swaps)),
+        (f"Target-5 balanced (other x{balanced_weight:g})",
+         ro.OptimizerConfig(objective="category_wins", other_weight=balanced_weight, max_swaps=base.max_swaps)),
+    ]
+    results = [(label, ro.optimize(team, players, rosters, free_agents, cfg)) for label, cfg in variants]
 
-    first = results[0][1]
-    print(f"\n{'=' * 78}\n{team}  -- targets: {', '.join(first.targets)}   (* = target, TO ignored)")
+    first = results[1][1]
+    print(f"\n{'=' * 78}\n{team}  -- strongest 5: {', '.join(first.targets)}   (numbers = expected share of weekly matchups won per category; TO ignored)")
     print(f"  start   {fmt_ratings(first.start_ratings, first.targets)}")
     for label, res in results:
         print(f"\n  {label}: objective {res.start_objective:.3f} -> {res.end_objective:.3f} in {len(res.swaps)} swaps")
@@ -94,11 +100,15 @@ def main() -> None:
     parser.add_argument("--team")
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--balanced-weight", type=float, default=0.25)
-    parser.add_argument("--max-swaps", type=int, default=14)
+    parser.add_argument("--max-swaps", type=int, default=2,
+                        help="swaps per run -- the backtest supports re-running weekly with <= 2")
+    parser.add_argument("--days-elapsed", type=float, default=None,
+                        help="days since the season started (enables recent playing-rate availability)")
     args = parser.parse_args()
 
     base = ro.OptimizerConfig(max_swaps=args.max_swaps)
-    players, rosters, free_agents = load_league(args.stats, args.rosters, args.projections, args.year, base, args.window)
+    players, rosters, free_agents = load_league(args.stats, args.rosters, args.projections, args.year, base, args.window,
+                                                args.days_elapsed)
     print(f"{len(players)} players ({players['prior'].value_counts().to_dict()}), "
           f"{len(rosters)} teams, {len(free_agents)} free agents")
     teams = sorted(rosters) if args.all else [args.team]
