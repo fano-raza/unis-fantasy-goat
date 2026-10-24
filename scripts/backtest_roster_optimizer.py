@@ -101,6 +101,7 @@ def checkpoint_inputs(s: Season, cutoff_sp: int) -> tuple[pd.DataFrame, pd.DataF
     g = gp.reindex(universe).fillna(0).to_numpy()
     t = totals.reindex(universe).fillna(0)
     stats["season_GP"] = g
+    stats["d30_GP"] = before[before["ScoringPeriod"] >= cutoff_sp - 30].groupby("PlayerId").size().reindex(universe).fillna(0).to_numpy()
     stats["season_FG%_made"], stats["season_FG%_att"] = t["FGM"].to_numpy(), t["FGA"].to_numpy()
     stats["season_FT%_made"], stats["season_FT%_att"] = t["FTM"].to_numpy(), t["FTA"].to_numpy()
     with np.errstate(invalid="ignore", divide="ignore"):
@@ -209,7 +210,13 @@ def standings(s: Season, checkpoint: int, sim: dict[str, pd.DataFrame]) -> pd.Da
 # Backtest
 # ---------------------------------------------------------------------------
 
-def run_season(s: Season, config: ro.OptimizerConfig, balanced_weight: float) -> tuple[list[dict], list[dict]]:
+def run_season(s: Season, variants: dict[str, ro.OptimizerConfig],
+               blend_config: ro.OptimizerConfig | None = None,
+               rolling: dict[str, ro.OptimizerConfig] | None = None,
+               weekly_cap: int = 2) -> tuple[list[dict], list[dict]]:
+    """variants: scenario label -> optimizer config (each is run and replayed
+    against stand_pat and actual). blend_config: projection settings."""
+    config = blend_config or ro.OptimizerConfig()
     results, calibration = [], []
     for cp in CHECKPOINTS:
         if cp not in s.week_start or cp > max(s.rs_weeks):
@@ -219,7 +226,7 @@ def run_season(s: Season, config: ro.OptimizerConfig, balanced_weight: float) ->
         rosters = s.roster_on(sp0)
         rostered = {p for ids in rosters.values() for p in ids}
         fas = [p for p in stats["PlayerId"] if p not in rostered]
-        players = ro.blend_players(stats, projections, config, replacement_pool=pd.Index(fas))
+        players = ro.blend_players(stats, projections, config, replacement_pool=pd.Index(fas), days_elapsed=sp0 - 1)
         priority = (players["PTS"] + 1.2 * players["REB"] + 1.5 * players["AST"]).to_dict()
 
         base = {t: weekly_totals(s, cp, real_daily(s, t, sp0), priority) for t in s.teams}
@@ -228,19 +235,26 @@ def run_season(s: Season, config: ro.OptimizerConfig, balanced_weight: float) ->
         base_table = standings(s, cp, base)
 
         for team in s.teams:
-            variants = {"stand_pat": rosters[team]}
+            scenario_rosters = {"stand_pat": rosters[team]}
             swaps = {}
-            for label, w in (("full_punt", 0.0), ("balanced", balanced_weight)):
-                cfg = ro.OptimizerConfig(**{**config.__dict__, "other_weight": w})
+            for label, cfg in variants.items():
                 res = ro.optimize(team, players, rosters, fas, cfg)
                 roster = list(rosters[team])
                 for sw in res.swaps:
                     roster[roster.index(sw.drop)] = sw.add
-                variants[label] = roster
+                scenario_rosters[label] = roster
                 swaps[label] = res
             tables = {"actual": base_table}
             post = {"actual": base[team].sum()}
-            for label, roster in variants.items():
+            rolling_swaps = {}
+            for label, cfg in (rolling or {}).items():
+                daily, n = rolling_roster(s, team, cp, cfg, config, weekly_cap)
+                sim = dict(base)
+                sim[team] = weekly_totals(s, cp, daily, priority)
+                tables[label] = standings(s, cp, sim)
+                post[label] = sim[team].sum()
+                rolling_swaps[label] = n
+            for label, roster in scenario_rosters.items():
                 sim = dict(base)
                 sim[team] = weekly_totals(s, cp, frozen_daily(s, roster, sp0), priority)
                 tables[label] = standings(s, cp, sim)
@@ -252,9 +266,8 @@ def run_season(s: Season, config: ro.OptimizerConfig, balanced_weight: float) ->
                 pv = cat_values(post[label])
                 results.append({
                     "year": s.year, "checkpoint": cp, "team": team, "scenario": label,
-                    "targets": ",".join(swaps["full_punt"].targets) if label == "full_punt" else
-                               ",".join(swaps["balanced"].targets) if label == "balanced" else "",
-                    "n_swaps": len(swaps[label].swaps) if label in swaps else 0,
+                    "targets": ",".join(swaps[label].targets) if label in swaps else "",
+                    "n_swaps": len(swaps[label].swaps) if label in swaps else rolling_swaps.get(label, 0),
                     "swaps": "; ".join(f"{x.drop_name} -> {x.add_name}" for x in swaps[label].swaps) if label in swaps else "",
                     "W": r["W"], "L": r["L"], "T": r["T"], "win_pct": r["win_pct"], "wl_rank": r["wl_rank"],
                     "cW": r["cW"], "cL": r["cL"], "cT": r["cT"], "cat_pct": r["cat_pct"], "cat_rank": r["cat_rank"],
@@ -262,6 +275,37 @@ def run_season(s: Season, config: ro.OptimizerConfig, balanced_weight: float) ->
                     **{f"post_{c}": pv[c] for c in STAT_CATS},
                 })
     return results, calibration
+
+
+def rolling_roster(s: Season, team: str, cp: int, cfg: ro.OptimizerConfig, base_config: ro.OptimizerConfig,
+                   weekly_cap: int) -> tuple[dict[int, list], int]:
+    """Weekly re-optimization from checkpoint `cp` to the end of the regular
+    season: at each week's first day, rerun the optimizer on that day's
+    information (other teams' real rosters, the target's current roster) and
+    apply at most `weekly_cap` swaps. Returns (day -> roster, total swaps).
+    Approximation: a player the target picks up can still appear on another
+    team's real roster later (no exclusivity across hypothetical moves)."""
+    roster = list(s.roster_on(int(s.week_start[cp]))[team])
+    daily: dict[int, list] = {}
+    n_swaps = 0
+    weeks = [w for w in s.rs_weeks if w >= cp]
+    for w in weeks:
+        sp = int(s.week_start[w])
+        rosters = s.roster_on(sp)
+        rosters[team] = list(roster)
+        rostered = {p for ids in rosters.values() for p in ids}
+        stats, projections = checkpoint_inputs(s, sp)
+        fas = [p for p in stats["PlayerId"] if p not in rostered]
+        players = ro.blend_players(stats, projections, base_config, replacement_pool=pd.Index(fas), days_elapsed=sp - 1)
+        week_cfg = ro.OptimizerConfig(**{**cfg.__dict__, "max_swaps": weekly_cap})
+        res = ro.optimize(team, players, rosters, fas, week_cfg)
+        for sw in res.swaps:
+            roster[roster.index(sw.drop)] = sw.add
+        n_swaps += len(res.swaps)
+        end = int(s.weeks.loc[s.weeks["Week"] == w, "EndSP"].iloc[0])
+        for day in range(sp, end + 1):
+            daily[day] = list(roster)
+    return daily, n_swaps
 
 
 def calibrate(s: Season, cp: int, sim: dict[str, pd.DataFrame]) -> dict:
@@ -297,15 +341,65 @@ def validate(s: Season) -> dict:
     return {"team_weeks": len(j), "pts_exact": round(float(exact_pts), 4), "all_stats_exact": round(float(exact_all), 4)}
 
 
+# Named optimizer variants the backtest can run side by side.
+VARIANTS = {
+    "ratings_punt": lambda: ro.OptimizerConfig(objective="ratings", other_weight=0.0),
+    "ratings_bal": lambda: ro.OptimizerConfig(objective="ratings", other_weight=0.25),
+    "catwins_punt": lambda: ro.OptimizerConfig(objective="category_wins", other_weight=0.0),
+    "catwins_bal": lambda: ro.OptimizerConfig(objective="category_wins", other_weight=0.25),
+    "matchup": lambda: ro.OptimizerConfig(objective="matchup_wins"),
+    "standings": lambda: ro.OptimizerConfig(objective="standings"),
+    "standings_g02": lambda: ro.OptimizerConfig(objective="standings", min_gain_share=0.02),
+    "standings_g03": lambda: ro.OptimizerConfig(objective="standings", min_gain_share=0.03),
+    "matchup_g02": lambda: ro.OptimizerConfig(objective="matchup_wins", min_gain_share=0.02),
+}
+
 CLEAN_YEARS = {2019, 2021, 2022}  # preseason projections; 2020/2023 are mid-season snapshots
+
+
+def bootstrap_ci(values: np.ndarray, n: int = 4000, seed: int = 0) -> tuple[float, float]:
+    """95% percentile bootstrap CI of the mean."""
+    rng = np.random.default_rng(seed)
+    v = np.asarray(values, dtype=float)
+    means = rng.choice(v, size=(n, len(v)), replace=True).mean(axis=1)
+    return float(np.percentile(means, 2.5)), float(np.percentile(means, 97.5))
+
+
+def deltas(df: pd.DataFrame, scen: str) -> pd.DataFrame:
+    key = ["year", "checkpoint", "team"]
+    base = df[df["scenario"] == "stand_pat"].set_index(key)
+    x = df[df["scenario"] == scen].set_index(key)
+    return pd.DataFrame({
+        "dW": x["W"] + 0.5 * x["T"] - (base["W"] + 0.5 * base["T"]),
+        "dcW": x["cW"] + 0.5 * x["cT"] - (base["cW"] + 0.5 * base["cT"]),
+        "d_wl_rank": base["wl_rank"] - x["wl_rank"],
+        "d_cat_rank": base["cat_rank"] - x["cat_rank"],
+        "n_swaps": x["n_swaps"],
+    }).reset_index()
+
+
+def headline(df: pd.DataFrame) -> str:
+    """One line per scenario: mean change in matchup and category wins per
+    case vs stand_pat, with 95% bootstrap CIs, and rank up/down shares."""
+    out = []
+    for scen in [s for s in df["scenario"].unique() if s != "stand_pat"]:
+        d = deltas(df, scen)
+        lo, hi = bootstrap_ci(d.dW.to_numpy())
+        clo, chi = bootstrap_ci(d.dcW.to_numpy())
+        out.append(f"  {scen:<26} n={len(d):3}  matchup wins {d.dW.mean():+.2f} [{lo:+.2f},{hi:+.2f}]"
+                   f"  cat wins {d.dcW.mean():+.1f} [{clo:+.1f},{chi:+.1f}]"
+                   f"  W/L rank up/down {(d.d_wl_rank > 0).mean():.0%}/{(d.d_wl_rank < 0).mean():.0%}"
+                   f"  cat rank up/down {(d.d_cat_rank > 0).mean():.0%}/{(d.d_cat_rank < 0).mean():.0%}"
+                   f"  swaps/case {d.n_swaps.mean():.1f}")
+    return "\n".join(out)
 
 
 def summarize(df: pd.DataFrame) -> str:
     """Each scenario vs stand_pat, per (year, checkpoint, team) case."""
     key = ["year", "checkpoint", "team"]
     base = df[df["scenario"] == "stand_pat"].set_index(key)
-    lines = []
-    for scen in ["full_punt", "balanced", "actual"]:
+    lines = ["headline (95% bootstrap CIs):", headline(df)]
+    for scen in [s for s in df["scenario"].unique() if s != "stand_pat"]:
         x = df[df["scenario"] == scen].set_index(key)
         d = pd.DataFrame({
             "dW": x["W"] + 0.5 * x["T"] - (base["W"] + 0.5 * base["T"]),
@@ -336,16 +430,21 @@ def main() -> None:
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--ref", type=Path, required=True)
     parser.add_argument("--years", type=int, nargs="+", required=True)
-    parser.add_argument("--balanced-weight", type=float, default=0.25)
+    parser.add_argument("--variants", nargs="+", default=["ratings_punt", "ratings_bal"],
+                        help=f"named variants from VARIANTS: {', '.join(VARIANTS)}")
+    parser.add_argument("--rolling", nargs="*", default=[],
+                        help="variants to also run as weekly re-optimization (scenario 'rolling_<name>')")
+    parser.add_argument("--weekly-cap", type=int, default=2)
     parser.add_argument("--out", type=Path, default=Path("backtest_results.csv"))
     args = parser.parse_args()
 
-    config = ro.OptimizerConfig()
+    variants = {name: VARIANTS[name]() for name in args.variants}
+    rolling = {f"rolling_{name}": VARIANTS[name]() for name in args.rolling}
     all_results, all_cal = [], []
     for year in args.years:
         s = Season(year, args.data, args.ref)
         print(f"{year}: data validation {validate(s)}")
-        res, cal = run_season(s, config, args.balanced_weight)
+        res, cal = run_season(s, variants, rolling=rolling, weekly_cap=args.weekly_cap)
         all_results += res
         all_cal += cal
         print(f"{year}: {len(s.teams)} teams, {len(res)} rows; calibration {cal}")

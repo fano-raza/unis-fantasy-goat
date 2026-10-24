@@ -36,8 +36,19 @@ _IDX = {c: i for i, c in enumerate(COMPONENTS)}
 
 @dataclass
 class OptimizerConfig:
-    # Real-stat weight = GP / (GP + k_games): 2 GP -> 12%, 15 GP -> 50%.
-    k_games: float = 15.0
+    # Real-stat weight = GP / (GP + k), per component. Fitted 2026-10-24 by
+    # player-level prediction error (blend vs actual rest-of-season per-game,
+    # dev seasons 2019-2021, checkpoints weeks 5/10/15, players with >= 10
+    # later games): stats stabilize at different rates -- PTS after ~3 games,
+    # steals only after ~15. The original flat k=15 trusted ESPN's preseason
+    # projection too long, and that projection systematically flatters free
+    # agents (they're usually free agents because they've fallen short of it):
+    # the top 40 FAs were over-projected by +0.47 PTS+REB+AST/g at k=15 vs
+    # +0.11 at k=5. Makes/attempts share a k so percentages stay coherent. A
+    # float applies one k to every component.
+    k_games: float | dict = field(default_factory=lambda: {
+        "PTS": 3.0, "FGM": 5.0, "FGA": 5.0, "FTM": 7.0, "FTA": 7.0, "3PTM": 5.0,
+        "REB": 5.0, "AST": 5.0, "STL": 15.0, "BLK": 10.0, "TO": 7.0})
     # Share of the prior taken from last season's actuals (rest = ESPN
     # projection), scaled down further when last season's sample was small.
     last_season_weight: float = 0.2
@@ -65,15 +76,67 @@ class OptimizerConfig:
     # Makes and attempts scale together, so FG%/FT% just carry less weight.
     use_availability: bool = True
     season_games: float = 82.0
+    # Availability = blend of a prior (ESPN projected games / season_games, or
+    # no_projection_availability for players ESPN doesn't project) and the
+    # player's recent playing rate (games in the last `recent_window` divided
+    # by the NBA games played in that span), the rate's weight ramping up to
+    # recent_rate_weight once recent_full_days of the season have passed.
+    # Fitted 2026-10-24 on dev seasons 2019-2021 (actual share of remaining
+    # games played): FAs without a projection played 59% of remaining games
+    # but were credited the pool median (82%) -- 14% of the optimizer's
+    # pickups then never played again. Squared error vs the old availability:
+    # rostered 0.054 -> 0.046, FAs with a projection 0.081 -> 0.065, FAs
+    # without 0.137 -> 0.060.
+    no_projection_availability: float = 0.60
+    recent_window: str = "d30"
+    recent_window_days: float = 30.0
+    recent_rate_weight: float = 0.5
+    recent_full_days: float = 28.0
+    nba_games_per_day: float = 82.0 / 177.0
+    # Final linear calibration (a + b x availability), fitted on the same dev
+    # data: high estimates regress -- players rated 94-97% available actually
+    # played ~80-82% of remaining games (injuries, rest), and the optimizer
+    # was systematically picking those extremes (its adds played 13% fewer
+    # games than projected; drops were on target). MSE 0.062 -> 0.055.
+    # (0.0, 1.0) disables it.
+    availability_calibration: tuple[float, float] = (0.065, 0.816)
     # Every team's totals are scaled to this roster size, so a 14th player
     # isn't a built-in counting-stat edge over 13-man teams. None = the
     # league's most common roster size.
     roster_size: int | None = None
     n_targets: int = 5
+    # What the search maximizes:
+    #   "ratings"        sum of target min-max ratings (+ other_weight x the
+    #                    rest) -- the original design. Backtest 2026-10-24: no
+    #                    standings gain; the rating saturates at 1.0 for the
+    #                    league leader, so it trades away production margins.
+    #   "category_wins"  same target/other weights, but each category scored as
+    #                    the expected share of weekly matchups won in it vs each
+    #                    opponent (margins count, with diminishing returns).
+    #   "matchup_wins"   expected share of weekly matchups won (>= 5 of 9
+    #                    categories), averaged over opponents. No targets needed.
+    #   "standings"      0.5 x matchup_wins + 0.5 x expected share of the 9
+    #                    categories won -- the league's W/L and category
+    #                    standings, equally weighted (fixed a priori).
+    # Ignored categories (TO) are a fixed 50/50 coin flip in every
+    # probabilistic objective: they still count toward "5 of 9", but no swap
+    # can change them.
+    objective: str = "ratings"
+    # Team week-to-week variability, measured from every recorded season's
+    # CompStats (2019-2026 RS, median across seasons, 2026-10-24): coefficient
+    # of variation for counting stats, absolute SD for percentages.
+    weekly_cv: dict = field(default_factory=lambda: {
+        "3PTM": 0.183, "REB": 0.136, "AST": 0.149, "STL": 0.201, "BLK": 0.247, "TO": 0.160, "PTS": 0.123})
+    weekly_pct_sd: dict = field(default_factory=lambda: {"FG%": 0.0241, "FT%": 0.0365})
+    cats_to_win: int = 5
     max_swaps: int = 14
     # Swaps gaining less than this aren't worth suggesting (user: "if it's a
-    # tiny swap, it's not worth sharing"); the search stops there.
+    # tiny swap, it's not worth sharing"); the search stops there. Units are
+    # the objective's own: "ratings"/"category_wins" sum up to 5 categories
+    # (0.02 of one category), "matchup_wins"/"standings" are a 0-1 share
+    # (min_gain_share = 1 percentage point of weekly win probability).
     min_gain: float = 0.02
+    min_gain_share: float = 0.01
 
 
 # ---------------------------------------------------------------------------
@@ -101,6 +164,7 @@ def blend_players(
     config: OptimizerConfig | None = None,
     window: str = "season",
     replacement_pool: pd.Index | None = None,
+    days_elapsed: float | None = None,
 ) -> pd.DataFrame:
     """One blended per-game line per player, indexed by PlayerId.
 
@@ -109,6 +173,8 @@ def blend_players(
     replacement_pool: PlayerIds whose projections define the replacement-level
       prior used for players with no projection and no last season (typically
       the free agents). Defaults to everyone with a projection.
+    days_elapsed: days since the season started -- enables the recent
+      playing-rate part of availability (needs a {recent_window}_GP column).
 
     Returns COMPONENTS columns plus Player, GP, w_real, prior ("proj",
     "proj+last", "last", "replacement").
@@ -149,8 +215,12 @@ def blend_players(
     rep = np.where(np.isnan(replacement.to_numpy())[None, :], last_vals, replacement.to_numpy()[None, :])
     prior.loc[last_only] = trust * last_vals + (1 - trust) * rep
 
-    w_real = (gp / (gp + config.k_games)).where(real.notna().all(axis=1), 0.0)
-    blended = real.fillna(0).mul(w_real, axis=0) + prior.mul(1 - w_real, axis=0)
+    k = config.k_games if isinstance(config.k_games, dict) else {c: config.k_games for c in COMPONENTS}
+    has_real = real.notna().all(axis=1)
+    w = pd.DataFrame({c: (gp / (gp + k[c])).where(has_real, 0.0) for c in COMPONENTS})
+    blended = real.fillna(0) * w + prior * (1 - w)
+    # Reported single number: the PTS weight (fastest-stabilizing stat).
+    w_real = w["PTS"]
 
     out = blended[COMPONENTS].copy()
     out.insert(0, "Player", stats["Player"])
@@ -160,10 +230,15 @@ def blend_players(
     # Share of the season ESPN expects the player to play. No projection ->
     # the replacement pool's median availability.
     proj_gp = pd.to_numeric(proj["proj_GP"], errors="coerce") if "proj_GP" in proj else pd.Series(np.nan, index=proj.index)
-    availability = (proj_gp / config.season_games).clip(0, 1)
-    pool_avail = availability.reindex(pool).dropna()
-    availability = availability.fillna(pool_avail.median() if len(pool_avail) else 1.0)
-    out["availability"] = availability
+    availability = (proj_gp / config.season_games).clip(0, 1).fillna(config.no_projection_availability)
+    recent_col = f"{config.recent_window}_GP"
+    if days_elapsed and days_elapsed > 0 and recent_col in stats:
+        span = min(config.recent_window_days, days_elapsed)
+        rate = (pd.to_numeric(stats[recent_col], errors="coerce").fillna(0) / (span * config.nba_games_per_day)).clip(0, 1)
+        w_rate = config.recent_rate_weight * min(1.0, days_elapsed / config.recent_full_days)
+        availability = (1 - w_rate) * availability + w_rate * rate
+    a, b = config.availability_calibration
+    out["availability"] = (a + b * availability).clip(0, 1)
     out["InjuryStatus"] = proj["InjuryStatus"].fillna("") if "InjuryStatus" in proj else ""
     out["prior"] = np.select(
         [has_proj & (w_last > 0), has_proj, has_last],
@@ -275,6 +350,53 @@ def _objective(ratings: np.ndarray, weights: np.ndarray) -> np.ndarray:
     return (ratings * weights).sum(axis=-1)
 
 
+def normal_cdf(z: np.ndarray) -> np.ndarray:
+    """Standard normal CDF via Abramowitz & Stegun 7.1.26 (|error| < 1.5e-7),
+    vectorized -- keeps this module scipy-free."""
+    x = np.asarray(z, dtype=float) / np.sqrt(2.0)
+    t = 1.0 / (1.0 + 0.3275911 * np.abs(x))
+    poly = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))))
+    erf = np.sign(x) * (1.0 - poly * np.exp(-x * x))
+    return 0.5 * (1.0 + erf)
+
+
+def at_least_k(p: np.ndarray, k: int) -> np.ndarray:
+    """P(at least k successes) for independent categories with win
+    probabilities p (..., n_cats) -- Poisson-binomial DP."""
+    dist = np.zeros(p.shape[:-1] + (p.shape[-1] + 1,))
+    dist[..., 0] = 1.0
+    for c in range(p.shape[-1]):
+        pc = p[..., c:c + 1]
+        shifted = np.concatenate([np.zeros_like(dist[..., :1]), dist[..., :-1]], axis=-1)
+        dist = dist * (1 - pc) + shifted * pc
+    return dist[..., k:].sum(axis=-1)
+
+
+def category_sigma(values: pd.DataFrame, config: "OptimizerConfig") -> np.ndarray:
+    """Per-category weekly SD in the same units as the team values: CV x the
+    league-average level for counting stats, absolute SD for percentages."""
+    out = []
+    for c in MAIN_CATS:
+        if c in config.weekly_pct_sd:
+            out.append(config.weekly_pct_sd[c])
+        else:
+            out.append(config.weekly_cv[c] * float(values[c].mean()))
+    return np.array(out)
+
+
+def win_probabilities(own: np.ndarray, others: np.ndarray, sigma: np.ndarray) -> np.ndarray:
+    """P(team beats each opponent in each category in a given week).
+    own (..., 9), others (k, 9) -> (..., k, 9). The difference of two teams'
+    weekly totals has SD sigma * sqrt(2)."""
+    sign = np.array([-1.0 if c in NEG_CATS else 1.0 for c in MAIN_CATS])
+    diff = (own[..., None, :] - others) * sign
+    with np.errstate(invalid="ignore", divide="ignore"):
+        p = normal_cdf(diff / (sigma * np.sqrt(2.0)))
+    # Zero spread (e.g. a category nobody records): a plain win/loss/tie.
+    step = np.where(diff > 0, 1.0, np.where(diff < 0, 0.0, 0.5))
+    return np.where(sigma > 0, p, step)
+
+
 def category_weights(targets: list[str], config: OptimizerConfig) -> np.ndarray:
     """Per-MAIN_CATS objective weight: 1 for targets, other_weight for the
     remaining considered categories, 0 for ignored ones."""
@@ -306,15 +428,16 @@ def optimize(
 
     sums = team_component_sums(players, rosters, config.roster_size)
     values = pd.DataFrame(category_values(sums.to_numpy()), index=sums.index, columns=MAIN_CATS)
-    start = league_ratings(values).loc[team]
     shown = considered_cats(config)
-    targets = targets or pick_targets(start, config.n_targets, shown)
-    if any(c in config.ignored_cats for c in targets):
-        raise ValueError(f"targets include an ignored category: {targets}")
-    weights = category_weights(targets, config)
+    mode = config.objective
+    if mode not in ("ratings", "category_wins", "matchup_wins", "standings"):
+        raise ValueError(f"unknown objective {mode!r}")
 
-    others = _oriented(values.drop(index=team).to_numpy())
+    others_raw = values.drop(index=team).to_numpy()
+    others = _oriented(others_raw)
     o_lo, o_hi = others.min(axis=0), others.max(axis=0)
+    sigma = category_sigma(values, config)
+    ignored = np.array([c in config.ignored_cats for c in MAIN_CATS])
 
     def rate(own_values: np.ndarray) -> np.ndarray:
         """Target team's ratings for candidate value rows (..., 9), against the
@@ -325,6 +448,31 @@ def optimize(
         with np.errstate(invalid="ignore", divide="ignore"):
             return np.where(span > 0, (v - lo) / span, 0.0)
 
+    def probs(own_values: np.ndarray) -> np.ndarray:
+        p = win_probabilities(own_values, others_raw, sigma)
+        return np.where(ignored, 0.5, p)  # ignored cats: fixed coin flip
+
+    def metric(own_values: np.ndarray) -> np.ndarray:
+        """Per-category number reported to the user (..., 9): the min-max
+        rating, or the expected share of weekly matchups won in it."""
+        return rate(own_values) if mode == "ratings" else probs(own_values).mean(axis=-2)
+
+    start_metric = pd.Series(metric(values.loc[team].to_numpy()), index=MAIN_CATS)
+    targets = targets or pick_targets(start_metric, config.n_targets, shown)
+    if any(c in config.ignored_cats for c in targets):
+        raise ValueError(f"targets include an ignored category: {targets}")
+    weights = category_weights(targets, config)
+    min_gain = config.min_gain_share if mode in ("matchup_wins", "standings") else config.min_gain
+
+    def score(own_values: np.ndarray) -> np.ndarray:
+        if mode in ("ratings", "category_wins"):
+            return _objective(metric(own_values), weights)
+        p = probs(own_values)                                   # (..., k, 9)
+        matchup = at_least_k(p, config.cats_to_win).mean(axis=-1)
+        if mode == "matchup_wins":
+            return matchup
+        return 0.5 * matchup + 0.5 * p.mean(axis=(-1, -2))
+
     roster = list(rosters[team])
     original = set(roster)
     # Free agents who can't actually play right now: injured, or unsigned.
@@ -334,12 +482,12 @@ def optimize(
     pool = [pid for pid in free_agents if pid in pos and pid not in original and pid not in injured]
     scale = roster_scale(rosters, config.roster_size)[team]
     team_sum = sums.loc[team].to_numpy(dtype=float)
-    current = float(_objective(rate(category_values(team_sum)), weights))
+    current = float(score(category_values(team_sum)))
     result = OptimizerResult(
         team=team,
         targets=targets,
         other_weight=config.other_weight,
-        start_ratings={c: float(start[c]) for c in shown},
+        start_ratings={c: float(start_metric[c]) for c in shown},
         start_objective=current,
     )
 
@@ -354,10 +502,10 @@ def optimize(
         drop_rows = comps[[pos[p] for p in droppable]]        # (r, 11)
         add_rows = comps[[pos[q] for q in pool]]               # (n, 11)
         cand = team_sum + scale * (add_rows[None, :, :] - drop_rows[:, None, :])  # (r, n, 11)
-        scores = _objective(rate(category_values(cand)), weights)
+        scores = score(category_values(cand))
         i, j = np.unravel_index(np.nanargmax(scores), scores.shape)
         best = float(scores[i, j])
-        if best - current <= config.min_gain:
+        if best - current <= min_gain:
             break
         drop, add = droppable[i], pool[j]
         team_sum = cand[i, j]
@@ -371,7 +519,7 @@ def optimize(
                 add_name=str(players.at[add, "Player"]),
                 gain=best - current,
                 objective=best,
-                ratings={c: v for c, v in zip(MAIN_CATS, rate(category_values(team_sum)).tolist()) if c in shown},
+                ratings={c: v for c, v in zip(MAIN_CATS, metric(category_values(team_sum)).tolist()) if c in shown},
             )
         )
         current = best

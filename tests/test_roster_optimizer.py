@@ -74,7 +74,7 @@ def test_real_weight_is_gp_over_gp_plus_k():
 def test_two_games_is_mostly_projection():
     stats = pd.DataFrame([stats_row(1, "a", 2, REAL)])
     proj = pd.DataFrame([proj_row(1, PROJ)])
-    out = ro.blend_players(stats, proj).loc[1]
+    out = ro.blend_players(stats, proj, ro.OptimizerConfig(k_games=15)).loc[1]
     assert out["w_real"] == pytest.approx(2 / 17)
     assert out["PTS"] == pytest.approx(2 / 17 * 30 + 15 / 17 * 16)
 
@@ -86,6 +86,16 @@ def test_no_games_is_pure_prior():
     assert out["w_real"] == 0
     for c in C:
         assert out[c] == pytest.approx(PROJ[c])
+
+
+def test_per_component_k():
+    # Default k: PTS stabilizes after 3 games, STL only after 15.
+    stats = pd.DataFrame([stats_row(1, "a", 6, REAL)])
+    proj = pd.DataFrame([proj_row(1, PROJ)])
+    out = ro.blend_players(stats, proj).loc[1]
+    assert out["PTS"] == pytest.approx(6 / 9 * 30 + 3 / 9 * 16)
+    assert out["STL"] == pytest.approx(6 / 21 * 2 + 15 / 21 * 1)
+    assert out["w_real"] == pytest.approx(6 / 9)
 
 
 def test_last_season_small_weight_scaled_by_sample():
@@ -128,7 +138,7 @@ def test_no_prior_one_big_game_shrinks_to_replacement_level():
         [proj_row(1, line(PTS=6, FGA=5, FGM=2)), proj_row(2, line(PTS=8, FGA=6, FGM=3)),
          proj_row(3, line(PTS=20, FGA=15, FGM=7)), proj_row(9)]
     )
-    out = ro.blend_players(stats, proj).loc[9]
+    out = ro.blend_players(stats, proj, ro.OptimizerConfig(k_games=15)).loc[9]
     assert out["prior"] == "replacement"
     assert out["w_real"] == pytest.approx(1 / 16)
     assert out["PTS"] == pytest.approx(1 / 16 * 50 + 15 / 16 * 8)
@@ -137,8 +147,9 @@ def test_no_prior_one_big_game_shrinks_to_replacement_level():
 def test_blend_uses_the_requested_window():
     stats = pd.DataFrame([{**stats_row(1, "a", 15, REAL, window="d14"), **stats_row(1, "a", 0, window="season")}])
     proj = pd.DataFrame([proj_row(1, PROJ)])
-    assert ro.blend_players(stats, proj, window="d14").loc[1, "PTS"] == pytest.approx(23)
-    assert ro.blend_players(stats, proj, window="season").loc[1, "PTS"] == pytest.approx(16)
+    cfg = ro.OptimizerConfig(k_games=15)
+    assert ro.blend_players(stats, proj, cfg, window="d14").loc[1, "PTS"] == pytest.approx(23)
+    assert ro.blend_players(stats, proj, cfg, window="season").loc[1, "PTS"] == pytest.approx(16)
 
 
 # ---------------------------------------------------------------------------
@@ -446,10 +457,10 @@ def test_availability_is_projected_games_over_season():
     proj = pd.DataFrame([
         {**proj_row(1, PROJ), "proj_GP": 59}, {**proj_row(2, PROJ), "proj_GP": 90}, {**proj_row(3), "proj_GP": None},
     ])
-    out = ro.blend_players(stats, proj, replacement_pool=pd.Index([1]))
+    out = ro.blend_players(stats, proj, ro.OptimizerConfig(availability_calibration=(0.0, 1.0)), replacement_pool=pd.Index([1]))
     assert out.loc[1, "availability"] == pytest.approx(59 / 82)
     assert out.loc[2, "availability"] == 1.0                       # capped
-    assert out.loc[3, "availability"] == pytest.approx(59 / 82)   # no projection -> pool median
+    assert out.loc[3, "availability"] == pytest.approx(0.60)      # no projection -> measured 0.60
 
 
 def test_injured_star_with_good_availability_is_not_cut():
@@ -512,3 +523,155 @@ def test_tiny_swaps_are_not_suggested():
     tiny = ro.optimize("T", players, rosters, ["nudge"], ro.OptimizerConfig(min_gain=0.0), targets=TARGETS)
     assert [(s.drop, s.add) for s in tiny.swaps] == [("t2", "nudge")]
     assert tiny.swaps[0].gain == pytest.approx(0.005)
+
+
+# ---------------------------------------------------------------------------
+# Probabilistic objectives (category_wins / matchup_wins / standings)
+# ---------------------------------------------------------------------------
+
+import math
+
+
+def test_normal_cdf_matches_math_erf():
+    zs = np.linspace(-6, 6, 241)
+    ours = ro.normal_cdf(zs)
+    ref = np.array([0.5 * (1 + math.erf(z / math.sqrt(2))) for z in zs])
+    np.testing.assert_allclose(ours, ref, atol=2e-7)
+
+
+def test_at_least_k_matches_enumeration():
+    rng = np.random.default_rng(0)
+    p = rng.uniform(0, 1, size=9)
+    for k in range(10):
+        brute = 0.0
+        for outcome in itertools.product([0, 1], repeat=9):
+            if sum(outcome) >= k:
+                brute += np.prod([p[i] if o else 1 - p[i] for i, o in enumerate(outcome)])
+        assert ro.at_least_k(p[None, :], k)[0] == pytest.approx(brute, abs=1e-12)
+
+
+def test_win_probabilities_orientation_and_symmetry():
+    sigma = np.ones(9)
+    own = np.zeros(9)
+    others = np.zeros((1, 9))
+    np.testing.assert_allclose(ro.win_probabilities(own, others, sigma), 0.5)
+    own = np.full(9, 1.0)  # more of everything: wins every cat except TO
+    p = ro.win_probabilities(own, others, sigma)[0]
+    to = ro.MAIN_CATS.index("TO")
+    assert p[to] < 0.5 and all(p[i] > 0.5 for i in range(9) if i != to)
+
+
+def slow_objective(team, players, rosters, sigma, targets, config):
+    """Independent pure-Python scorer for the probabilistic objectives."""
+    vals = {}
+    for t, ids in rosters.items():
+        s = players.loc[ids, C].sum()
+        vals[t] = {"FG%": s["FGM"] / s["FGA"], "FT%": s["FTM"] / s["FTA"],
+                   **{c: s[c] for c in ["3PTM", "REB", "AST", "STL", "BLK", "TO", "PTS"]}}
+    opps = [t for t in rosters if t != team]
+    p = {}
+    for o in opps:
+        for i, c in enumerate(ro.MAIN_CATS):
+            if c in config.ignored_cats:
+                p[(o, c)] = 0.5
+                continue
+            d = vals[team][c] - vals[o][c]
+            if c == "TO":
+                d = -d
+            p[(o, c)] = 0.5 * (1 + math.erf(d / (sigma[i] * math.sqrt(2)) / math.sqrt(2)))
+    share = {c: sum(p[(o, c)] for o in opps) / len(opps) for c in ro.MAIN_CATS}
+    if config.objective == "category_wins":
+        w = {c: 1.0 if c in targets else 0.0 if c in config.ignored_cats else config.other_weight for c in ro.MAIN_CATS}
+        return sum(w[c] * share[c] for c in ro.MAIN_CATS)
+    mw = 0.0
+    for o in opps:
+        pr = [p[(o, c)] for c in ro.MAIN_CATS]
+        mw += sum(np.prod([pr[i] if b else 1 - pr[i] for i, b in enumerate(bits)])
+                  for bits in itertools.product([0, 1], repeat=9) if sum(bits) >= config.cats_to_win)
+    mw /= len(opps)
+    if config.objective == "matchup_wins":
+        return mw
+    return 0.5 * mw + 0.5 * sum(share.values()) / 9
+
+
+def slow_greedy(team, players, rosters, fas, targets, config):
+    sums = ro.team_component_sums(players, rosters)
+    vals = pd.DataFrame(ro.category_values(sums.to_numpy()), index=sums.index, columns=ro.MAIN_CATS)
+    sigma = ro.category_sigma(vals, config)  # fixed at the start, like the optimizer
+    gain_floor = config.min_gain_share if config.objective in ("matchup_wins", "standings") else config.min_gain
+    original, current, pool, seq = set(rosters[team]), {t: list(v) for t, v in rosters.items()}, list(fas), []
+    best = slow_objective(team, players, current, sigma, targets, config)
+    for _ in range(config.max_swaps):
+        step_base, choice = best, None
+        for d in [p for p in current[team] if p in original]:
+            for a in pool:
+                trial = {t: list(v) for t, v in current.items()}
+                trial[team] = [a if p == d else p for p in trial[team]]
+                sc = slow_objective(team, players, trial, sigma, targets, config)
+                if sc > best + 1e-12:
+                    best, choice = sc, (d, a)
+        if choice is None or best - step_base <= gain_floor:
+            break
+        d, a = choice
+        current[team] = [a if p == d else p for p in current[team]]
+        pool.remove(a)
+        seq.append((d, a, best))
+    return seq
+
+
+@pytest.mark.parametrize("objective,other_weight,seed", [
+    ("category_wins", 0.0, 31), ("category_wins", 0.25, 32), ("matchup_wins", 0.0, 33), ("standings", 0.0, 34),
+])
+def test_probabilistic_greedy_matches_brute_force(objective, other_weight, seed):
+    rng = np.random.default_rng(seed)
+    players, rosters, fas = random_league(rng, teams=5, per_team=6, free_agents=14)
+    cfg = ro.OptimizerConfig(objective=objective, other_weight=other_weight, min_gain_share=0.001)
+    res = ro.optimize("t0", players, rosters, fas, cfg)
+    ref = slow_greedy("t0", players, rosters, fas, res.targets, cfg)
+    assert [(s.drop, s.add) for s in res.swaps] == [(d, a) for d, a, _ in ref]
+    for s, (_, _, sc) in zip(res.swaps, ref):
+        assert s.objective == pytest.approx(sc, abs=1e-6)
+    assert res.swaps, "scenario should produce at least one swap"
+
+
+def test_category_wins_rewards_margin_where_ratings_does_not():
+    # T already leads PTS. 'bigger' adds more PTS margin; 'same' adds none.
+    # Ratings (capped at 1.0) sees no difference; category_wins prefers bigger.
+    lines = {
+        "a1": line(PTS=20, REB=10, **SHOOT), "b1": line(PTS=22, REB=10, **SHOOT),
+        "t1": line(PTS=20, REB=10, **SHOOT), "t2": line(PTS=5, REB=10, **SHOOT),
+        "same": line(PTS=5, REB=10, **SHOOT), "bigger": line(PTS=12, REB=10, **SHOOT),
+        "a0": line(), "b0": line(),
+    }
+    players = players_frame(lines)
+    rosters = {"A": ["a1", "a0"], "B": ["b1", "b0"], "T": ["t1", "t2"]}
+    rat = ro.optimize("T", players, rosters, ["same", "bigger"], ro.OptimizerConfig(min_gain=0.0), targets=["PTS"])
+    assert rat.swaps == []  # T at 25 PTS already rates 1.0
+    cw = ro.optimize("T", players, rosters, ["same", "bigger"],
+                     ro.OptimizerConfig(objective="category_wins", min_gain=0.0), targets=["PTS"])
+    assert [s.add for s in cw.swaps] == ["bigger"]
+
+
+def test_availability_blends_projection_with_recent_playing_rate():
+    cfg = ro.OptimizerConfig(availability_calibration=(0.0, 1.0))
+    stats = pd.DataFrame([{**stats_row(1, "proj", 10), "d30_GP": 7}, {**stats_row(2, "noproj", 10), "d30_GP": 14}])
+    proj = pd.DataFrame([{**proj_row(1, PROJ), "proj_GP": 82}, {**proj_row(2), "proj_GP": None}])
+    # Without days_elapsed: projection-only (unprojected -> 0.60).
+    out = ro.blend_players(stats, proj, cfg)
+    assert out.loc[1, "availability"] == 1.0 and out.loc[2, "availability"] == pytest.approx(0.60)
+    # 60 days in: 30-day window, ~13.9 NBA games; rate weight 0.5.
+    games = 30 * cfg.nba_games_per_day
+    out = ro.blend_players(stats, proj, cfg, days_elapsed=60)
+    assert out.loc[1, "availability"] == pytest.approx(0.5 * 1.0 + 0.5 * (7 / games))
+    assert out.loc[2, "availability"] == pytest.approx(0.5 * 0.60 + 0.5 * min(1, 14 / games))
+    # 7 days in: the rate only gets 0.5 * 7/28 weight, over a 7-day window.
+    out = ro.blend_players(stats, proj, cfg, days_elapsed=7)
+    w = 0.5 * 7 / 28
+    assert out.loc[1, "availability"] == pytest.approx((1 - w) * 1.0 + w * min(1, 7 / (7 * cfg.nba_games_per_day)))
+
+
+def test_availability_calibration_is_applied_last():
+    stats = pd.DataFrame([stats_row(1, "a", 0)])
+    proj = pd.DataFrame([{**proj_row(1, PROJ), "proj_GP": 82}])
+    out = ro.blend_players(stats, proj, ro.OptimizerConfig(availability_calibration=(0.065, 0.816)))
+    assert out.loc[1, "availability"] == pytest.approx(0.065 + 0.816 * 1.0)
