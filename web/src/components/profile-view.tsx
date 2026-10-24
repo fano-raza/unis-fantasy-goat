@@ -63,8 +63,8 @@ import { TEAM_PLAYERS_VIEW_OPTIONS, TEAM_PLAYERS_VIEW_PATHS } from "@/lib/team-p
 // -- topFields is always filtered to rank <= 3, so no 4th-place case exists.
 function rankColorClass(rank: number): string {
   if (rank === 1) return "text-gold";
-  if (rank === 2) return "text-[#c0c0c0]";
-  return "text-[#cd7f32]";
+  if (rank === 2) return "text-silver";
+  return "text-bronze";
 }
 
 // Excluded from the "League Top 3" list -- not rankable (year lists

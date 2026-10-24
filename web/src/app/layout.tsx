@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import { Archivo, Big_Shoulders } from "next/font/google";
 import { Nav } from "@/components/nav";
@@ -8,6 +8,7 @@ import { FloatingMenuButton } from "@/components/floating-menu-button";
 import { GlobalLastUpdated } from "@/components/global-last-updated";
 import { MobileMenuProvider } from "@/components/mobile-menu-context";
 import { API_BASE_URL } from "@/lib/api";
+import { themeInitScript } from "@/lib/theme";
 import "./globals.css";
 
 // Archivo: UI text and every stat figure (tabular numerals via the global
@@ -25,6 +26,15 @@ const bigShoulders = Big_Shoulders({
   axes: ["opsz"],
 });
 
+// Tints the mobile browser's own UI to match the header strip (--card) in
+// whichever mode the viewer's device is in -- see globals.css.
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#141e2b" },
+  ],
+};
+
 export const metadata: Metadata = {
   title: "UNIS 2014 Fantasy",
   description: "UNIS Fantasy Basketball League",
@@ -35,8 +45,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       className={`${archivo.variable} ${bigShoulders.variable} h-full antialiased`}
+      // themeInitScript below may set data-theme on <html> before React
+      // hydrates (a stored light/dark choice) -- expected, not a mismatch.
+      suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">
+        {/* Applies a stored light/dark choice before first paint. */}
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         {/* Opens the DNS+TCP+TLS connection to the backend while the page's
             JS is still downloading/parsing, instead of only starting once
             hydration triggers the first fetch -- that handshake measured
