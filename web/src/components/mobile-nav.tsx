@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogPortal } from "@/components/ui/dialog";
 import { NAV_LINKS } from "@/components/nav";
 import { useMobileMenu } from "@/components/mobile-menu-context";
-import { ThemeSwitch } from "@/components/theme-switch";
+import { LightModeSwitch } from "@/components/light-mode-switch";
 import { STANDINGS_VIEW_OPTIONS, STANDINGS_VIEW_PATHS } from "@/lib/standings-nav";
 import { TEAM_PLAYERS_VIEW_OPTIONS, TEAM_PLAYERS_VIEW_PATHS } from "@/lib/team-players-nav";
 
@@ -161,7 +161,7 @@ export function MobileNav() {
           })}
           {/* mt-auto pins it to the bottom of the full-height drawer. */}
           <div className="mt-auto px-3 pt-6 pb-2">
-            <ThemeSwitch />
+            <LightModeSwitch />
           </div>
         </DialogPrimitive.Popup>
       </DialogPortal>

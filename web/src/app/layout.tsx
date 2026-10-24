@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Archivo, Big_Shoulders } from "next/font/google";
 import { Nav } from "@/components/nav";
 import { MobileNav } from "@/components/mobile-nav";
+import { SettingsMenu } from "@/components/settings-menu";
 import { PageArrowNav } from "@/components/page-arrow-nav";
 import { FloatingMenuButton } from "@/components/floating-menu-button";
 import { GlobalLastUpdated } from "@/components/global-last-updated";
@@ -26,13 +27,10 @@ const bigShoulders = Big_Shoulders({
   axes: ["opsz"],
 });
 
-// Tints the mobile browser's own UI to match the header strip (--card) in
-// whichever mode the viewer's device is in -- see globals.css.
+// Tints the mobile browser's own UI to match the header strip (--card) of
+// the default dark theme; lib/theme.ts swaps it when Light mode is on.
 export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#141e2b" },
-  ],
+  themeColor: "#141e2b",
 };
 
 export const metadata: Metadata = {
@@ -46,11 +44,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${archivo.variable} ${bigShoulders.variable} h-full antialiased`}
       // themeInitScript below may set data-theme on <html> before React
-      // hydrates (a stored light/dark choice) -- expected, not a mismatch.
+      // hydrates (a stored Light mode choice) -- expected, not a mismatch.
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">
-        {/* Applies a stored light/dark choice before first paint. */}
+        {/* Applies a stored Light mode choice before first paint. */}
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         {/* Opens the DNS+TCP+TLS connection to the backend while the page's
             JS is still downloading/parsing, instead of only starting once
@@ -80,8 +78,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                     request, 2026-10-06) -- see global-last-updated.tsx. */}
                 <GlobalLastUpdated />
               </div>
-              <div className="hidden sm:block">
-                <Nav />
+              {/* Tabs + the settings gear at the right end of the same row. */}
+              <div className="hidden items-end gap-2 sm:flex">
+                <div className="min-w-0 flex-1">
+                  <Nav />
+                </div>
+                <SettingsMenu />
               </div>
               <PageArrowNav />
             </div>

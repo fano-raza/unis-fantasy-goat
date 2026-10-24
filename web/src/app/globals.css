@@ -59,21 +59,78 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* Two modes of one identity. Follows the viewer's own OS/browser setting
-   (prefers-color-scheme) by default; the mobile menu's System/Light/Dark
-   switch can override it per device (see the theme-dark variant below).
+/* Two modes of one identity. Dark ("Court Night") is the default for
+   everyone; light ("Court Day") applies only when the viewer turns on
+   Light mode -- the mobile menu's switch or the desktop settings shelf
+   (gear icon) -- which stamps <html data-theme="light"> via lib/theme.ts,
+   applied before first paint. The device's own light/dark setting is
+   deliberately ignored (user decision, 2026-10-24).
 
-   "Court Night" (dark) is the 2026-10-24 design refresh, unchanged: deep
-   court navy, university blue. "Court Day" (light) is the same system in
-   daylight: cool gym-wall grey page, white surfaces, and the dark mode's
+   Court Day: cool gym-wall grey page, white surfaces, and the dark mode's
    navy ground becomes the ink. Blue, green, red and gold are stepped darker
-   so every text use clears 4.5:1 on white, the grey page and the
-   blue focus row. Meaning is identical in both: blue = you/selected,
-   green/red = won/lost, gold = postseason/championships.
+   so every text use clears 4.5:1 on white, the grey page and the blue
+   focus row. Meaning is identical in both: blue = you/selected, green/red =
+   won/lost, gold = postseason/championships.
 
    Charts: --series-1..11 are the dataviz skill's validated categorical
    palette, stepped per mode (see lib/palette.ts). */
 :root {
+  color-scheme: dark;
+  --radius: 0.375rem;
+  --background: #0e1621;
+  --foreground: #edf2f7;
+  --card: #141e2b;
+  --card-foreground: #edf2f7;
+  --popover: #172231;
+  --popover-foreground: #edf2f7;
+  --primary: #7ba4db;
+  --primary-foreground: #0b121b;
+  --secondary: #1a2635;
+  --secondary-foreground: #edf2f7;
+  --muted: #1a2635;
+  --muted-foreground: #8d9db2;
+  --accent: #213044;
+  --accent-foreground: #edf2f7;
+  --destructive: #f2625a;
+  --border: #233042;
+  --input: #2b3a4f;
+  --ring: #7ba4db;
+  --chart-1: #7ba4db;
+  --chart-2: #3fcf7e;
+  --chart-3: #f2625a;
+  --chart-4: #d8b457;
+  --chart-5: #8d9db2;
+  --sidebar: #141e2b;
+  --sidebar-foreground: #edf2f7;
+  --sidebar-primary: #7ba4db;
+  --sidebar-primary-foreground: #0b121b;
+  --sidebar-accent: #213044;
+  --sidebar-accent-foreground: #edf2f7;
+  --sidebar-border: #233042;
+  --sidebar-ring: #7ba4db;
+
+  --win: #3fcf7e;
+  --loss: #f2625a;
+  --gold: #d8b457;
+  --silver: #c0c0c0;
+  --bronze: #cd7f32;
+  /* Blue-tinted so "your row" reads as the same idea as the primary blue. */
+  --focus-row: #1c2c42;
+
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
+  --series-9: #1fa0be;
+  --series-10: #8f9a2c;
+  --series-11: #c06fd0;
+}
+
+:root[data-theme="light"] {
   color-scheme: light;
   --background: #eef2f7;
   --foreground: #0e1621;
@@ -98,7 +155,6 @@
   --chart-3: #b5342b;
   --chart-4: #835f08;
   --chart-5: #52627a;
-  --radius: 0.375rem;
   --sidebar: #ffffff;
   --sidebar-foreground: #0e1621;
   --sidebar-primary: #2a62a6;
@@ -126,78 +182,6 @@
   --series-9: #0e86a8;
   --series-10: #7a8a12;
   --series-11: #a347b8;
-}
-
-/* Dark applies when the viewer explicitly picked Dark in the mobile menu's
-   theme switch (data-theme="dark", set by lib/theme.ts before first paint),
-   or when they're on "System" (no data-theme) and their device is dark.
-   Written as a custom variant so the token block exists exactly once. */
-@custom-variant theme-dark {
-  &:where([data-theme="dark"]) {
-    @slot;
-  }
-  @media (prefers-color-scheme: dark) {
-    &:where(:not([data-theme="light"])) {
-      @slot;
-    }
-  }
-}
-
-:root {
-  @variant theme-dark {
-    color-scheme: dark;
-    --background: #0e1621;
-    --foreground: #edf2f7;
-    --card: #141e2b;
-    --card-foreground: #edf2f7;
-    --popover: #172231;
-    --popover-foreground: #edf2f7;
-    --primary: #7ba4db;
-    --primary-foreground: #0b121b;
-    --secondary: #1a2635;
-    --secondary-foreground: #edf2f7;
-    --muted: #1a2635;
-    --muted-foreground: #8d9db2;
-    --accent: #213044;
-    --accent-foreground: #edf2f7;
-    --destructive: #f2625a;
-    --border: #233042;
-    --input: #2b3a4f;
-    --ring: #7ba4db;
-    --chart-1: #7ba4db;
-    --chart-2: #3fcf7e;
-    --chart-3: #f2625a;
-    --chart-4: #d8b457;
-    --chart-5: #8d9db2;
-    --sidebar: #141e2b;
-    --sidebar-foreground: #edf2f7;
-    --sidebar-primary: #7ba4db;
-    --sidebar-primary-foreground: #0b121b;
-    --sidebar-accent: #213044;
-    --sidebar-accent-foreground: #edf2f7;
-    --sidebar-border: #233042;
-    --sidebar-ring: #7ba4db;
-
-    --win: #3fcf7e;
-    --loss: #f2625a;
-    --gold: #d8b457;
-    --silver: #c0c0c0;
-    --bronze: #cd7f32;
-    /* Blue-tinted so "your row" reads as the same idea as the primary blue. */
-    --focus-row: #1c2c42;
-
-    --series-1: #3987e5;
-    --series-2: #d95926;
-    --series-3: #199e70;
-    --series-4: #c98500;
-    --series-5: #d55181;
-    --series-6: #008300;
-    --series-7: #9085e9;
-    --series-8: #e66767;
-    --series-9: #1fa0be;
-    --series-10: #8f9a2c;
-    --series-11: #c06fd0;
-  }
 }
 
 @layer base {
