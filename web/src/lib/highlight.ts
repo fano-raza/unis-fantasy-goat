@@ -37,8 +37,8 @@ export function compareCell(
 }
 
 export const comparisonClass: Record<Comparison, string> = {
-  better: "bg-loss/15 text-loss",
-  worse: "bg-win/15 text-win",
+  better: "bg-loss/[0.09] text-loss",
+  worse: "bg-win/[0.09] text-win",
   neutral: "",
 };
 

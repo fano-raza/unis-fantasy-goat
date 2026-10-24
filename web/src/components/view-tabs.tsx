@@ -22,7 +22,7 @@ export function ViewTabs({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-0.5 rounded-md bg-muted p-0.5">
       {options.map((option) => {
         const active = option.value === value;
         return (
@@ -31,10 +31,10 @@ export function ViewTabs({
             type="button"
             onClick={() => onChange(option.value)}
             className={cn(
-              "rounded-sm px-3 py-1.5 text-xs font-bold tracking-wide uppercase transition-colors",
+              "rounded-[calc(var(--radius)-2px)] px-3 py-1.5 text-sm font-medium transition-colors",
               active
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                ? "bg-accent text-foreground shadow-[inset_0_-2px_0_var(--primary)]"
+                : "text-muted-foreground hover:text-foreground",
             )}
           >
             {option.label}

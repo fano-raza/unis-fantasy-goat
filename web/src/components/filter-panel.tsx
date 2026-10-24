@@ -84,7 +84,7 @@ export function ChecklistGroup<T extends string | number>({
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="self-start text-[11px] font-bold tracking-wider text-muted-foreground uppercase whitespace-nowrap"
+          className="self-start label"
         >
           {label}
         </button>
@@ -181,7 +181,7 @@ export function FilterPanel({
         scrollable
       />
       <div className="rounded-sm border border-border p-3">
-        <div className="mb-2 border-b border-border pb-2 text-[11px] font-bold tracking-wider text-muted-foreground uppercase whitespace-nowrap">
+        <div className="mb-2 border-b border-border pb-2 label">
           Season Type
         </div>
         <div className="flex flex-col gap-1.5">

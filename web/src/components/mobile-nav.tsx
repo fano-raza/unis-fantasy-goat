@@ -80,9 +80,7 @@ export function MobileNav() {
           className="fixed inset-y-0 left-0 z-50 flex h-full w-64 max-w-[80vw] flex-col gap-1 border-r border-border bg-popover p-4 outline-none duration-200 data-open:animate-in data-open:slide-in-from-left data-closed:animate-out data-closed:slide-out-to-left"
         >
           <div className="mb-4 flex items-center justify-between">
-            <span className="text-lg font-black tracking-tight italic">
-              UNIS 2014 <span className="text-primary">FANTASY</span>
-            </span>
+            <span className="wordmark text-2xl">UNIS 2014 Fantasy</span>
             <DialogClose
               render={<Button variant="ghost" size="icon-sm" aria-label="Close menu" />}
             >
@@ -103,9 +101,9 @@ export function MobileNav() {
                   href={link.href}
                   onClick={() => setOpen(false)}
                   className={cn(
-                    "flex items-center gap-1.5 rounded-sm px-3 py-2.5 text-sm font-bold tracking-wide uppercase transition-colors",
+                    "flex items-center gap-1.5 rounded-md px-3 py-2.5 text-base font-medium transition-colors",
                     active
-                      ? "bg-primary text-primary-foreground"
+                      ? "bg-accent text-foreground shadow-[inset_3px_0_0_var(--primary)]"
                       : "text-muted-foreground hover:bg-muted hover:text-foreground",
                   )}
                 >
@@ -123,9 +121,9 @@ export function MobileNav() {
                   onClick={() => setExpanded(isExpanded ? null : link.href)}
                   aria-expanded={isExpanded}
                   className={cn(
-                    "flex w-full items-center justify-between gap-1.5 rounded-sm px-3 py-2.5 text-sm font-bold tracking-wide uppercase transition-colors",
+                    "flex w-full items-center justify-between gap-1.5 rounded-md px-3 py-2.5 text-base font-medium transition-colors",
                     active
-                      ? "bg-primary text-primary-foreground"
+                      ? "bg-accent text-foreground shadow-[inset_3px_0_0_var(--primary)]"
                       : "text-muted-foreground hover:bg-muted hover:text-foreground",
                   )}
                 >
@@ -145,9 +143,9 @@ export function MobileNav() {
                           href={sub.href}
                           onClick={() => setOpen(false)}
                           className={cn(
-                            "rounded-sm px-3 py-2 text-sm font-bold tracking-wide uppercase transition-colors",
+                            "rounded-md px-3 py-2 text-[0.9375rem] font-medium transition-colors",
                             subActive
-                              ? "bg-primary text-primary-foreground"
+                              ? "text-primary"
                               : "text-muted-foreground hover:bg-muted hover:text-foreground",
                           )}
                         >

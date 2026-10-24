@@ -152,7 +152,7 @@ export function CareerStatsView({ initialBootstrap }: CareerStatsViewProps) {
           />
         </div>
 
-        <Card>
+        <Card variant="plain">
           <CardHeader>
             <CardTitle>Career Stats</CardTitle>
             <CardDescription>
@@ -161,7 +161,7 @@ export function CareerStatsView({ initialBootstrap }: CareerStatsViewProps) {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap items-center gap-6">
-            <label className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
+            <label className="flex items-center gap-2 label text-foreground">
               <span className="text-muted-foreground">Totals</span>
               <Switch
                 checked={statMode === "averages"}
@@ -171,7 +171,7 @@ export function CareerStatsView({ initialBootstrap }: CareerStatsViewProps) {
               />
               <span className="text-muted-foreground">Averages</span>
             </label>
-            <label className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
+            <label className="flex items-center gap-2 label text-foreground">
               <span className="text-muted-foreground">Stat</span>
               <Switch
                 checked={mode === "rating"}

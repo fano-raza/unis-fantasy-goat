@@ -101,7 +101,7 @@ export function ProfileHistoryChart({ team, meta }: { team: string; meta: League
         <CardDescription>Regular-season performance across every year {team} has played</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <label className="flex items-center gap-2 self-start text-[11px] font-bold tracking-wider uppercase">
+        <label className="flex items-center gap-2 self-start label text-foreground">
           <span className="text-muted-foreground">Overall Rating</span>
           <Switch
             checked={mode === "place"}

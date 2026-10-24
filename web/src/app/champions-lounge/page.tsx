@@ -36,7 +36,7 @@ export default function ChampionsLoungePage() {
           <CardContent>
             <form onSubmit={handleSubmit} className="flex flex-col gap-3">
               <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+                <span className="label">
                   Password
                 </span>
                 <input
@@ -62,7 +62,7 @@ export default function ChampionsLoungePage() {
   return (
     <div className="flex flex-col items-center justify-center gap-6 px-4 py-10 select-none">
       <div className="text-center">
-        <h1 className="font-mono text-lg font-extrabold tracking-wide uppercase">Champions Lounge</h1>
+        <h1 className="page-title">Champions Lounge</h1>
         <p className="text-sm text-muted-foreground">
           Six titles, six egos. Let them wander -- when two collide, a random stat settles it.
         </p>

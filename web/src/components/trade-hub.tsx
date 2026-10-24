@@ -211,7 +211,7 @@ function PlayerPicker({
   const remaining = available.filter((p) => !selected.includes(p.Player));
   return (
     <div className="flex flex-1 flex-col gap-2">
-      <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">{label}</span>
+      <span className="label">{label}</span>
       <div className="flex flex-wrap items-center gap-2">
         {selected.map((name) => (
           <span
@@ -296,7 +296,7 @@ export function TradeHub({
 
   return (
     <div className="flex flex-col gap-4">
-      <Card>
+      <Card variant="plain">
         <CardHeader>
           <CardTitle>Trade Hub</CardTitle>
           <CardDescription>
@@ -311,7 +311,7 @@ export function TradeHub({
             </div>
           </LoadingOverlay>
           <div className="flex flex-wrap items-center gap-6">
-            <div className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
+            <div className="flex items-center gap-2 label text-foreground">
               <span className="text-muted-foreground">Window</span>
               {WINDOW_OPTIONS.map((opt) => (
                 <Button
@@ -324,12 +324,12 @@ export function TradeHub({
                 </Button>
               ))}
             </div>
-            <label className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
+            <label className="flex items-center gap-2 label text-foreground">
               <span className="text-muted-foreground">Totals</span>
               <Switch checked={mode === "averages"} onCheckedChange={(c) => setMode(c ? "averages" : "totals")} />
               <span className="text-muted-foreground">Averages</span>
             </label>
-            <label className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
+            <label className="flex items-center gap-2 label text-foreground">
               <span className="text-muted-foreground">Stats</span>
               <Switch checked={view === "net"} onCheckedChange={(c) => setView(c ? "net" : "stats")} />
               <span className="text-muted-foreground">Net</span>

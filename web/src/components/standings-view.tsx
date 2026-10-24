@@ -205,7 +205,7 @@ function StandingsPageInner({ initialBootstrap }: StandingsViewProps) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="sticky top-0 z-30 flex flex-wrap items-center gap-3 rounded-sm border border-border bg-card px-3 py-2 shadow-sm">
+      <div className="sticky top-0 z-30 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2.5 backdrop-blur sm:mx-0 sm:px-0">
         <SteppableSelect label="Season" value={year} onValueChange={setYear} options={meta.years} />
         <RoutedViewSwitcher options={STANDINGS_VIEW_OPTIONS} current="1v1" paths={STANDINGS_VIEW_PATHS} />
       </div>
@@ -223,14 +223,14 @@ function StandingsPageInner({ initialBootstrap }: StandingsViewProps) {
           <CardTitle>Season Standings</CardTitle>
           <CardDescription>Real matchup win-loss-tie record, by matchup outcome or aggregate category record</CardDescription>
           <CardAction>
-            <label className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
+            <label className="flex items-center gap-2 label text-foreground">
               <span className="text-muted-foreground">Playoff Tree</span>
               <Switch checked={showPlayoffTree} onCheckedChange={setShowPlayoffTree} />
             </label>
           </CardAction>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <label className="flex items-center gap-2 self-start text-[11px] font-bold tracking-wider uppercase">
+          <label className="flex items-center gap-2 self-start label text-foreground">
             <span className="text-muted-foreground">W/L</span>
             <Switch
               checked={oneVOneMode === "cats"}

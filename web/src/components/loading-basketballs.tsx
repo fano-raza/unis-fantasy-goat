@@ -50,7 +50,7 @@ export function LoadingBasketballs({ label }: { label?: string }) {
       </div>
       <p
         aria-hidden="true"
-        className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase"
+        className="label"
       >
         {LOADING_PHRASES[index]}
       </p>

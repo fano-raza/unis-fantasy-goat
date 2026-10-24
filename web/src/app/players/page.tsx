@@ -24,7 +24,7 @@ export default async function PlayersPage() {
   }
   return (
     <div className="flex flex-col gap-4">
-      <div className="sticky top-0 z-30 flex items-center gap-3 rounded-sm border border-border bg-card px-3 py-2 shadow-sm">
+      <div className="sticky top-0 z-30 -mx-4 flex items-center gap-3 border-b border-border bg-background/95 px-4 py-2.5 backdrop-blur sm:mx-0 sm:px-0">
         <RoutedViewSwitcher options={TEAM_PLAYERS_VIEW_OPTIONS} current="trade" paths={TEAM_PLAYERS_VIEW_PATHS} />
       </div>
       <TradeHub initialPlayers={initialPlayers} />

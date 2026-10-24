@@ -29,7 +29,7 @@ export function LabeledSelect({
 }) {
   return (
     <label className={cn("flex items-center gap-2", className)}>
-      <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+      <span className="label">
         {label}
       </span>
       <Select value={value} onValueChange={(v) => v !== null && onValueChange(v)}>

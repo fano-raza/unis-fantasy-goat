@@ -185,7 +185,7 @@ export function PageArrowNav() {
           <motion.div
             aria-hidden="true"
             style={{ x: prevShadowX, opacity: prevShadowOpacity }}
-            className="pointer-events-none absolute top-0 left-0 rounded-t-md border border-b-0 border-border bg-background px-3 py-1.5 text-xs font-bold tracking-wide whitespace-nowrap text-foreground uppercase shadow-sm"
+            className="pointer-events-none absolute top-0 left-0 rounded-t-md border border-b-0 border-border bg-background px-3 py-1.5 text-sm font-semibold whitespace-nowrap text-foreground shadow-[inset_0_2px_0_var(--primary)]"
           >
             {NAV_LINKS[prevIndex].label}
           </motion.div>
@@ -207,7 +207,7 @@ export function PageArrowNav() {
             onTap={handleTap}
             style={{ x, opacity: currentOpacity, touchAction: "pan-y" }}
             aria-label="Open page menu"
-            className="relative rounded-t-md border border-b-0 border-border bg-background px-3 py-1.5 text-xs font-bold tracking-wide whitespace-nowrap text-foreground uppercase shadow-sm transition-colors hover:bg-muted"
+            className="relative rounded-t-md border border-b-0 border-border bg-background px-3 py-1.5 text-sm font-semibold whitespace-nowrap text-foreground shadow-[inset_0_2px_0_var(--primary)] transition-colors hover:bg-muted"
           >
             {NAV_LINKS[currentIndex].label}
           </motion.button>
@@ -215,7 +215,7 @@ export function PageArrowNav() {
           <motion.div
             aria-hidden="true"
             style={{ x: nextShadowX, opacity: nextShadowOpacity }}
-            className="pointer-events-none absolute top-0 left-0 rounded-t-md border border-b-0 border-border bg-background px-3 py-1.5 text-xs font-bold tracking-wide whitespace-nowrap text-foreground uppercase shadow-sm"
+            className="pointer-events-none absolute top-0 left-0 rounded-t-md border border-b-0 border-border bg-background px-3 py-1.5 text-sm font-semibold whitespace-nowrap text-foreground shadow-[inset_0_2px_0_var(--primary)]"
           >
             {NAV_LINKS[nextIndex].label}
           </motion.div>

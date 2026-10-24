@@ -30,7 +30,7 @@ export function BadgeDrawer({ positive, negative }: BadgeDrawerProps) {
         <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-black/40 duration-150 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0" />
         <DialogPrimitive.Popup className="fixed inset-x-0 bottom-0 z-50 flex max-h-[80vh] flex-col gap-3 rounded-t-xl border-t border-border bg-popover p-4 outline-none duration-200 data-open:animate-in data-open:slide-in-from-bottom data-closed:animate-out data-closed:slide-out-to-bottom">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold tracking-wider uppercase">Badges</span>
+            <span className="label text-foreground">Badges</span>
             <DialogClose render={<Button variant="ghost" size="sm" />}>Close</DialogClose>
           </div>
           <div className="flex items-center gap-4 text-xs text-muted-foreground">

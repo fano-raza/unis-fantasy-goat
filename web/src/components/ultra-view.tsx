@@ -126,7 +126,7 @@ export function UltraView({ initialBootstrap }: UltraViewProps) {
       </div>
 
       <div className="flex flex-1 flex-col gap-4">
-        <Card>
+        <Card variant="plain">
           <CardHeader>
             <CardTitle>Ultra</CardTitle>
             <CardDescription>

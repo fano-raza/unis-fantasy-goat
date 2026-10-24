@@ -278,25 +278,26 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
 
   return (
     <div className="flex flex-col gap-4">
-      <Card>
+      <Card variant="plain">
         <CardHeader>
           <CardTitle>Weekly Stats</CardTitle>
           <CardDescription>
-            League table for a given season and week
+            Every team&apos;s category totals for one week. Pick a focus team to
+            see how it would have done against each of them.
           </CardDescription>
         </CardHeader>
         <CardContent
           className={cn(
             "flex flex-wrap items-center gap-4",
-            isPlayoffWeek && "rounded-sm border-2 border-[#4169E1] p-3",
+            isPlayoffWeek && "rounded-md border border-gold/50 bg-gold/[0.06] p-3",
           )}
         >
           <SteppableSelect label="Season" value={year} onValueChange={handleYearChange} options={meta.years} />
           <div className="flex items-center gap-1">
             <SteppableSelect label="Week" value={week} onValueChange={setWeek} options={weekOptions} />
             {isPlayoffWeek && (
-              <span className="rounded-sm bg-[#4169E1]/15 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-[#4169E1] uppercase">
-                PLAYOFFS
+              <span className="rounded-sm bg-gold/15 px-1.5 py-0.5 text-xs font-semibold text-gold">
+                Playoffs
               </span>
             )}
           </div>
@@ -320,7 +321,7 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
               ...focusOptions.map((m) => ({ value: m, label: m })),
             ]}
           />
-          <label className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
+          <label className="flex items-center gap-2 label text-foreground">
             <span className="text-muted-foreground">Stat</span>
             <Switch
               checked={mode === "rating"}
@@ -367,10 +368,10 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
                 <div className="flex flex-col gap-4">
                   {recap.champion && (
                     <div className="flex flex-col gap-1 rounded-sm border border-border bg-secondary/40 px-3 py-2">
-                      <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+                      <span className="label">
                         Champion
                       </span>
-                      <p className="text-base font-bold text-primary">🏆 {recap.champion}</p>
+                      <p className="text-base font-bold text-gold">🏆 {recap.champion}</p>
                       {recap.final_standings && (
                         <p className="text-sm text-muted-foreground">
                           {Object.entries(recap.final_standings)
@@ -382,7 +383,7 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
                     </div>
                   )}
                   <div className="flex flex-col gap-1">
-                    <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+                    <span className="label">
                       Results
                     </span>
                     <ul className="flex flex-col gap-1">
@@ -411,7 +412,7 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
                   </div>
                   {recap.byes.length > 0 && (
                     <div className="flex flex-col gap-1">
-                      <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+                      <span className="label">
                         Byes
                       </span>
                       <p className="text-sm text-muted-foreground">{recap.byes.join(", ")}</p>
@@ -423,7 +424,7 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
                 <div className="flex flex-col gap-4">
                   {recap.beatdowns.length > 0 && (
                     <div className="flex flex-col gap-1">
-                      <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+                      <span className="label">
                         Beatdowns
                       </span>
                       <ul className="flex flex-col gap-1">
@@ -437,7 +438,7 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
                   )}
                   {recap.upsets.length > 0 && (
                     <div className="flex flex-col gap-1">
-                      <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+                      <span className="label">
                         Upsets
                       </span>
                       <ul className="flex flex-col gap-1">
@@ -451,7 +452,7 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
                   )}
                   {recap.milestones.length > 0 && (
                     <div className="flex flex-col gap-1">
-                      <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+                      <span className="label">
                         Milestones
                       </span>
                       <ul className="flex flex-col gap-1">
@@ -465,7 +466,7 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
                   )}
                   {recap.playoff_race && (
                     <div className="flex flex-col gap-1">
-                      <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+                      <span className="label">
                         Playoff Race
                       </span>
                       <p className="text-sm text-muted-foreground">{recap.playoff_race}</p>

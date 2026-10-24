@@ -383,7 +383,7 @@ export function ComparisonView({ initialBootstrap }: ComparisonViewProps) {
     <div className="flex flex-col gap-4">
       <div
         ref={stickyBarRef}
-        className="sticky top-0 z-30 flex flex-wrap items-center gap-3 rounded-sm border border-border bg-card px-3 py-2 shadow-sm"
+        className="sticky top-0 z-30 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2.5 backdrop-blur sm:mx-0 sm:px-0"
       >
         <RoutedViewSwitcher options={TEAM_PLAYERS_VIEW_OPTIONS} current="comparison" paths={TEAM_PLAYERS_VIEW_PATHS} />
 
@@ -391,7 +391,7 @@ export function ComparisonView({ initialBootstrap }: ComparisonViewProps) {
           {visibleSelected.map((t) => (
             <span
               key={t}
-              className="flex items-center gap-1.5 rounded-sm bg-secondary px-3 py-1 text-xs font-bold tracking-wide text-secondary-foreground uppercase"
+              className="flex items-center gap-1.5 rounded-sm bg-secondary px-3 py-1 text-sm font-medium text-secondary-foreground"
             >
               {t}
               <button
@@ -434,7 +434,7 @@ export function ComparisonView({ initialBootstrap }: ComparisonViewProps) {
         </div>
       </div>
 
-      <Card>
+      <Card variant="plain">
         <CardHeader>
           <CardTitle>Career Comparison</CardTitle>
           <CardDescription>

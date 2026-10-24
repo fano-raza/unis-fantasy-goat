@@ -29,14 +29,14 @@ export function SeasonWeekRangeFilter({
   onShowGraphChange: (value: boolean) => void;
 }) {
   return (
-    <Card>
+    <Card variant="plain">
       <CardHeader>
         <CardTitle>Standings</CardTitle>
         <CardDescription>Regular-season standings for any week range</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
         <div className="flex flex-col gap-3">
-          <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+          <span className="label">
             Week {weekRange[0]} &ndash; Week {weekRange[1]}
           </span>
           <Slider
@@ -49,7 +49,7 @@ export function SeasonWeekRangeFilter({
             thumbLabels={[`Week ${weekRange[0]}`, `Week ${weekRange[1]}`]}
           />
         </div>
-        <label className="flex items-center gap-2 self-start text-[11px] font-bold tracking-wider uppercase">
+        <label className="flex items-center gap-2 self-start label text-foreground">
           <span className="text-muted-foreground">Hide Graph</span>
           <Switch checked={showGraph} onCheckedChange={onShowGraphChange} />
           <span className="text-muted-foreground">Show Graph</span>

@@ -25,7 +25,7 @@ export const NAV_LINKS = [
 export function Nav() {
   const pathname = usePathname();
   return (
-    <nav className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0">
+    <nav className="-mx-4 flex gap-5 overflow-x-auto px-4 sm:mx-0 sm:px-0">
       {NAV_LINKS.map((link) => {
         // Also active on a sub-page route (e.g. /team/roster,
         // /standings/ratings) -- these split off from a single-URL page
@@ -44,10 +44,10 @@ export function Nav() {
             key={link.href}
             href={link.href}
             className={cn(
-              "flex shrink-0 items-center gap-1.5 rounded-sm px-3 py-1.5 text-xs font-bold tracking-wide uppercase transition-colors",
+              "-mb-px flex shrink-0 items-center gap-1.5 border-b-[3px] pt-1 pb-2.5 text-sm font-medium transition-colors",
               active
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
             {link.locked && <Lock className="size-3" />}

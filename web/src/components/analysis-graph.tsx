@@ -212,7 +212,7 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
           >
             <ArrowLeftRight className="size-4" />
           </Button>
-          <div className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
+          <div className="flex items-center gap-2 label text-foreground">
             <span className="text-muted-foreground">Group by</span>
             {(["team", "season", "week"] as const).map((dim) => (
               <Button
@@ -446,7 +446,7 @@ function EdgeTooltip({
         className,
       )}
     >
-      <div className="mb-1 font-bold tracking-wide text-muted-foreground uppercase">
+      <div className="mb-1 font-semibold text-muted-foreground">
         {xLabel}: {row.x}
       </div>
       <div className="flex flex-col gap-0.5">
@@ -475,7 +475,7 @@ function FieldSelect({
   const groups = ["General", "Stats", "Ratings"] as const;
   return (
     <label className="flex items-center gap-2">
-      <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+      <span className="label">
         {label}
       </span>
       <Select value={value} onValueChange={(v) => v !== null && onValueChange(v)}>

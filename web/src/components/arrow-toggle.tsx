@@ -36,7 +36,7 @@ export function ArrowToggle({
       >
         <ChevronLeft className="size-4" />
       </Button>
-      <span className="min-w-28 text-center text-sm font-bold tracking-wide uppercase">
+      <span className="min-w-28 text-center team-name">
         {options[index]?.label}
       </span>
       <Button

@@ -295,7 +295,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <Card>
+      <Card variant="plain">
         <CardHeader>
           <CardTitle>Roster</CardTitle>
           <CardDescription>A team&apos;s full roster, player ranks, and each player&apos;s games for the selected week</CardDescription>
@@ -322,7 +322,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
               </Button>
             </div>
           )}
-          <label className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
+          <label className="flex items-center gap-2 label text-foreground">
             <span className="text-muted-foreground">Games Left</span>
             <Switch checked={showFullWeek} onCheckedChange={setShowFullWeek} />
             <span className="text-muted-foreground">Full Week Grid</span>
@@ -333,7 +333,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
       <Card>
         {simulating && (
           <CardHeader>
-            <CardDescription className="font-bold tracking-wide text-primary uppercase">
+            <CardDescription className="font-semibold text-primary">
               Simulated roster
             </CardDescription>
             <CardAction>
@@ -377,7 +377,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
               </TableHeader>
               <TableBody>
                 <TableRow className="bg-focus-row">
-                  <TableCell className="sticky left-0 z-10 bg-focus-row font-sans font-extrabold tracking-wide uppercase text-primary">
+                  <TableCell className="sticky left-0 z-10 bg-focus-row team-name text-primary">
                     Average Rank
                   </TableCell>
                   <TableCell />
@@ -490,7 +490,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                     <TableCell>{i + 1}</TableCell>
                     <TableCell
                       className={cn(
-                        "font-sans font-extrabold tracking-wide uppercase",
+                        "team-name",
                         simulating && row.team === team && "text-yellow-500",
                       )}
                     >

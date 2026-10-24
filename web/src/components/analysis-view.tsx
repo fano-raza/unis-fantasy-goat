@@ -144,7 +144,7 @@ export function AnalysisView({ initialMeta }: { initialMeta: LeagueMeta | null }
           />
         </div>
 
-        <Card>
+        <Card variant="plain">
           <CardHeader>
             <CardTitle>Analysis</CardTitle>
             <CardDescription>

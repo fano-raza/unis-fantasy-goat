@@ -325,7 +325,7 @@ export function ChampionsDuelArena() {
     >
       {duel && (
         <div className="absolute inset-x-0 top-3 z-20 mx-auto w-fit max-w-[90%] rounded-sm border border-border bg-popover px-4 py-2 text-center shadow-md">
-          <p className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+          <p className="label">
             Duel: {duel.category}
           </p>
           <p className="text-sm">
@@ -350,7 +350,7 @@ export function ChampionsDuelArena() {
             <line x1="14" y1="24" x2="5" y2="38" stroke="currentColor" strokeWidth="2" />
             <line x1="14" y1="24" x2="23" y2="38" stroke="currentColor" strokeWidth="2" />
           </svg>
-          <span className="mt-0.5 whitespace-nowrap text-[11px] font-bold tracking-wide uppercase">
+          <span className="mt-0.5 whitespace-nowrap label text-foreground">
             {row.Team}
           </span>
         </div>

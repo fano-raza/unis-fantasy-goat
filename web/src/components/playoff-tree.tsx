@@ -108,7 +108,7 @@ function MatchupBox({ matchup, muted }: { matchup: PlayoffMatchup; muted?: boole
       )}
     >
       {matchup.slot && (
-        <span className="text-[10px] font-bold tracking-wider text-muted-foreground uppercase">
+        <span className="label">
           {matchup.slot}
         </span>
       )}
@@ -116,8 +116,8 @@ function MatchupBox({ matchup, muted }: { matchup: PlayoffMatchup; muted?: boole
         <div
           key={row.team}
           className={cn(
-            "flex items-center justify-between gap-3 text-xs font-bold tracking-wide uppercase",
-            row.won ? "text-primary" : "text-muted-foreground",
+            "flex items-center justify-between gap-3 text-sm font-semibold",
+            row.won ? "text-foreground" : "text-muted-foreground",
           )}
         >
           <span className="flex items-center gap-1.5">
@@ -126,7 +126,7 @@ function MatchupBox({ matchup, muted }: { matchup: PlayoffMatchup; muted?: boole
             )}
             <TeamLink team={row.team} />
             {row.won && matchup.slot === "Final" && (
-              <Trophy className="size-3 text-amber-400" />
+              <Trophy className="size-3 text-gold" />
             )}
           </span>
           <span className="font-mono text-[10px] tabular-nums">
@@ -147,7 +147,7 @@ function MatchupBox({ matchup, muted }: { matchup: PlayoffMatchup; muted?: boole
 
 function ByeBox({ team }: { team: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-sm border border-dashed border-border px-3 py-2 text-xs font-bold tracking-wide text-muted-foreground uppercase">
+    <div className="flex items-center justify-between gap-3 rounded-sm border border-dashed border-border px-3 py-2 text-sm font-medium text-muted-foreground">
       <TeamLink team={team} />
       <span className="text-[10px]">Bye</span>
     </div>
@@ -180,10 +180,10 @@ export function PlayoffTree({
   return (
     <div className="flex flex-col gap-4">
       {bracket.champion && (
-        <div className="flex items-center gap-2 text-sm font-bold tracking-wide uppercase">
-          <Trophy className="size-4 text-amber-400" />
-          <span className="text-muted-foreground">Champion:</span>
-          <TeamLink team={bracket.champion} className="text-primary" />
+        <div className="flex items-center gap-2">
+          <Trophy className="size-5 text-gold" />
+          <span className="label">Champion</span>
+          <TeamLink team={bracket.champion} className="team-name text-2xl text-gold" />
         </div>
       )}
       <div className="flex gap-6 overflow-x-auto pb-2">
@@ -191,7 +191,7 @@ export function PlayoffTree({
           const items = orderRoundItems(round, bracket.rounds[roundIdx + 1], seedByTeam);
           return (
             <div key={round.week} className="flex min-w-[220px] flex-1 flex-col gap-3">
-              <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+              <span className="label">
                 {round.label}
               </span>
               <div className="flex h-full flex-col justify-around gap-3">

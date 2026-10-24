@@ -176,7 +176,7 @@ function LeagueWinsPageInner({ initialBootstrap }: LeagueWinsViewProps) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="sticky top-0 z-30 flex flex-wrap items-center gap-3 rounded-sm border border-border bg-card px-3 py-2 shadow-sm">
+      <div className="sticky top-0 z-30 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2.5 backdrop-blur sm:mx-0 sm:px-0">
         <SteppableSelect label="Season" value={year} onValueChange={setYear} options={meta.years} />
         <RoutedViewSwitcher options={STANDINGS_VIEW_OPTIONS} current="league_wins" paths={STANDINGS_VIEW_PATHS} />
       </div>
@@ -197,7 +197,7 @@ function LeagueWinsPageInner({ initialBootstrap }: LeagueWinsViewProps) {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <label className="flex items-center gap-2 self-start text-[11px] font-bold tracking-wider uppercase">
+          <label className="flex items-center gap-2 self-start label text-foreground">
             <span className="text-muted-foreground">W/L</span>
             <Switch
               checked={leagueMode === "cats"}

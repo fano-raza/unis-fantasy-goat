@@ -60,7 +60,7 @@ import { TEAM_PLAYERS_VIEW_OPTIONS, TEAM_PLAYERS_VIEW_PATHS } from "@/lib/team-p
 // Gold / silver / bronze for the League Top 3 table's 1st/2nd/3rd rank text
 // -- topFields is always filtered to rank <= 3, so no 4th-place case exists.
 function rankColorClass(rank: number): string {
-  if (rank === 1) return "text-[#d4af37]";
+  if (rank === 1) return "text-gold";
   if (rank === 2) return "text-[#c0c0c0]";
   return "text-[#cd7f32]";
 }
@@ -343,10 +343,10 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="sticky top-0 z-30 flex flex-wrap items-center gap-3 rounded-sm border border-border bg-card px-3 py-2 shadow-sm">
+      <div className="sticky top-0 z-30 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2.5 backdrop-blur sm:mx-0 sm:px-0">
         <RoutedViewSwitcher options={TEAM_PLAYERS_VIEW_OPTIONS} current="profile" paths={TEAM_PLAYERS_VIEW_PATHS} />
 
-        <span className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+        <span className="label">
           Team
         </span>
         <Select value={team} onValueChange={(v) => v !== null && setTeam(v)}>
@@ -363,7 +363,7 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
         </Select>
       </div>
 
-      <Card>
+      <Card variant="plain">
         <CardHeader>
           {/* Grouped in one div so grid auto-placement can't split them into
               separate cells -- CardAction is `hidden` (removed from the box
@@ -372,8 +372,7 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
               putting CardTitle in column 2 instead of stacking it under
               CardDescription in column 1. */}
           <div>
-            <CardDescription>Career Profile</CardDescription>
-            <CardTitle className="text-4xl sm:text-5xl">{team}</CardTitle>
+            <CardTitle className="text-[clamp(3.25rem,11vw,5.5rem)]! font-black uppercase">{team}</CardTitle>
             <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
               {badgesLoading
                 ? "Loading badges…"
@@ -399,7 +398,12 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
 
       <LoadingOverlay active={!profile} hasContent={false} label="Loading">
       {profile && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        // One trophy-case panel, not six floating tiles: every tile draws
+        // its own right/bottom rule and the outer wrapper clips the
+        // outermost ones, so the dividers stay right whether 5 or 6 tiles
+        // render (Best Playoff Finish is conditional).
+        <div className="overflow-hidden rounded-lg bg-card">
+        <div className="-mr-px -mb-px grid grid-cols-2 sm:grid-cols-3 [&>*]:border-r [&>*]:border-b [&>*]:border-border">
           <StatTile
             label="Championships"
             value={profile.Championships ?? 0}
@@ -438,10 +442,11 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
               label="Best Playoff Finish"
               value={playoffFinish.label}
               sub={playoffFinish.years}
-              valueClassName={playoffFinish.label === "Champion" ? "text-amber-400" : undefined}
+              valueClassName={playoffFinish.label === "Champion" ? "text-gold" : undefined}
               href={`/standings?year=${latestYear(playoffFinish.years) ?? meta.current_year}&tree=1`}
             />
           )}
+        </div>
         </div>
       )}
       </LoadingOverlay>
@@ -542,18 +547,18 @@ function StatTile({
 }) {
   const iconCount = Icon && typeof value === "number" ? value : 0;
   const className = cn(
-    "rounded-sm border border-border p-4",
-    href && "transition-colors hover:border-primary",
+    "flex flex-col p-4 sm:p-5",
+    href && "transition-colors hover:bg-accent focus-visible:bg-accent",
   );
   const content = (
     <>
-      <div className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+      <div className="label">
         {label}
       </div>
-      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+      <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span
           className={cn(
-            "font-mono text-3xl font-extrabold tracking-wide text-primary uppercase tabular-nums",
+            "font-display text-4xl leading-none font-extrabold [font-variation-settings:'opsz'_72]",
             valueClassName,
           )}
         >
@@ -562,10 +567,10 @@ function StatTile({
         {Icon &&
           iconCount > 0 &&
           Array.from({ length: iconCount }, (_, i) => (
-            <Icon key={i} className="size-4 text-amber-400" />
+            <Icon key={i} className="size-4 self-center text-gold" />
           ))}
       </div>
-      <div className="mt-1 text-xs text-muted-foreground">{sub}</div>
+      <div className="mt-1.5 text-xs text-muted-foreground">{sub || "Not yet"}</div>
     </>
   );
   if (href) {

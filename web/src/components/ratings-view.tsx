@@ -249,7 +249,7 @@ function RatingsPageInner({ initialBootstrap }: RatingsViewProps) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="sticky top-0 z-30 flex flex-wrap items-center gap-3 rounded-sm border border-border bg-card px-3 py-2 shadow-sm">
+      <div className="sticky top-0 z-30 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2.5 backdrop-blur sm:mx-0 sm:px-0">
         <SteppableSelect label="Season" value={year} onValueChange={setYear} options={meta.years} />
         <RoutedViewSwitcher options={STANDINGS_VIEW_OPTIONS} current="ratings" paths={STANDINGS_VIEW_PATHS} />
       </div>
@@ -267,7 +267,7 @@ function RatingsPageInner({ initialBootstrap }: RatingsViewProps) {
           <CardTitle>Ratings</CardTitle>
           <CardDescription>Ranked by overall Weighted Rank rating</CardDescription>
           <CardAction>
-            <label className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
+            <label className="flex items-center gap-2 label text-foreground">
               <span className="text-muted-foreground">Table</span>
               <Switch
                 checked={ratingsDisplay === "leaders"}
@@ -279,7 +279,7 @@ function RatingsPageInner({ initialBootstrap }: RatingsViewProps) {
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-6">
-            <label className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
+            <label className="flex items-center gap-2 label text-foreground">
               <span className="text-muted-foreground">Totals</span>
               <Switch
                 checked={ratingsStatMode === "averages"}
@@ -287,7 +287,7 @@ function RatingsPageInner({ initialBootstrap }: RatingsViewProps) {
               />
               <span className="text-muted-foreground">Averages</span>
             </label>
-            <div className="flex items-center gap-3 text-[11px] font-bold tracking-wider uppercase">
+            <div className="flex items-center gap-3 label text-foreground">
               <label className="flex items-center gap-1.5">
                 <Checkbox checked={ratingsRs} onCheckedChange={() => setRatingsRs((v) => !v)} />
                 <span className="text-muted-foreground">Reg Season</span>
@@ -329,11 +329,11 @@ function RatingsPageInner({ initialBootstrap }: RatingsViewProps) {
                   if (!entry) return null;
                   return (
                     <div key={cat} className="rounded-sm border border-border p-3">
-                      <div className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
+                      <div className="label">
                         {cat}
                       </div>
                       <div className="mt-2 flex items-center justify-between gap-2">
-                        <span className="text-xs font-bold tracking-wide text-foreground uppercase">
+                        <span className="text-sm font-semibold text-foreground">
                           {entry.best.team}
                         </span>
                         <span className="font-mono text-sm font-extrabold tabular-nums text-foreground">
@@ -341,7 +341,7 @@ function RatingsPageInner({ initialBootstrap }: RatingsViewProps) {
                         </span>
                       </div>
                       <div className="mt-1 flex items-center justify-between gap-2">
-                        <span className="text-xs font-bold tracking-wide text-muted-foreground uppercase">
+                        <span className="text-sm font-medium text-muted-foreground">
                           {entry.worst.team}
                         </span>
                         <span className="font-mono text-sm font-extrabold tabular-nums text-muted-foreground">

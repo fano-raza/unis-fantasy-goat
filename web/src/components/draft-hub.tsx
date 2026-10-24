@@ -167,7 +167,7 @@ const RIGHT_ALIGNED = new Set<SortKey>(["round", "roundPick", "overallPick", "dr
 
 function cellClassName(key: SortKey): string {
   if (key === "player") return "font-sans font-semibold";
-  if (key === "team") return "font-sans font-extrabold tracking-wide uppercase";
+  if (key === "team") return "team-name";
   if (key === "draftScore") return "text-right font-extrabold text-primary";
   if (key === "rank") return "text-right text-muted-foreground";
   if (key === "year") return "text-muted-foreground";
@@ -415,7 +415,7 @@ export function DraftHub({
           />
         </div>
 
-        <Card>
+        <Card variant="plain">
           <CardHeader>
             <CardTitle>Draft Hub</CardTitle>
             <CardDescription>
@@ -423,7 +423,7 @@ export function DraftHub({
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap items-center gap-6">
-            <div className="flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase">
+            <div className="flex items-center gap-2 label text-foreground">
               <span className="text-muted-foreground">Group by</span>
               {(["team", "player", "year"] as const).map((dim) => (
                 <Button
@@ -438,7 +438,7 @@ export function DraftHub({
             </div>
             <label
               className={cn(
-                "flex items-center gap-2 text-[11px] font-bold tracking-wider uppercase",
+                "flex items-center gap-2 label text-foreground",
                 !isGrouped && "opacity-50",
               )}
             >

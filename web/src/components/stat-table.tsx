@@ -317,7 +317,7 @@ export function StatTable({
                 ref={i === 0 ? firstTeamCellRef : undefined}
                 className={cn(
                   TEAM_COL_WIDTH,
-                  "sticky left-0 z-10 bg-card font-sans font-extrabold tracking-wide uppercase",
+                  "sticky left-0 z-10 bg-card team-name",
                   // Same opaque --focus-row token as the row itself -- a
                   // sticky cell sits over horizontally scrolled content, so
                   // any transparency would let that content bleed through.
