@@ -16,10 +16,15 @@ class Player(object):
         self.proTeam = PRO_TEAM_MAP[json_parsing(data, 'proTeamId')]
         self.injuryStatus = json_parsing(data, 'injuryStatus')
         self.posRank = json_parsing(data, 'positionalRanking')
-        if json_parsing(data, 'totalRanking') == 0:
-            self.rank = 1000
+        # ESPN marks unranked players with 0 -- or omits totalRanking
+        # entirely, in which case json_parsing returns [] (its "not found"
+        # value). Both mean unranked -> 1000. A raw [] previously leaked into
+        # Ref/roster_ranks.csv and turned that whole Rank column into strings.
+        total_ranking = json_parsing(data, 'totalRanking')
+        if isinstance(total_ranking, (int, float)) and total_ranking > 0:
+            self.rank = total_ranking
         else:
-            self.rank = json_parsing(data, 'totalRanking')
+            self.rank = 1000
         self.stats = {}
         self.schedule = {}
 

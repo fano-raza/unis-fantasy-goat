@@ -622,7 +622,16 @@ class LeagueStore:
             raise ValueError(
                 "roster_ranks.csv not found -- run scripts/export_roster_ranks.py first"
             )
-        self._roster_ranks_df = pd.read_csv(path)
+        df = pd.read_csv(path)
+        # Force Rank numeric: a single non-numeric cell (an ESPN player with no
+        # totalRanking was once written as "[]") makes pandas read the whole
+        # column as strings, which the frontend then string-concatenated into
+        # enormous "average ranks". Unparseable rows are dropped -- a player
+        # with no rank can't be ranked or averaged anyway.
+        df["Rank"] = pd.to_numeric(df["Rank"], errors="coerce")
+        df = df.dropna(subset=["Rank"])
+        df["Rank"] = df["Rank"].astype(int)
+        self._roster_ranks_df = df
         return self._roster_ranks_df
 
     def week_calendar(self, year: int) -> list[dict]:
