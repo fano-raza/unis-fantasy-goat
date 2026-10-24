@@ -4,9 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { StatTable } from "@/components/stat-table";
@@ -153,13 +150,6 @@ export function CareerStatsView({ initialBootstrap }: CareerStatsViewProps) {
         </div>
 
         <Card variant="plain">
-          <CardHeader>
-            <CardTitle>Career Stats</CardTitle>
-            <CardDescription>
-              Aggregate totals/averages across the selected seasons, weeks, and
-              season type
-            </CardDescription>
-          </CardHeader>
           <CardContent className="flex flex-wrap items-center gap-6">
             <label className="flex items-center gap-2 label text-foreground">
               <span className="text-muted-foreground">Totals</span>

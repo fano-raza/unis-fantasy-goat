@@ -4,9 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { StatTable } from "@/components/stat-table";
 import { ChecklistGroup } from "@/components/filter-panel";
@@ -127,12 +124,6 @@ export function UltraView({ initialBootstrap }: UltraViewProps) {
 
       <div className="flex flex-1 flex-col gap-4">
         <Card variant="plain">
-          <CardHeader>
-            <CardTitle>Ultra</CardTitle>
-            <CardDescription>
-              Per-team averages across the selected season and weeks
-            </CardDescription>
-          </CardHeader>
           <CardContent className="flex flex-wrap items-center gap-6">
             <SteppableSelect label="Season" value={year} onValueChange={setYear} options={meta.years} />
             <LabeledSelect

@@ -55,7 +55,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               the whole header is exactly "freeze the page toggle buttons
               and home button". z-40 keeps it under MobileNav's drawer
               (z-50 backdrop/popup) so the drawer still overlays it. */}
-          <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur sm:static">
+          <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur sm:static sm:bg-card">
             <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 pt-4 pb-3 sm:px-6 sm:pb-0">
               <div className="flex items-center justify-between gap-3">
                 <Link href="/" className="wordmark transition-opacity hover:opacity-80">

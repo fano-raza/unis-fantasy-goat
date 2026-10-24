@@ -372,7 +372,7 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
               putting CardTitle in column 2 instead of stacking it under
               CardDescription in column 1. */}
           <div>
-            <CardTitle className="text-[clamp(3.25rem,11vw,5.5rem)]! font-black uppercase">{team}</CardTitle>
+            <CardTitle className="text-[clamp(2.25rem,7vw,3.25rem)]! font-black uppercase">{team}</CardTitle>
             <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
               {badgesLoading
                 ? "Loading badges…"

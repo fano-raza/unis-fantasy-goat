@@ -137,15 +137,16 @@
     white-space: nowrap;
 }
 
-/* Team names set like jersey lettering -- the app's one loud element. */
+/* Team names in tables/lists: the body face (Archivo), bold caps with a
+   little tracking -- the condensed display face was too hard to read at
+   table sizes (user feedback, 2026-10-24). */
 @utility team-name {
-    font-family: var(--font-display);
+    font-family: var(--font-sans);
     font-weight: 800;
-    font-size: 1.0625rem;
-    line-height: 1;
-    letter-spacing: 0.02em;
+    font-size: 0.875rem;
+    line-height: 1.1;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
-    font-variation-settings: "opsz" 24;
 }
 /* Header wordmark: one color, no italic, no single-word accent. The
    university blue lives in a court-line underscore instead. */

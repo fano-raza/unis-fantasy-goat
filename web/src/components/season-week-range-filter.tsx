@@ -3,9 +3,6 @@
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
@@ -30,10 +27,6 @@ export function SeasonWeekRangeFilter({
 }) {
   return (
     <Card variant="plain">
-      <CardHeader>
-        <CardTitle>Standings</CardTitle>
-        <CardDescription>Regular-season standings for any week range</CardDescription>
-      </CardHeader>
       <CardContent className="flex flex-col gap-6">
         <div className="flex flex-col gap-3">
           <span className="label">

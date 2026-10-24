@@ -183,7 +183,7 @@ export function PlayoffTree({
         <div className="flex items-center gap-2">
           <Trophy className="size-5 text-gold" />
           <span className="label">Champion</span>
-          <TeamLink team={bracket.champion} className="team-name text-2xl text-gold" />
+          <TeamLink team={bracket.champion} className="team-name text-xl! text-gold" />
         </div>
       )}
       <div className="flex gap-6 overflow-x-auto pb-2">

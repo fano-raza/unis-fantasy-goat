@@ -296,10 +296,6 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
   return (
     <div className="flex flex-col gap-4">
       <Card variant="plain">
-        <CardHeader>
-          <CardTitle>Roster</CardTitle>
-          <CardDescription>A team&apos;s full roster, player ranks, and each player&apos;s games for the selected week</CardDescription>
-        </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-6">
           <SteppableSelect label="Season" value={year} onValueChange={setYear} options={meta.years} />
           <LabeledSelect

@@ -5,9 +5,6 @@ import { X } from "lucide-react";
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import {
   Table,
@@ -297,12 +294,6 @@ export function TradeHub({
   return (
     <div className="flex flex-col gap-4">
       <Card variant="plain">
-        <CardHeader>
-          <CardTitle>Trade Hub</CardTitle>
-          <CardDescription>
-            Real NBA player stats (ESPN) -- compare up to 5 players a side
-          </CardDescription>
-        </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <LoadingOverlay active={playersLoading} hasContent={players.length > 0} label="Loading players">
             <div className="flex flex-wrap gap-6">

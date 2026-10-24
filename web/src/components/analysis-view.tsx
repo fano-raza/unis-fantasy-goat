@@ -3,9 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Card,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AnalysisGraph } from "@/components/analysis-graph";
@@ -145,13 +142,6 @@ export function AnalysisView({ initialMeta }: { initialMeta: LeagueMeta | null }
         </div>
 
         <Card variant="plain">
-          <CardHeader>
-            <CardTitle>Analysis</CardTitle>
-            <CardDescription>
-              Build your own line graph(s) — all graphs share the filters but
-              have their own axes and grouping
-            </CardDescription>
-          </CardHeader>
         </Card>
 
         <LoadingOverlay active={rowsLoading} hasContent={rows.length > 0} label="Loading">

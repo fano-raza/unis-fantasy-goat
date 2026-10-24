@@ -25,7 +25,7 @@ export const NAV_LINKS = [
 export function Nav() {
   const pathname = usePathname();
   return (
-    <nav className="-mx-4 flex gap-5 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+    <nav className="-mx-4 flex items-end gap-1 overflow-x-auto px-4 sm:mx-0 sm:px-0">
       {NAV_LINKS.map((link) => {
         // Also active on a sub-page route (e.g. /team/roster,
         // /standings/ratings) -- these split off from a single-URL page
@@ -44,10 +44,13 @@ export function Nav() {
             key={link.href}
             href={link.href}
             className={cn(
-              "-mb-px flex shrink-0 items-center gap-1.5 border-b-[3px] pt-1 pb-2.5 text-sm font-medium transition-colors",
+              // Folder-style tabs sitting on the header's bottom border: the
+              // active one is "open" -- same fill as the page below, its own
+              // bottom edge erased so it joins the content, blue lip on top.
+              "-mb-px flex shrink-0 items-center gap-1.5 rounded-t-md border border-b-0 px-4 py-2.5 text-sm font-medium transition-colors",
               active
-                ? "border-primary text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground",
+                ? "border-border bg-background font-semibold text-foreground shadow-[inset_0_3px_0_var(--primary),0_1px_0_var(--background)]"
+                : "border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground",
             )}
           >
             {link.locked && <Lock className="size-3" />}

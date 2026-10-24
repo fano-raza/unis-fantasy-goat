@@ -435,12 +435,6 @@ export function ComparisonView({ initialBootstrap }: ComparisonViewProps) {
       </div>
 
       <Card variant="plain">
-        <CardHeader>
-          <CardTitle>Career Comparison</CardTitle>
-          <CardDescription>
-            Add teams to compare career profile stats side by side
-          </CardDescription>
-        </CardHeader>
       </Card>
 
       {!dataLoading && selected.length === 0 ? (

@@ -5,9 +5,6 @@ import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import {
   Table,
@@ -416,12 +413,6 @@ export function DraftHub({
         </div>
 
         <Card variant="plain">
-          <CardHeader>
-            <CardTitle>Draft Hub</CardTitle>
-            <CardDescription>
-              Every draft pick across the selected seasons and teams -- group by to aggregate, click any column to sort
-            </CardDescription>
-          </CardHeader>
           <CardContent className="flex flex-wrap items-center gap-6">
             <div className="flex items-center gap-2 label text-foreground">
               <span className="text-muted-foreground">Group by</span>

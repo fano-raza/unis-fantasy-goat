@@ -279,13 +279,6 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
   return (
     <div className="flex flex-col gap-4">
       <Card variant="plain">
-        <CardHeader>
-          <CardTitle>Weekly Stats</CardTitle>
-          <CardDescription>
-            Every team&apos;s category totals for one week. Pick a focus team to
-            see how it would have done against each of them.
-          </CardDescription>
-        </CardHeader>
         <CardContent
           className={cn(
             "flex flex-wrap items-center gap-4",
