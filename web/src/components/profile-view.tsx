@@ -33,6 +33,7 @@ import {
   getAverages,
   getCategoryHistory,
   getLeagueMeta,
+  getPlayoffBrackets,
   getQuery,
   getTeamSummary,
   getTotals,
@@ -41,6 +42,7 @@ import {
   type Category,
   type CategoryHistoryResponse,
   type LeagueMeta,
+  type PlayoffBracketsResponse,
   type QueryRow,
   type TeamSummary,
 } from "@/lib/api";
@@ -207,6 +209,16 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
     initialBootstrap?.categoryHistory ?? null,
   );
   const [team, setTeam] = useState<string | null>(null);
+  // Only feeds the 3rd Place badge. Not part of the server bootstrap, so
+  // it's fetched client-side either way; a failed fetch resolves to {}
+  // (no 3rd Place badges) rather than leaving badges stuck loading.
+  const [brackets, setBrackets] = useState<PlayoffBracketsResponse | null>(null);
+
+  useEffect(() => {
+    getPlayoffBrackets()
+      .then(setBrackets)
+      .catch(() => setBrackets({}));
+  }, []);
 
   const searchParams = useSearchParams();
 
@@ -274,12 +286,12 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
   // page's own loading screen below, so without this the page used to
   // render past that guard and show a real "0 total badges" flash before
   // the actual count popped in a moment later.
-  const badgesLoading = !profile || !categoryHistory;
+  const badgesLoading = !profile || !categoryHistory || !brackets;
 
   const badges = useMemo(() => {
     if (!team || !profile || !categoryHistory) return { positive: [], negative: [] };
-    return buildBadges(team, profile, categoryHistory, meta?.goat);
-  }, [team, profile, categoryHistory, meta?.goat]);
+    return buildBadges(team, profile, categoryHistory, meta?.goat, brackets);
+  }, [team, profile, categoryHistory, meta?.goat, brackets]);
 
   const uniquePositiveCount = new Set(badges.positive.map((b) => b.type)).size;
 

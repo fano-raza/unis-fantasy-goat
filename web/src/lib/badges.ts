@@ -1,4 +1,10 @@
-import { MAIN_CATS, type Category, type CategoryHistoryResponse, type TeamSummary } from "./api";
+import {
+  MAIN_CATS,
+  type Category,
+  type CategoryHistoryResponse,
+  type PlayoffBracketsResponse,
+  type TeamSummary,
+} from "./api";
 
 // Sentinel for badges rendered with a real lucide icon component instead of
 // an emoji glyph -- there's no podium emoji in standard Unicode, but lucide
@@ -41,6 +47,7 @@ const BADGE_TYPE_ORDER = [
   "GOAT",
   "Championship",
   "Runner-Up",
+  "3rd Place",
   "MVP",
   "RS 1st Place",
   "Playoff Appearances",
@@ -61,6 +68,7 @@ export const POSITIVE_BADGE_TYPES = [
   "GOAT",
   "Championship",
   "Runner-Up",
+  "3rd Place",
   "MVP",
   "RS 1st Place",
   "Playoff Appearances",
@@ -134,6 +142,20 @@ function otherBadges(profile: TeamSummary): BadgeInstance[] {
   return badges;
 }
 
+// One per completed playoff where the team finished 3rd -- team_summary.csv
+// has no 3rd-place column, but every Complete bracket's final `standings`
+// does (place -> team), so this reads it from /league/playoff_brackets.
+// Active (in-progress) brackets are skipped so a provisional standing
+// never earns a badge.
+function thirdPlaceBadges(team: string, brackets: PlayoffBracketsResponse): BadgeInstance[] {
+  return Object.entries(brackets)
+    .filter(([, b]) => b.status === "Complete" && b.standings["3"] === team)
+    .map(([yearStr]) => {
+      const year = Number(yearStr);
+      return { id: `third-${year}`, icon: "🥉", label: "3rd Place", year, positive: true, type: "3rd Place" };
+    });
+}
+
 // Grouped by type first (non-stat-leader "other" badges before the 9
 // category badges, per BADGE_TYPE_ORDER), year descending within a type.
 function sortBadges(badges: BadgeInstance[]): BadgeInstance[] {
@@ -148,8 +170,13 @@ export function buildBadges(
   profile: TeamSummary,
   history: CategoryHistoryResponse,
   goatTeam?: string | null,
+  brackets?: PlayoffBracketsResponse | null,
 ): { positive: BadgeInstance[]; negative: BadgeInstance[] } {
-  const all = [...categoryBadges(team, history), ...otherBadges(profile)];
+  const all = [
+    ...categoryBadges(team, history),
+    ...otherBadges(profile),
+    ...(brackets ? thirdPlaceBadges(team, brackets) : []),
+  ];
   if (goatTeam && team === goatTeam) {
     all.push({
       id: "goat",

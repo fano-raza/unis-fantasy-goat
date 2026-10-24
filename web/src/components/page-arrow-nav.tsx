@@ -137,16 +137,13 @@ export function PageArrowNav() {
 
   return (
     <>
-      {/* items-end (not items-center) so the two side baselines -- each a
-          flex-1 div stretching all the way to the screen edge, not just
-          hugging its arrow icon -- align exactly with the tab's own
-          bottom edge, closing the open-bottomed tab shape into a
-          continuous line on either side (feature request, 2026-10-06).
-          No gap between a baseline and the tab so the horizontal line
-          visually touches the tab's vertical border rather than leaving
-          a break at the corner. */}
+      {/* No baselines or tab outline anymore (2026-10-24 design refresh):
+          the header is the card surface and the current-page tab is filled
+          with the page background, flush with the header's bottom edge, so
+          it reads as a tab opening into the page -- same as desktop's Nav.
+          items-end keeps the arrows level with the tab's lower half. */}
       <div className="flex items-end sm:hidden">
-        <div className="flex flex-1 items-center border-b border-border">
+        <div className="flex flex-1 items-center pb-1">
           <Link
             href={NAV_LINKS[prevIndex].href}
             aria-label={`Go to ${NAV_LINKS[prevIndex].label}`}
@@ -185,7 +182,7 @@ export function PageArrowNav() {
           <motion.div
             aria-hidden="true"
             style={{ x: prevShadowX, opacity: prevShadowOpacity }}
-            className="pointer-events-none absolute top-0 left-0 rounded-t-md border border-b-0 border-border bg-background px-4 py-1.5 font-display text-2xl leading-tight font-bold whitespace-nowrap [font-variation-settings:'opsz'_36] text-foreground shadow-[inset_0_2px_0_var(--primary)]"
+            className="pointer-events-none absolute top-0 left-0 rounded-t-md bg-background px-4 py-1.5 font-display text-2xl leading-tight font-bold whitespace-nowrap [font-variation-settings:'opsz'_36] text-foreground shadow-[inset_0_3px_0_var(--primary)]"
           >
             {NAV_LINKS[prevIndex].label}
           </motion.div>
@@ -207,7 +204,7 @@ export function PageArrowNav() {
             onTap={handleTap}
             style={{ x, opacity: currentOpacity, touchAction: "pan-y" }}
             aria-label="Open page menu"
-            className="relative rounded-t-md border border-b-0 border-border bg-background px-4 py-1.5 font-display text-2xl leading-tight font-bold whitespace-nowrap [font-variation-settings:'opsz'_36] text-foreground shadow-[inset_0_2px_0_var(--primary)] transition-colors hover:bg-muted"
+            className="relative rounded-t-md bg-background px-4 py-1.5 font-display text-2xl leading-tight font-bold whitespace-nowrap [font-variation-settings:'opsz'_36] text-foreground shadow-[inset_0_3px_0_var(--primary)]"
           >
             {NAV_LINKS[currentIndex].label}
           </motion.button>
@@ -215,12 +212,12 @@ export function PageArrowNav() {
           <motion.div
             aria-hidden="true"
             style={{ x: nextShadowX, opacity: nextShadowOpacity }}
-            className="pointer-events-none absolute top-0 left-0 rounded-t-md border border-b-0 border-border bg-background px-4 py-1.5 font-display text-2xl leading-tight font-bold whitespace-nowrap [font-variation-settings:'opsz'_36] text-foreground shadow-[inset_0_2px_0_var(--primary)]"
+            className="pointer-events-none absolute top-0 left-0 rounded-t-md bg-background px-4 py-1.5 font-display text-2xl leading-tight font-bold whitespace-nowrap [font-variation-settings:'opsz'_36] text-foreground shadow-[inset_0_3px_0_var(--primary)]"
           >
             {NAV_LINKS[nextIndex].label}
           </motion.div>
         </motion.div>
-        <div className="flex flex-1 items-center justify-end border-b border-border">
+        <div className="flex flex-1 items-center justify-end pb-1">
           <Link
             href={NAV_LINKS[nextIndex].href}
             aria-label={`Go to ${NAV_LINKS[nextIndex].label}`}
