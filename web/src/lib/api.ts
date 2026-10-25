@@ -324,7 +324,7 @@ export interface PlayoffBracket {
 // field -- e.g. 2020 (playoffTeamCount 0) is absent entirely.
 export type PlayoffBracketsResponse = Record<string, PlayoffBracket>;
 
-class ApiError extends Error {
+export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
@@ -373,6 +373,53 @@ function post<T>(path: string, body: unknown, init?: RequestInit): Promise<T> {
 }
 
 export const getLeagueMeta = (init?: RequestInit) => apiFetch<LeagueMeta>("/league/meta", init);
+
+// --- Roster Optimizer (password-gated; see _planning/roster-optimizer.md) ---
+
+export type OptimizerCategory = "FG%" | "FT%" | "3PTM" | "REB" | "AST" | "STL" | "BLK" | "PTS";
+
+export interface OptimizerPlayer {
+  id: number;
+  name: string;
+  nba_team: string | null;
+  games_played: number;
+  // Share of the remaining season the player is expected to play (0-1).
+  availability: number;
+  injury_status: string | null;
+  // Blended per-game projection (real stats + ESPN projection).
+  per_game: Record<OptimizerCategory, number | null>;
+}
+
+export interface OptimizerSwap {
+  drop: OptimizerPlayer;
+  add: OptimizerPlayer;
+  score_gain: number;
+  // Weekly matchup-win chance (0-1) after this swap.
+  matchup_win_after: number | null;
+  // Change in each category's weekly win chance (0-1 scale) from this swap.
+  category_change: Record<OptimizerCategory, number>;
+}
+
+export interface RosterOptimizerResult {
+  team: string;
+  year: number;
+  max_swaps: number;
+  roster_size: number;
+  categories: OptimizerCategory[];
+  strongest: OptimizerCategory[];
+  // Expected share of weekly matchups won in each category (0-1).
+  start: Record<OptimizerCategory, number>;
+  end: Record<OptimizerCategory, number>;
+  start_matchup_win: number;
+  end_matchup_win: number;
+  start_score: number;
+  end_score: number;
+  swaps: OptimizerSwap[];
+  data_as_of: { player_stats: string | null; projections: string | null; rosters: string | null };
+}
+
+export const runRosterOptimizer = (req: { team: string; password: string; max_swaps: number }) =>
+  post<RosterOptimizerResult>("/league/roster_optimizer", req);
 
 // Every week of a season, keyed by week number as a string (JSON object
 // keys are always strings, even though the backend's dict is int-keyed --

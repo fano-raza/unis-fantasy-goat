@@ -47,6 +47,7 @@ from scripts.export_real_matchup_flags import main as export_real_matchup_flags 
 from scripts.export_team_summary import main as export_team_summary  # noqa: E402
 from scripts.export_playoff_brackets import main as export_playoff_brackets  # noqa: E402
 from scripts.export_player_stats import main as export_player_stats  # noqa: E402
+from scripts.export_player_projections import main as export_player_projections  # noqa: E402
 from scripts.export_roster_ranks import (  # noqa: E402
     append_roster_rank_history,
     append_team_roster_history,
@@ -154,6 +155,13 @@ def run_updater() -> None:
                     export_player_stats()
                 except Exception as player_stats_exc:
                     print(f"player_stats export warning: {player_stats_exc}")
+
+                # Roster Optimizer's prior: ESPN season projections, last
+                # season, injury status (see _planning/roster-optimizer.md).
+                try:
+                    export_player_projections(year)
+                except Exception as projections_exc:
+                    print(f"player_projections export warning: {projections_exc}")
 
                 # Team page's Roster sub-view: current-season roster/rank
                 # snapshot.

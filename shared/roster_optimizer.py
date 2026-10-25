@@ -197,12 +197,19 @@ def blend_players(
     proj = projections.set_index("PlayerId").reindex(stats.index)
 
     real, gp = _real_per_game(stats, window)
-    proj_line = pd.DataFrame({c: pd.to_numeric(proj.get(f"proj_{c}"), errors="coerce") for c in COMPONENTS})
-    last_line = pd.DataFrame({c: pd.to_numeric(proj.get(f"last_{c}"), errors="coerce") for c in COMPONENTS})
+
+    def col(name: str) -> pd.Series:
+        """A projections column as numbers; all-NaN if the export lacks it."""
+        if name in proj:
+            return pd.to_numeric(proj[name], errors="coerce")
+        return pd.Series(np.nan, index=proj.index)
+
+    proj_line = pd.DataFrame({c: col(f"proj_{c}") for c in COMPONENTS})
+    last_line = pd.DataFrame({c: col(f"last_{c}") for c in COMPONENTS})
     has_proj = proj_line.notna().all(axis=1)
     has_last = last_line.notna().all(axis=1)
 
-    last_gp = pd.to_numeric(proj.get("last_GP"), errors="coerce").fillna(0)
+    last_gp = col("last_GP").fillna(0)
     w_last = config.last_season_weight * np.minimum(1.0, last_gp / config.last_season_full_gp)
     w_last = w_last.where(has_proj & has_last, 0.0)
 
@@ -339,6 +346,9 @@ class Swap:
     gain: float
     objective: float
     ratings: dict[str, float]
+    # Weekly matchup-win probability (>= cats_to_win of 9, averaged over
+    # opponents) after this swap; None under the "ratings" objective.
+    matchup_win: float | None = None
 
 
 @dataclass
@@ -349,6 +359,7 @@ class OptimizerResult:
     start_ratings: dict[str, float]
     start_objective: float
     swaps: list[Swap] = field(default_factory=list)
+    start_matchup_win: float | None = None
 
     @property
     def end_ratings(self) -> dict[str, float]:
@@ -477,6 +488,11 @@ def optimize(
     weights = category_weights(targets, config)
     min_gain = config.min_gain_share if mode in ("matchup_wins", "standings") else config.min_gain
 
+    def matchup_win(own_values: np.ndarray) -> float | None:
+        if mode == "ratings":
+            return None
+        return float(at_least_k(probs(own_values), config.cats_to_win).mean(axis=-1))
+
     def score(own_values: np.ndarray) -> np.ndarray:
         if mode in ("ratings", "category_wins"):
             return _objective(metric(own_values), weights)
@@ -502,6 +518,7 @@ def optimize(
         other_weight=config.other_weight,
         start_ratings={c: float(start_metric[c]) for c in shown},
         start_objective=current,
+        start_matchup_win=matchup_win(category_values(team_sum)),
     )
 
     for _ in range(config.max_swaps):
@@ -533,6 +550,7 @@ def optimize(
                 gain=best - current,
                 objective=best,
                 ratings={c: v for c, v in zip(MAIN_CATS, metric(category_values(team_sum)).tolist()) if c in shown},
+                matchup_win=matchup_win(category_values(team_sum)),
             )
         )
         current = best

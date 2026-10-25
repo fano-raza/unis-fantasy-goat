@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hmac
+import os
 import threading
 import time
 from datetime import datetime, timezone
@@ -22,6 +24,7 @@ from .schemas import (
     QueryResponse,
     DraftPicksRequest,
     RecordsRequest,
+    RosterOptimizerRequest,
     RosterRanksRequest,
     ScheduleSwapRequest,
     SeasonLeadersRequest,
@@ -382,6 +385,25 @@ def league_roster_ranks(req: RosterRanksRequest) -> list[dict]:
         return league_store.roster_ranks(req.year)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/league/roster_optimizer")
+def league_roster_optimizer(req: RosterOptimizerRequest) -> dict:
+    """Password-gated Roster Optimizer (_planning/roster-optimizer.md). The
+    password lives only in the server's environment (ROSTER_OPTIMIZER_PASSWORD,
+    set from infra/docker/env/dashboard-api.env on the droplet) -- never in the
+    frontend bundle. Unset -> the feature is off (503)."""
+    expected = os.environ.get("ROSTER_OPTIMIZER_PASSWORD", "")
+    if not expected:
+        raise HTTPException(status_code=503, detail="The roster optimizer isn't set up on this server.")
+    if not hmac.compare_digest(req.password.encode(), expected.encode()):
+        raise HTTPException(status_code=401, detail="Wrong password.")
+    try:
+        return league_store.roster_optimizer(req.team, req.max_swaps)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc.args[0])) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.post("/league/nba_schedule")

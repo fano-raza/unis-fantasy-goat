@@ -675,3 +675,18 @@ def test_availability_calibration_is_applied_last():
     proj = pd.DataFrame([{**proj_row(1, PROJ), "proj_GP": 82}])
     out = ro.blend_players(stats, proj, ro.OptimizerConfig(availability_calibration=(0.065, 0.816)))
     assert out.loc[1, "availability"] == pytest.approx(0.065 + 0.816 * 1.0)
+
+
+def test_matchup_win_reported_for_probabilistic_objectives():
+    rng = np.random.default_rng(41)
+    players, rosters, fas = random_league(rng, teams=5, per_team=6, free_agents=14)
+    res = ro.optimize("t0", players, rosters, fas, ro.recommended_config())
+    assert 0 <= res.start_matchup_win <= 1
+    assert all(0 <= s.matchup_win <= 1 for s in res.swaps)
+    # Independent check with the slow scorer: matchup_wins objective == reported matchup_win.
+    cfg = ro.OptimizerConfig(objective="matchup_wins")
+    sums = ro.team_component_sums(players, rosters)
+    vals = pd.DataFrame(ro.category_values(sums.to_numpy()), index=sums.index, columns=ro.MAIN_CATS)
+    sigma = ro.category_sigma(vals, cfg)
+    assert res.start_matchup_win == pytest.approx(slow_objective("t0", players, rosters, sigma, [], cfg), abs=1e-6)
+    assert ro.optimize("t0", players, rosters, fas, ro.OptimizerConfig()).start_matchup_win is None

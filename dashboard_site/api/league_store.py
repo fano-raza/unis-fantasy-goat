@@ -11,6 +11,7 @@ if str(REPO_ROOT) not in sys.path:
 
 import pandas as pd  # noqa: E402
 
+from shared import roster_optimizer as ro  # noqa: E402
 from shared.weighted_rank import aggregate_rating, per_week_rating  # noqa: E402
 
 from .query_engine import StatsStore
@@ -73,6 +74,7 @@ class LeagueStore:
         self._team_summary_df: pd.DataFrame | None = None
         self._player_stats_df: pd.DataFrame | None = None
         self._roster_ranks_df: pd.DataFrame | None = None
+        self._player_projections_df: pd.DataFrame | None = None
         self._nba_schedule_df: pd.DataFrame | None = None
         self._week_calendar_df: pd.DataFrame | None = None
         self._weekly_recaps_df: pd.DataFrame | None = None
@@ -658,6 +660,127 @@ class LeagueStore:
             )
         self._week_calendar_df = pd.read_csv(path)
         return self._week_calendar_df
+
+    # ------------------------------------------------------------------
+    # Roster Optimizer (see _planning/roster-optimizer.md)
+    # ------------------------------------------------------------------
+
+    def _ref_path(self, name: str) -> Path | None:
+        ref_dir = getattr(self.store, "ref_dir", None)
+        return Path(ref_dir) / name if ref_dir else None
+
+    def _ensure_player_projections_df(self) -> pd.DataFrame:
+        if self._player_projections_df is not None:
+            return self._player_projections_df
+        path = self._ref_path("player_projections.csv")
+        if path is None or not path.exists():
+            raise ValueError(
+                "player_projections.csv not found -- run scripts/export_player_projections.py first"
+            )
+        self._player_projections_df = pd.read_csv(path)
+        return self._player_projections_df
+
+    def _season_days_elapsed(self, year: int, today: date | None = None) -> float | None:
+        """Days since week 1 started (Ref/week_calendar.csv), for the
+        optimizer's recent-playing-rate availability. None if unknown."""
+        try:
+            cal = self._ensure_week_calendar_df()
+        except ValueError:
+            return None
+        week1 = cal[(cal["Year"] == year) & (cal["Week"] == 1)]
+        if week1.empty:
+            return None
+        start = pd.Timestamp(week1["StartDate"].iloc[0]).date()
+        today = today or _eastern_today()
+        return float(max(0, (today - start).days))
+
+    def roster_optimizer(self, team: str, max_swaps: int = 3) -> dict:
+        """This week's recommended drop/add swaps for one fantasy team, from
+        the backtested configuration (ro.recommended_config()). Inputs are the
+        daily exports: player_stats.csv (real stats), player_projections.csv
+        (ESPN projection + injury status), roster_ranks.csv (who owns whom)."""
+        year = self.meta().get("current_year")
+        stats = self._ensure_player_stats_df()
+        projections = self._ensure_player_projections_df()
+        rr = self._ensure_roster_ranks_df()
+        rr = rr[rr["Year"] == year]
+
+        name_to_id = dict(zip(stats["Player"], stats["PlayerId"]))
+        rosters: dict[str, list] = {}
+        for row in rr.itertuples():
+            owner = row.FantasyTeam
+            if isinstance(owner, str) and owner and row.Player in name_to_id:
+                rosters.setdefault(owner, []).append(name_to_id[row.Player])
+        if team not in rosters:
+            raise KeyError(f"no {year} roster found for team {team!r}")
+        rostered = {pid for ids in rosters.values() for pid in ids}
+        free_agents = [pid for pid in stats["PlayerId"] if pid not in rostered]
+
+        max_swaps = max(1, min(int(max_swaps), len(rosters[team])))
+        config = ro.recommended_config(max_swaps=max_swaps)
+        days_elapsed = self._season_days_elapsed(year)
+        players = ro.blend_players(stats, projections, config, replacement_pool=pd.Index(free_agents),
+                                   days_elapsed=days_elapsed)
+        result = ro.optimize(team, players, rosters, free_agents, config)
+
+        def player_card(pid) -> dict:
+            p = players.loc[pid]
+            fga, fta = p["FGA"], p["FTA"]
+            return {
+                "id": int(pid),
+                "name": str(p["Player"]),
+                "nba_team": str(p["NBATeam"]) if p["NBATeam"] else None,
+                "games_played": int(p["GP"]),
+                "availability": round(float(p["availability"]), 3),
+                "injury_status": str(p["InjuryStatus"]) or None,
+                "per_game": {
+                    "PTS": round(float(p["PTS"]), 1), "REB": round(float(p["REB"]), 1),
+                    "AST": round(float(p["AST"]), 1), "3PTM": round(float(p["3PTM"]), 1),
+                    "STL": round(float(p["STL"]), 1), "BLK": round(float(p["BLK"]), 1),
+                    "FG%": round(float(p["FGM"] / fga), 3) if fga else None,
+                    "FT%": round(float(p["FTM"] / fta), 3) if fta else None,
+                },
+            }
+
+        cats = [c for c in ro.MAIN_CATS if c not in config.ignored_cats]
+        prev = result.start_ratings
+        swaps = []
+        for sw in result.swaps:
+            swaps.append({
+                "drop": player_card(sw.drop),
+                "add": player_card(sw.add),
+                "score_gain": round(sw.gain, 4),
+                "matchup_win_after": round(sw.matchup_win, 4) if sw.matchup_win is not None else None,
+                "category_change": {c: round(sw.ratings[c] - prev[c], 4) for c in cats},
+            })
+            prev = sw.ratings
+
+        def mtime(name: str) -> str | None:
+            path = self._ref_path(name)
+            if path is None or not path.exists():
+                return None
+            return pd.Timestamp(path.stat().st_mtime, unit="s", tz="UTC").isoformat()
+
+        return {
+            "team": team,
+            "year": year,
+            "max_swaps": max_swaps,
+            "roster_size": len(rosters[team]),
+            "categories": cats,
+            "strongest": result.targets,
+            "start": {c: round(result.start_ratings[c], 4) for c in cats},
+            "end": {c: round(result.end_ratings[c], 4) for c in cats},
+            "start_matchup_win": round(result.start_matchup_win, 4),
+            "end_matchup_win": round(result.swaps[-1].matchup_win if result.swaps else result.start_matchup_win, 4),
+            "start_score": round(result.start_objective, 4),
+            "end_score": round(result.end_objective, 4),
+            "swaps": swaps,
+            "data_as_of": {
+                "player_stats": mtime("player_stats.csv"),
+                "projections": mtime("player_projections.csv"),
+                "rosters": mtime("roster_ranks.csv"),
+            },
+        }
 
     def weekly_recap(self, year: int, week: int) -> dict | None:
         """The Monday "Week N Recap" post's content for the Weekly Stats page
@@ -1413,6 +1536,13 @@ class LeagueStore:
 
 
 _league_store: LeagueStore | None = None
+
+
+def _eastern_today() -> date:
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    return datetime.now(ZoneInfo("America/New_York")).date()
 
 
 def reset_league_store() -> None:

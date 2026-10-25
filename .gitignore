@@ -2,6 +2,9 @@
 .env
 .env.*
 !*.env.example
+# Real per-service env files (secrets, e.g. the Roster Optimizer password)
+# exist only on the droplet -- never commit them.
+infra/docker/env/*.env
 !**/*.env.example
 
 # Discord bot local secrets

@@ -115,6 +115,13 @@ class RosterRanksRequest(BaseModel):
     year: int
 
 
+class RosterOptimizerRequest(BaseModel):
+    team: str
+    password: str
+    # Upper bound is the team's roster size, clamped server-side.
+    max_swaps: int = Field(3, ge=1, le=20)
+
+
 class WeekCalendarRequest(BaseModel):
     year: int
 

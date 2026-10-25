@@ -64,6 +64,12 @@ services:
     container_name: unisfantasy-dashboard-api
     environment:
       FANTASY_REF_DIR: /srv/unisfantasy/data/ref
+    # ROSTER_OPTIMIZER_PASSWORD lives here, on the droplet only (see
+    # env/dashboard-api.env.example). Optional: without the file the Roster
+    # Optimizer endpoint just reports itself as off (503).
+    env_file:
+      - path: ./env/dashboard-api.env
+        required: false
     volumes:
       - /srv/unisfantasy/data:/srv/unisfantasy/data:ro
     restart: unless-stopped

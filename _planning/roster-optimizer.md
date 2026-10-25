@@ -2,7 +2,7 @@
 
 The single reference for the Roster Optimizer: what it does, how it decides, the evidence that it works, every decision made along the way, and the plan for putting it in the app. The build-plan doc ([web-app-build-plan.md](web-app-build-plan.md), Phase 6) holds the dated session history; this file holds the current state.
 
-**Status (2026-10-25):** algorithm built, tested and backtested on five past seasons. **Not in the app yet** — see [App integration plan](#app-integration-plan).
+**Status (2026-10-25):** built, backtested on five past seasons, and **live in the app**: an "Optimize roster" button on the Roster page (current season), password-protected. See [In the app](#in-the-app).
 
 ---
 
@@ -165,7 +165,17 @@ Any of these should go through the same backtest (and only be judged on seasons 
 
 ---
 
-## App integration plan
+## In the app
+
+Shipped 2026-10-25 (user decisions: a button on the Roster page; swaps per run a user setting up to roster size, default 3; anyone with the password can use it).
+
+- **Where:** Team → Roster, "Optimize roster" button in the controls row (shown only for the current season). Opens a dialog for the team the page is showing: password (remembered for the browser session after it's accepted), Swaps (1 to roster size, default 3), "Find swaps". Results: weekly matchup-win chance before → after, the ordered swaps (stat lines, availability, injury flag, which categories each helps/costs), and win chance by category with before/after bars. Component: [`web/src/components/roster-optimizer.tsx`](../web/src/components/roster-optimizer.tsx).
+- **Endpoint:** `POST /league/roster_optimizer` `{team, password, max_swaps}` → `LeagueStore.roster_optimizer` ([`league_store.py`](../dashboard_site/api/league_store.py)). Wrong password 401; no password configured 503 (feature off); unknown team 404; `max_swaps` clamped to the roster size. Runs in ~0.15 s.
+- **Data:** `export_player_projections` now runs in the stat-updater's daily loop (`Ref/player_projections.csv`); `days_elapsed` comes from week 1's start date in `Ref/week_calendar.csv` (US Eastern date).
+- **Password:** lives **only on the droplet** in `/opt/unisFantasyGOAT/infra/docker/env/dashboard-api.env` (`ROSTER_OPTIMIZER_PASSWORD=...`, mode 600, git-ignored; [`dashboard-api.env.example`](../infra/docker/env/dashboard-api.env.example) documents it). The compose file loads it as an optional `env_file` for `dashboard-api`. **To read it:** `ssh root@134.209.168.108 "grep ROSTER_OPTIMIZER_PASSWORD /opt/unisFantasyGOAT/infra/docker/env/dashboard-api.env"`. **To change it:** edit that line, then `cd /opt/unisFantasyGOAT && docker compose -f infra/docker/docker-compose.yml up -d dashboard-api && docker compose -f infra/docker/docker-compose.yml restart caddy`. The user can just ask Claude to do either.
+- **Tests:** [`tests/test_roster_optimizer_api.py`](../tests/test_roster_optimizer_api.py) (password handling, 404/422, response shape, clamping) — 62 tests total. `httpx` is installed in the local `.venv-dashboard` only (test dependency).
+
+## App integration plan (as planned, before shipping)
 
 Goal: a password-protected screen where you pick a team and get this week's recommended swaps, with a plain-language reason for each.
 

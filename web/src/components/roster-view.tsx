@@ -32,6 +32,7 @@ import { LabeledSelect } from "@/components/labeled-select";
 import { SteppableSelect } from "@/components/steppable-select";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { LoadingOverlay } from "@/components/loading-overlay";
+import { RosterOptimizerButton } from "@/components/roster-optimizer";
 import { cn } from "@/lib/utils";
 import {
   getNBASchedule,
@@ -323,6 +324,10 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
             <Switch checked={showFullWeek} onCheckedChange={setShowFullWeek} />
             <span className="text-muted-foreground">Full Week Grid</span>
           </label>
+          {/* Works on current rosters and free agents, so current season only. */}
+          {year === meta.current_year && (
+            <RosterOptimizerButton team={team} rosterSize={teamRoster.length} />
+          )}
         </CardContent>
       </Card>
 
