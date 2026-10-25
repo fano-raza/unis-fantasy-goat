@@ -193,6 +193,27 @@ Shipped 2026-10-25 (user decisions: a button on the Roster page; swaps per run a
 - **Password:** lives **only on the droplet** in `/opt/unisFantasyGOAT/infra/docker/env/dashboard-api.env` (`ROSTER_OPTIMIZER_PASSWORD=...`, mode 600, git-ignored; [`dashboard-api.env.example`](../infra/docker/env/dashboard-api.env.example) documents it). The compose file loads it as an optional `env_file` for `dashboard-api`. **To read it:** `ssh root@134.209.168.108 "grep ROSTER_OPTIMIZER_PASSWORD /opt/unisFantasyGOAT/infra/docker/env/dashboard-api.env"`. **To change it:** edit that line, then `cd /opt/unisFantasyGOAT && docker compose -f infra/docker/docker-compose.yml up -d dashboard-api && docker compose -f infra/docker/docker-compose.yml restart caddy`. The user can just ask Claude to do either.
 - **Tests:** [`tests/test_roster_optimizer_api.py`](../tests/test_roster_optimizer_api.py) (password handling, 404/422, response shape, clamping) — 62 tests total. `httpx` is installed in the local `.venv-dashboard` only (test dependency).
 
+## Performance on the droplet (measured 2026-10-25)
+
+| | Result |
+|---|---|
+| Server-side time per run | 0.7–0.9 s warm, ~1.1 s on the first request after a restart (loads CSVs). Projection blend 0.04 s; the search over ~960 free agents is the rest. |
+| End-to-end, as the user sees it | 1–3 s (varies with the droplet's memory pressure) |
+| Extra memory per run | ~50 MB, released after |
+| Swaps set to roster size | Not heavier in practice — the search stops when no swap clears the 0.01 bar (usually 2–4 swaps) |
+
+The constraint is the droplet itself: 961 MB RAM, ~97 MB available and ~1.9 GB of swap in use **before** the optimizer runs. One run at a time is fine; several simultaneous runs (~50 MB each) would slow things and could risk out-of-memory. Options if needed (none done yet): (1) only search the top ~200–250 free agents (best overall + best few per category) — ~4–5x lighter, verify on the backtest data that picks don't change first; (2) cache each team's result for the day (inputs change daily); (3) upgrade the droplet to 2 GB RAM (helps everything on it).
+
+## Open items (as of 2026-10-25)
+
+1. **Recent form** — tested; recommended to switch on (`recent_form_window="d14"`, +0.18 wins/season, positive in all 5 seasons, not significant). Awaiting the user's go-ahead; it's off in the live tool.
+2. **Performance hardening** — see options above; recommended option (1) if the user wants it.
+3. **Opponent-aware variants** — untested (see Ideas not yet tested).
+4. **`Ref/week_calendar.csv` is wrong around the All-Star break for 2019–2023** (ESPN seasons) — likely breaks the Roster page's week picker for those seasons. Not fixed.
+5. **Each new season:** make sure `Ref/week_calendar.csv` has week 1's `StartDate` for the new year (drives `days_elapsed`), `espnLeagueIDs`/`espnTeamIDs` in `constants.py` include the year, and the projections export runs (it uses `currentYear`).
+6. **Backtest data isn't in the repo** (too large; regenerate it). It was exported to the droplet host at `/tmp/bt_host/` (`<year>_games/projections/rosters/weeks.csv` for 2019–2023 — gone after a reboot). To rebuild: for each year, `ssh root@134.209.168.108 "cd /opt/unisFantasyGOAT && docker compose -f infra/docker/docker-compose.yml exec -T stat-updater python3 -m scripts.export_backtest_data --year <year> --out /tmp/backtest"` (~5 min/season; mostly the day-by-day roster pulls), then `docker compose ... cp stat-updater:/tmp/backtest /tmp/bt_host` and `scp 'root@134.209.168.108:/tmp/bt_host/*' <local dir>`. The scripts also need `Ref/<year>_CompStats.csv` (the local ref dir or the droplet's `/srv/unisfantasy/data/ref`). No 2018 league ID is configured, so 2019 runs without a last-season prior.
+7. **Pre-existing lint errors** in `web/src/components/roster-view.tsx` (4, unrelated to the optimizer button).
+
 ## App integration plan (as planned, before shipping)
 
 Goal: a password-protected screen where you pick a team and get this week's recommended swaps, with a plain-language reason for each.
