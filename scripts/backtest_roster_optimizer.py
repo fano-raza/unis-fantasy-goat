@@ -102,6 +102,18 @@ def checkpoint_inputs(s: Season, cutoff_sp: int) -> tuple[pd.DataFrame, pd.DataF
     t = totals.reindex(universe).fillna(0)
     stats["season_GP"] = g
     stats["d30_GP"] = before[before["ScoringPeriod"] >= cutoff_sp - 30].groupby("PlayerId").size().reindex(universe).fillna(0).to_numpy()
+    # Last-14-day window in the same shape as Ref/player_stats.csv's d14_*
+    # columns (for the optimizer's optional recent-form blend).
+    recent = before[before["ScoringPeriod"] >= cutoff_sp - 14]
+    rtot, rgp = _per_game(recent)
+    rg = rgp.reindex(universe).fillna(0).to_numpy()
+    rt = rtot.reindex(universe).fillna(0)
+    stats["d14_GP"] = rg
+    stats["d14_FG%_made"], stats["d14_FG%_att"] = rt["FGM"].to_numpy(), rt["FGA"].to_numpy()
+    stats["d14_FT%_made"], stats["d14_FT%_att"] = rt["FTM"].to_numpy(), rt["FTA"].to_numpy()
+    with np.errstate(invalid="ignore", divide="ignore"):
+        for cat in ["3PTM", "REB", "AST", "STL", "BLK", "TO", "PTS"]:
+            stats[f"d14_{cat}_avg"] = np.where(rg > 0, rt[cat].to_numpy() / np.where(rg > 0, rg, 1), np.nan)
     stats["season_FG%_made"], stats["season_FG%_att"] = t["FGM"].to_numpy(), t["FGA"].to_numpy()
     stats["season_FT%_made"], stats["season_FT%_att"] = t["FTM"].to_numpy(), t["FTA"].to_numpy()
     with np.errstate(invalid="ignore", divide="ignore"):

@@ -129,6 +129,23 @@ Weekly use with the standings objective: +0.73 matchup wins per case [+0.46, +1.
 - **Password-protected, server-side, password chosen by the user.**
 - User asked about 3 changes a week: backtested — harmless, slightly positive (+0.16 wins [−0.01, +0.35]); recommended default is up to 3.
 
+## Recent form (tested 2026-10-25)
+
+Question: is there an advantage to weighting players' last week or two instead of (or alongside) season averages?
+
+- **Player predictions** ([`scripts/analysis_recent_form.py`](../scripts/analysis_recent_form.py); every weekly checkpoint weeks 3–18, ~5,000 player-checkpoints per season and horizon; tuned on 2019–2021, confirmed on 2022–2023): blending a little recent form in helps; leaning on it hurts.
+
+  | Weight on recent form | Error, next 2 weeks | Error, rest of season |
+  |---|---|---|
+  | Last 14 days at 20% (best) | −1.2% (hold-out −1.3%) | −0.5% |
+  | Last 7 days at 10% | −1.0% | −0.6% |
+  | Last 7 days at 50% | +8.6% worse | +18% worse |
+  | Last 7 days at 70% | +21% worse | +40% worse |
+
+  Gains are concentrated in role-driven stats (shot attempts −4.5 to −6%, points/rebounds/assists/makes −2 to −2.5%); steals and blocks gain nothing (short stretches are noise).
+- **Standings** (weekly from week 1, up to 3 swaps, 46 team-seasons): season-only +2.60 wins vs standing pat; with last-14-day form (per-category weights 0.3 PTS/FG, 0.2 most, 0.1 STL/BLK) **+2.78**. Difference **+0.18 wins/season [−0.12, +0.50]** — positive in all 5 seasons (2019 +0.06, 2020 +0.11, 2021 +0.11, 2022 +0.40, 2023 +0.20) but not statistically significant.
+- **Status:** available as `OptimizerConfig(recent_form_window="d14")` (weights in `recent_form_weight`), **off by default** pending the user's call. The live `player_stats.csv` already has the `d14_*` columns it needs.
+
 ## Ideas not yet tested
 
 - **Remaining-schedule weighting:** weight opponents by how often you still face them. Still season-long; probably the more promising variant.
@@ -147,6 +164,7 @@ Any of these should go through the same backtest (and only be judged on seasons 
 | [`scripts/export_backtest_data.py`](../scripts/export_backtest_data.py) | Historical season export for the backtest (stat-updater container) |
 | [`scripts/backtest_roster_optimizer.py`](../scripts/backtest_roster_optimizer.py) | Checkpoint + weekly backtest, calibration, summaries with CIs |
 | [`scripts/backtest_weekly_strategies.py`](../scripts/backtest_weekly_strategies.py) | Weekly-from-week-1 comparison: optimizer (2/3 per week), rank swaps, stand pat, managers |
+| [`scripts/analysis_recent_form.py`](../scripts/analysis_recent_form.py) | Recent-form (last 7/14 days) weighting vs player prediction error |
 | [`tests/test_roster_optimizer.py`](../tests/test_roster_optimizer.py), [`tests/test_backtest.py`](../tests/test_backtest.py) | 53 tests, including brute-force checks of every objective |
 
 ```sh

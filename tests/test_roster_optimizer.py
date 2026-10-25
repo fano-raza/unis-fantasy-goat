@@ -690,3 +690,19 @@ def test_matchup_win_reported_for_probabilistic_objectives():
     sigma = ro.category_sigma(vals, cfg)
     assert res.start_matchup_win == pytest.approx(slow_objective("t0", players, rosters, sigma, [], cfg), abs=1e-6)
     assert ro.optimize("t0", players, rosters, fas, ro.OptimizerConfig()).start_matchup_win is None
+
+
+def test_recent_form_blend():
+    # 10 season games at 20 PTS, last-14-day average 30 PTS over 4 games.
+    row = {**stats_row(1, "a", 10, line(PTS=20, FGM=8, FGA=16)), **stats_row(1, "a", 4, line(PTS=30, FGM=12, FGA=20), window="d14")}
+    stats = pd.DataFrame([row])
+    proj = pd.DataFrame([proj_row(1, line(PTS=20, FGM=8, FGA=16))])
+    off = ro.blend_players(stats, proj, ro.OptimizerConfig(k_games=15)).loc[1]
+    on = ro.blend_players(stats, proj, ro.OptimizerConfig(k_games=15, recent_form_window="d14")).loc[1]
+    w = 10 / 25
+    assert off["PTS"] == pytest.approx(w * 20 + (1 - w) * 20)
+    assert on["PTS"] == pytest.approx(w * (0.7 * 20 + 0.3 * 30) + (1 - w) * 20)
+    # No games in the window -> season average unchanged.
+    row0 = {**stats_row(1, "a", 10, line(PTS=20, FGM=8, FGA=16)), **stats_row(1, "a", 0, window="d14")}
+    zero = ro.blend_players(pd.DataFrame([row0]), proj, ro.OptimizerConfig(k_games=15, recent_form_window="d14")).loc[1]
+    assert zero["PTS"] == pytest.approx(off["PTS"])

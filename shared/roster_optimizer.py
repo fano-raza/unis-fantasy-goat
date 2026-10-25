@@ -36,6 +36,17 @@ _IDX = {c: i for i, c in enumerate(COMPONENTS)}
 
 @dataclass
 class OptimizerConfig:
+    # Recent form: the "real" part of the blend becomes (1 - w) x season-to-date
+    # + w x the player's average over `recent_form_window` (when he played in
+    # it). Fitted 2026-10-25 on player-level prediction error (dev 2019-2021,
+    # confirmed on 2022-2023): ~20% of the last 14 days cuts next-2-weeks error
+    # ~1.2% (role stats -- shot attempts, points -- most; steals/blocks are
+    # noise); heavier weights hurt fast (last 7 days at 50% = +9% error).
+    # None disables it.
+    recent_form_window: str | None = None
+    recent_form_weight: dict = field(default_factory=lambda: {
+        "PTS": 0.3, "FGM": 0.3, "FGA": 0.3, "FTM": 0.2, "FTA": 0.2, "3PTM": 0.2,
+        "REB": 0.2, "AST": 0.2, "STL": 0.1, "BLK": 0.1, "TO": 0.2})
     # Real-stat weight = GP / (GP + k), per component. Fitted 2026-10-24 by
     # player-level prediction error (blend vs actual rest-of-season per-game,
     # dev seasons 2019-2021, checkpoints weeks 5/10/15, players with >= 10
@@ -197,6 +208,13 @@ def blend_players(
     proj = projections.set_index("PlayerId").reindex(stats.index)
 
     real, gp = _real_per_game(stats, window)
+    rw = config.recent_form_window
+    if rw and f"{rw}_GP" in stats:
+        recent, rgp = _real_per_game(stats, rw)
+        played = (rgp > 0) & real.notna().all(axis=1) & recent.notna().all(axis=1)
+        for c in COMPONENTS:
+            a = config.recent_form_weight.get(c, 0.0)
+            real.loc[played, c] = (1 - a) * real.loc[played, c] + a * recent.loc[played, c]
 
     def col(name: str) -> pd.Series:
         """A projections column as numbers; all-NaN if the export lacks it."""
