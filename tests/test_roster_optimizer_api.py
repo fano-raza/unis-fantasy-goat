@@ -44,6 +44,18 @@ def test_unknown_team_is_404(monkeypatch):
     assert client.post(URL, json={"team": "Nobody", "password": "secret"}).status_code == 404
 
 
+CHECK_URL = "/league/roster_optimizer/check_password"
+
+
+def test_check_password(monkeypatch):
+    monkeypatch.delenv("ROSTER_OPTIMIZER_PASSWORD", raising=False)
+    assert client.post(CHECK_URL, json={"password": "secret"}).status_code == 503
+    monkeypatch.setenv("ROSTER_OPTIMIZER_PASSWORD", "secret")
+    assert client.post(CHECK_URL, json={"password": "wrong"}).status_code == 401
+    r = client.post(CHECK_URL, json={"password": "secret"})
+    assert r.status_code == 200 and r.json() == {"ok": True}
+
+
 def test_max_swaps_validated():
     assert client.post(URL, json={"team": "Fano", "password": "x", "max_swaps": 0}).status_code == 422
 

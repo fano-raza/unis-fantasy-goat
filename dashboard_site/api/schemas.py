@@ -115,6 +115,10 @@ class RosterRanksRequest(BaseModel):
     year: int
 
 
+class RosterOptimizerPasswordRequest(BaseModel):
+    password: str
+
+
 class RosterOptimizerRequest(BaseModel):
     team: str
     password: str

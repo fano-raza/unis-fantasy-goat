@@ -24,6 +24,7 @@ from .schemas import (
     QueryResponse,
     DraftPicksRequest,
     RecordsRequest,
+    RosterOptimizerPasswordRequest,
     RosterOptimizerRequest,
     RosterRanksRequest,
     ScheduleSwapRequest,
@@ -387,17 +388,30 @@ def league_roster_ranks(req: RosterRanksRequest) -> list[dict]:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@app.post("/league/roster_optimizer")
-def league_roster_optimizer(req: RosterOptimizerRequest) -> dict:
-    """Password-gated Roster Optimizer (_planning/roster-optimizer.md). The
-    password lives only in the server's environment (ROSTER_OPTIMIZER_PASSWORD,
-    set from infra/docker/env/dashboard-api.env on the droplet) -- never in the
-    frontend bundle. Unset -> the feature is off (503)."""
+def _check_roster_optimizer_password(password: str) -> None:
+    """The password lives only in the server's environment
+    (ROSTER_OPTIMIZER_PASSWORD, set from infra/docker/env/dashboard-api.env on
+    the droplet) -- never in the frontend bundle. Unset -> the feature is off
+    (503); wrong -> 401."""
     expected = os.environ.get("ROSTER_OPTIMIZER_PASSWORD", "")
     if not expected:
         raise HTTPException(status_code=503, detail="The roster optimizer isn't set up on this server.")
-    if not hmac.compare_digest(req.password.encode(), expected.encode()):
+    if not hmac.compare_digest(password.encode(), expected.encode()):
         raise HTTPException(status_code=401, detail="Wrong password.")
+
+
+@app.post("/league/roster_optimizer/check_password")
+def league_roster_optimizer_check_password(req: RosterOptimizerPasswordRequest) -> dict:
+    """Lets the Roster page confirm the password before asking how many swaps
+    to run, without running the optimizer itself."""
+    _check_roster_optimizer_password(req.password)
+    return {"ok": True}
+
+
+@app.post("/league/roster_optimizer")
+def league_roster_optimizer(req: RosterOptimizerRequest) -> dict:
+    """Password-gated Roster Optimizer (_planning/roster-optimizer.md)."""
+    _check_roster_optimizer_password(req.password)
     try:
         return league_store.roster_optimizer(req.team, req.max_swaps)
     except KeyError as exc:
