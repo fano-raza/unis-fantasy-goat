@@ -28,7 +28,12 @@ API_BASE_URL = os.getenv("DASHBOARD_API_BASE_URL", "http://dashboard-api:8090")
 
 EASTERN = ZoneInfo("America/New_York")
 DAILY_GAMES_SYNC_HOUR = 4  # local (America/New_York) hour to run the daily #daily-games scan
-WEEKLY_RANKINGS_RUN_HOUR = 12  # local hour to run the Monday "Week N Rankings" post (target ~12:30PM)
+# Monday "Week N Recap" post goes out at 11:30 AM Eastern (user request,
+# 2026-10-25). The loop below ticks every WEEKLY_RANKINGS_CHECK_MINUTES, so
+# the post lands within that many minutes of this time regardless of when
+# the bot last restarted (an hourly tick drifted with each deploy).
+WEEKLY_RANKINGS_RUN_TIME = (11, 30)  # (hour, minute), America/New_York
+WEEKLY_RANKINGS_CHECK_MINUTES = 5
 
 
 def _load_user_team_maps() -> tuple[dict[str, str], dict[str, list[str]]]:
@@ -155,10 +160,10 @@ def run_bot() -> None:
         except Exception as exc:
             print(f"Daily games sync failed, will retry next hour: {exc}")
 
-    @tasks.loop(hours=1)
+    @tasks.loop(minutes=WEEKLY_RANKINGS_CHECK_MINUTES)
     async def _weekly_rankings_loop() -> None:
         now_eastern = datetime.now(EASTERN)
-        if now_eastern.weekday() != 0 or now_eastern.hour < WEEKLY_RANKINGS_RUN_HOUR:
+        if now_eastern.weekday() != 0 or (now_eastern.hour, now_eastern.minute) < WEEKLY_RANKINGS_RUN_TIME:
             return
         try:
             meta = await _api_get("/league/meta")
@@ -189,7 +194,7 @@ def run_bot() -> None:
                 _write_last_weekly_rankings_run(year, week)
                 print(f"Weekly rankings posted for {year} week {week}")
         except Exception as exc:
-            print(f"Weekly rankings post failed, will retry next hour: {exc}")
+            print(f"Weekly rankings post failed, will retry in {WEEKLY_RANKINGS_CHECK_MINUTES} min: {exc}")
 
     def _resolve_team(user: disnake.User | disnake.Member) -> Optional[str]:
         return by_user_id.get(str(user.id))
