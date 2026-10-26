@@ -1,24 +1,22 @@
 "use client";
 
 import { useState, type FormEvent, type ReactNode } from "react";
-import { ArrowLeftRight, ArrowRight, Lock, Minus, Plus } from "lucide-react";
+import { ArrowLeftRight, ArrowRight, Crown, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SteppableSelect } from "@/components/steppable-select";
 import { cn } from "@/lib/utils";
 import { ordinal } from "@/lib/team-summary-fields";
+import { usePremium } from "@/components/premium";
 import {
   ApiError,
-  checkRosterOptimizerPassword,
   runRosterOptimizer,
+  type OptimizerCategory,
   type RosterOptimizerResult,
   type RosterRankRow,
 } from "@/lib/api";
 
-// Kept for the browser session only, after the server has accepted it --
-// the password itself is checked server-side (never shipped in the bundle).
-const PASSWORD_KEY = "roster-optimizer-password";
 // The optimizer itself answers in well under a second; holding the loading
 // veil up this long lets a couple of OPTIMIZER_PHRASES actually be read.
 const MIN_RUN_MS = 3000;
@@ -27,43 +25,26 @@ export const OPTIMIZER_PHRASE_MS = 1500;
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 const pts = (x: number) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.abs(Math.round(x * 100))}`;
 
-function readStoredPassword(): string {
-  try {
-    return sessionStorage.getItem(PASSWORD_KEY) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-function storePassword(password: string | null) {
-  try {
-    if (password) sessionStorage.setItem(PASSWORD_KEY, password);
-    else sessionStorage.removeItem(PASSWORD_KEY);
-  } catch {}
-}
-
-function errorMessage(err: unknown): { text: string; badPassword: boolean } {
+function errorMessage(err: unknown): string {
   if (err instanceof ApiError) {
-    if (err.status === 401) return { text: "That password didn't work.", badPassword: true };
     let detail = "";
     try {
       detail = JSON.parse(err.message).detail ?? "";
     } catch {}
-    if (err.status === 503) return { text: detail || "The optimizer isn't available right now.", badPassword: false };
-    if (err.status === 404) return { text: detail || "No current roster found for this team.", badPassword: false };
+    if (err.status === 503) return detail || "The optimizer isn't available right now.";
+    if (err.status === 404) return detail || "No current roster found for this team.";
   }
-  return { text: "Couldn't reach the server. Try again in a moment.", badPassword: false };
+  return "Couldn't reach the server. Try again in a moment.";
 }
 
-type Step = "password" | "swaps";
-
 /**
- * "Optimize" button for the Roster page (current season only). Asks for the
- * password (checked by the server, then remembered for the browser session),
- * then how many players to swap out, then closes and runs the backtested
- * Roster Optimizer for `team` -- the page shows the loading veil while
- * `onRunningChange(true)` and the comparison once `onResult` fires. See
- * _planning/roster-optimizer.md.
+ * "Optimize" button for the Roster page (current season only) -- a premium
+ * feature: visible to everyone, but clicking it while premium is locked
+ * opens the premium login first (components/premium.tsx), then continues
+ * straight into this dialog. Asks how many players to swap out, then
+ * closes and runs the backtested Roster Optimizer for `team` -- the page
+ * shows the loading veil while `onRunningChange(true)` and the comparison
+ * once `onResult` fires. See _planning/roster-optimizer.md.
  */
 export function RosterOptimizerButton({
   team,
@@ -78,58 +59,39 @@ export function RosterOptimizerButton({
   onRunningChange: (running: boolean) => void;
   onResult: (result: RosterOptimizerResult) => void;
 }) {
+  const premium = usePremium();
   const [open, setOpen] = useState(false);
-  const [step, setStep] = useState<Step>("password");
-  const [password, setPassword] = useState("");
   const [maxSwaps, setMaxSwaps] = useState(3);
-  const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function openDialog() {
-    const stored = readStoredPassword();
-    setPassword(stored);
-    setStep(stored ? "swaps" : "password");
-    setMaxSwaps((n) => Math.max(1, Math.min(n, rosterSize)));
-    setError(null);
-    setOpen(true);
-  }
-
-  async function submitPassword(e: FormEvent) {
-    e.preventDefault();
-    if (!password) return;
-    setChecking(true);
-    setError(null);
-    try {
-      await checkRosterOptimizerPassword(password);
-      storePassword(password);
-      setStep("swaps");
-    } catch (err) {
-      setError(errorMessage(err).text);
-      setPassword("");
-    } finally {
-      setChecking(false);
-    }
+    premium.requireUnlock(() => {
+      setMaxSwaps((n) => Math.max(1, Math.min(n, rosterSize)));
+      setError(null);
+      setOpen(true);
+    });
   }
 
   async function submitSwaps(e: FormEvent) {
     e.preventDefault();
+    if (!premium.password) return;
     setOpen(false);
     onRunningChange(true);
     try {
       const [result] = await Promise.all([
-        runRosterOptimizer({ team, password, max_swaps: maxSwaps }),
+        runRosterOptimizer({ team, password: premium.password, max_swaps: maxSwaps }),
         new Promise((resolve) => setTimeout(resolve, MIN_RUN_MS)),
       ]);
       onResult(result);
     } catch (err) {
-      const { text, badPassword } = errorMessage(err);
-      if (badPassword) {
-        storePassword(null);
-        setPassword("");
-        setStep("password");
+      if (err instanceof ApiError && err.status === 401) {
+        // Password changed on the server since this session unlocked.
+        premium.lock();
+        premium.requireUnlock(() => setOpen(true));
+      } else {
+        setError(errorMessage(err));
+        setOpen(true);
       }
-      setError(text);
-      setOpen(true);
     } finally {
       onRunningChange(false);
     }
@@ -142,6 +104,7 @@ export function RosterOptimizerButton({
       <Button type="button" size="sm" onClick={openDialog} disabled={disabled || !team || rosterSize === 0}>
         <ArrowLeftRight className="size-4" />
         Optimize
+        <Crown className={cn("size-3.5 text-gold", premium.unlocked && "fill-current")} aria-label="Premium" />
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-md">
@@ -150,48 +113,20 @@ export function RosterOptimizerButton({
               Optimize {team}&apos;s roster
             </DialogTitle>
             <DialogDescription>
-              {step === "password"
-                ? "Enter the optimizer password to continue."
-                : "Finds the free-agent pickups that most raise this team's chances of winning its weekly matchups, based on projected production for the rest of the season."}
+              Finds the free-agent pickups that most raise this team&apos;s chances of winning its weekly matchups,
+              based on projected production for the rest of the season.
             </DialogDescription>
           </DialogHeader>
-
-          {step === "password" ? (
-            <form onSubmit={submitPassword} className="flex flex-wrap items-end gap-3">
-              <label className="flex flex-col gap-1.5">
-                <span className="label">Password</span>
-                <span className="relative">
-                  <Lock className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => {
-                      setPassword(e.target.value);
-                      setError(null);
-                    }}
-                    autoFocus
-                    autoComplete="current-password"
-                    className="h-8 w-52 rounded-md border border-input bg-background pr-3 pl-8 text-sm outline-none focus-visible:border-ring"
-                  />
-                </span>
-              </label>
-              <Button type="submit" size="sm" disabled={checking || !password}>
-                {checking ? "Checking…" : "Continue"}
+          <form onSubmit={submitSwaps} className="flex flex-col gap-4">
+            <p className="text-sm font-medium">How many players are you willing to swap out?</p>
+            <div className="flex flex-wrap items-end gap-3">
+              <SteppableSelect label="Up to" value={maxSwaps} onValueChange={setMaxSwaps} options={swapOptions} />
+              <Button type="submit" size="sm">
+                <ArrowLeftRight className="size-4" />
+                Optimize
               </Button>
-            </form>
-          ) : (
-            <form onSubmit={submitSwaps} className="flex flex-col gap-4">
-              <p className="text-sm font-medium">How many players are you willing to swap out?</p>
-              <div className="flex flex-wrap items-end gap-3">
-                <SteppableSelect label="Up to" value={maxSwaps} onValueChange={setMaxSwaps} options={swapOptions} />
-                <Button type="submit" size="sm">
-                  <ArrowLeftRight className="size-4" />
-                  Optimize
-                </Button>
-              </div>
-            </form>
-          )}
-
+            </div>
+          </form>
           {error && <p className="text-sm text-loss">{error}</p>}
         </DialogContent>
       </Dialog>
@@ -434,26 +369,73 @@ function CategoryDetails({ result }: { result: RosterOptimizerResult }) {
   return (
     <details className="group">
       <summary className="cursor-pointer text-sm font-semibold select-none">Win chance by category</summary>
-      <div className="mt-3 grid max-w-xl grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-1.5 text-sm">
-        {result.categories.map((cat) => {
-          const before = result.start[cat];
-          const after = result.end[cat];
-          const delta = after - before;
+      <div className="mt-3">
+        <CategoryOddsBars
+          categories={result.categories}
+          strongest={result.strongest}
+          before={result.start}
+          after={result.end}
+          afterLabel="after the swaps"
+        />
+      </div>
+    </details>
+  );
+}
+
+/**
+ * Weekly win chance per category as bars: `before` alone, or `before`
+ * (grey) with `after` drawn over it and the change in points. Shared by the
+ * optimizer's results and the Roster page's premium category panel.
+ */
+export function CategoryOddsBars({
+  categories,
+  strongest,
+  before,
+  after,
+  afterLabel,
+}: {
+  categories: OptimizerCategory[];
+  strongest: OptimizerCategory[];
+  before: Record<OptimizerCategory, number>;
+  // Omitted (or identical to before) -> just the current chances.
+  after?: Record<OptimizerCategory, number>;
+  // Completes "...before (grey) and ___", e.g. "after the swaps".
+  afterLabel?: string;
+}) {
+  const changed = after != null && categories.some((c) => Math.abs(after[c] - before[c]) > 0.0005);
+  return (
+    <div>
+      <div className="grid max-w-xl grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-1.5 text-sm">
+        {categories.map((cat) => {
+          const b = before[cat];
+          const a = changed ? after![cat] : b;
+          const delta = a - b;
           return (
             <div key={cat} className="contents">
-              <span className={cn("w-12 font-medium", result.strongest.includes(cat) && "text-primary")}>{cat}</span>
+              <span className={cn("w-12 font-medium", strongest.includes(cat) && "text-primary")}>{cat}</span>
               <div className="relative h-2 overflow-hidden rounded-full bg-muted" aria-hidden>
-                <div className="absolute inset-y-0 left-0 rounded-full bg-foreground/25" style={{ width: pct(before) }} />
                 <div
-                  className={cn("absolute inset-y-0 left-0 rounded-full", delta >= 0 ? "bg-win/80" : "bg-loss/80")}
-                  style={{ width: pct(after), opacity: 0.85 }}
+                  className={cn("absolute inset-y-0 left-0 rounded-full", changed ? "bg-foreground/25" : "bg-primary/70")}
+                  style={{ width: pct(b) }}
                 />
+                {changed && (
+                  <div
+                    className={cn("absolute inset-y-0 left-0 rounded-full", delta >= 0 ? "bg-win/80" : "bg-loss/80")}
+                    style={{ width: pct(a), opacity: 0.85 }}
+                  />
+                )}
               </div>
               <span className="w-28 text-right tabular-nums">
-                <span className="text-muted-foreground">{pct(before)}</span> → {pct(after)}{" "}
-                <span className={cn("text-xs", delta > 0.005 ? "text-win" : delta < -0.005 ? "text-loss" : "text-muted-foreground")}>
-                  {pts(delta)}
-                </span>
+                {changed ? (
+                  <>
+                    <span className="text-muted-foreground">{pct(b)}</span> → {pct(a)}{" "}
+                    <span className={cn("text-xs", delta > 0.005 ? "text-win" : delta < -0.005 ? "text-loss" : "text-muted-foreground")}>
+                      {pts(delta)}
+                    </span>
+                  </>
+                ) : (
+                  pct(b)
+                )}
               </span>
             </div>
           );
@@ -461,9 +443,9 @@ function CategoryDetails({ result }: { result: RosterOptimizerResult }) {
       </div>
       <p className="mt-2 text-xs text-muted-foreground">
         Blue categories are this team&apos;s current strengths. Bars show how often it would win each category in a
-        typical week, before (grey) and after the swaps.
+        typical week{changed ? `, before (grey) and ${afterLabel ?? "after"}` : ""}.
       </p>
-    </details>
+    </div>
   );
 }
 

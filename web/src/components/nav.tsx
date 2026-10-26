@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PremiumNavButton } from "@/components/premium";
 
 export const NAV_LINKS = [
   { href: "/", label: "Weekly Stats" },
@@ -58,6 +59,8 @@ export function Nav() {
           </Link>
         );
       })}
+      {/* Rightmost tab, after Champions Lounge (user request, 2026-10-25). */}
+      <PremiumNavButton variant="tab" />
     </nav>
   );
 }

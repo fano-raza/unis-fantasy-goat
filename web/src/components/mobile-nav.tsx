@@ -11,6 +11,7 @@ import { Dialog, DialogClose, DialogPortal } from "@/components/ui/dialog";
 import { NAV_LINKS } from "@/components/nav";
 import { useMobileMenu } from "@/components/mobile-menu-context";
 import { LightModeSwitch } from "@/components/light-mode-switch";
+import { PremiumNavButton } from "@/components/premium";
 import { STANDINGS_VIEW_OPTIONS, STANDINGS_VIEW_PATHS } from "@/lib/standings-nav";
 import { TEAM_PLAYERS_VIEW_OPTIONS, TEAM_PLAYERS_VIEW_PATHS } from "@/lib/team-players-nav";
 
@@ -159,9 +160,13 @@ export function MobileNav() {
               </div>
             );
           })}
-          {/* mt-auto pins it to the bottom of the full-height drawer. */}
-          <div className="mt-auto px-3 pt-6 pb-2">
-            <LightModeSwitch />
+          {/* mt-auto pins Premium + settings to the bottom of the
+              full-height drawer; Premium sits just above the settings. */}
+          <div className="mt-auto flex flex-col gap-3 pt-6 pb-2">
+            <PremiumNavButton variant="drawer" onClick={() => setOpen(false)} />
+            <div className="px-3">
+              <LightModeSwitch />
+            </div>
           </div>
         </DialogPrimitive.Popup>
       </DialogPortal>

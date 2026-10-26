@@ -421,10 +421,34 @@ export interface RosterOptimizerResult {
 export const runRosterOptimizer = (req: { team: string; password: string; max_swaps: number }) =>
   post<RosterOptimizerResult>("/league/roster_optimizer", req);
 
-// Confirms the password (401 if wrong) without running the optimizer, so
-// the Roster page can ask for it before asking how many swaps to make.
-export const checkRosterOptimizerPassword = (password: string) =>
-  post<{ ok: true }>("/league/roster_optimizer/check_password", { password });
+// Premium mode login: confirms the shared premium password (401 if wrong)
+// without running anything. See components/premium.tsx.
+export const checkPremiumPassword = (password: string) =>
+  post<{ ok: true }>("/premium/check_password", { password });
+
+// Premium: a team's weekly win chance per category (0-1), for its real
+// roster ("start") and with the Roster page's manual what-if swaps applied
+// ("current"). Same scoring as the optimizer's before/after numbers.
+export interface RosterCategoryOdds {
+  team: string;
+  year: number;
+  categories: OptimizerCategory[];
+  strongest: OptimizerCategory[];
+  start: Record<OptimizerCategory, number>;
+  current: Record<OptimizerCategory, number>;
+  start_matchup_win: number;
+  current_matchup_win: number;
+  applied: { drop: string; add: string }[];
+  // "Drop -> Add" for swaps the server couldn't apply (e.g. a player with
+  // no stats this season).
+  skipped: string[];
+}
+
+export const getRosterCategoryOdds = (req: {
+  team: string;
+  password: string;
+  swaps: { drop: string; add: string }[];
+}) => post<RosterCategoryOdds>("/league/roster_category_odds", req);
 
 // Every week of a season, keyed by week number as a string (JSON object
 // keys are always strings, even though the backend's dict is int-keyed --

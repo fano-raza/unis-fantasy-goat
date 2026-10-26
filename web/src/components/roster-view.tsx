@@ -34,6 +34,7 @@ import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { LoadingOverlay } from "@/components/loading-overlay";
 import { OPTIMIZER_PHRASE_MS, OptimizerResults, RosterOptimizerButton } from "@/components/roster-optimizer";
 import { OPTIMIZER_PHRASES } from "@/lib/loading-phrases";
+import { RosterCategoryOddsCard } from "@/components/roster-category-odds";
 import { cn } from "@/lib/utils";
 import {
   getNBASchedule,
@@ -223,6 +224,11 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
   const sortedSlots = useMemo(() => [...slots].sort((a, b) => a.display.Rank - b.display.Rank), [slots]);
   const displayedRoster = useMemo(() => sortedSlots.map((s) => s.display), [sortedSlots]);
   const simulating = swaps.size > 0;
+  // The manual swaps as (drop, add) names, for the premium category panel.
+  const manualSwaps = useMemo(
+    () => [...swaps.entries()].map(([drop, row]) => ({ drop, add: row.Player })),
+    [swaps],
+  );
 
   const displayedAvgRank = useMemo(() => average(displayedRoster.map((r) => r.Rank)), [displayedRoster]);
 
@@ -573,6 +579,13 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
           </LoadingOverlay>
         </CardContent>
       </Card>
+
+      {/* Premium (current season only -- it scores current rosters and
+          projections). Hidden while an optimizer answer is on screen, which
+          has its own category breakdown. */}
+      {year === meta.current_year && team && !(optResult && optResult.swaps.length > 0) && (
+        <RosterCategoryOddsCard team={team} swaps={manualSwaps} />
+      )}
 
       <Card>
         <CardHeader>
