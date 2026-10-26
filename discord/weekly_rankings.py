@@ -263,6 +263,10 @@ NEG_CATS = {"TO"}
 # user's own request named "the top 6 spots" directly. Revisit if the
 # league's playoff format ever changes.
 PLAYOFF_CUTOFF = 6
+# A matchup counts as an upset if the winner was at least this many places
+# lower in the PRE-week standings (e.g. 5th beating 3rd), OR if the loser
+# had the better overall rating that week (user decision, 2026-10-25).
+UPSET_STANDINGS_GAP = 2
 
 WEEKLY_RECAP_SYSTEM_PROMPT = (
     "You generate short trash-talk sentences for sections of a Discord fantasy-basketball weekly recap -- "
@@ -275,8 +279,11 @@ WEEKLY_RECAP_SYSTEM_PROMPT = (
     '"beatdowns" -- an array with EXACTLY one short trash-talk sentence per entry in major_victories, '
     "SAME ORDER, each naming both teams and the category score (e.g. '7-2'); "
     '"upsets" -- an array with EXACTLY one short trash-talk sentence per entry in underdog_victories, SAME '
-    "ORDER, each naming both teams and both of their PRE-week standings positions so the size of the "
-    "upset is clear; "
+    "ORDER, each naming both teams. Each entry's reasons list says why it counts as an upset: "
+    "'winner_was_2plus_places_lower_in_standings' -- mention both teams' PRE-week standings positions so the "
+    "size of the upset is clear; 'loser_had_better_rating_this_week' -- the loser actually had the better "
+    "overall week (higher weekly rating) and still lost the matchup, so frame it as the loser getting robbed "
+    "or the winner stealing one. If both reasons apply, you can mention both; "
     '"milestones" -- an array with EXACTLY one short trash-talk sentence per entry in the milestones list, '
     "SAME ORDER -- these are a big deal (50-win/loss thresholds, tying/breaking a team's own best streak, "
     "tying/breaking the all-time league record, tying/beating an all-time single-week category record), "
@@ -415,8 +422,8 @@ async def _playoff_race_facts(api_post: ApiPost, year: int, week: int, standings
 
 async def build_weekly_recap_league_facts(api_post: ApiPost, api_get, year: int, week: int) -> dict:
     """League-wide facts for the whole week -- major blowouts (>=7 category
-    wins), underdog upsets (the team with the worse PRE-week standings
-    position won), career milestones (50-win/loss thresholds, streak
+    wins), upsets (the winner was UPSET_STANDINGS_GAP+ places lower in the
+    PRE-week standings, or the loser had the better rating that week), career milestones (50-win/loss thresholds, streak
     records, single-week category records), and -- only in the final
     third of the season -- playoff-race context. One shared backward walk
     + the same already-proven endpoints build_commentary_facts() uses,
@@ -469,13 +476,30 @@ async def build_weekly_recap_league_facts(api_post: ApiPost, api_get, year: int,
 
         winner_pre_rank = last_week_ranks.get(winner_row["team"])
         loser_pre_rank = last_week_ranks.get(loser_row["team"])
-        if winner_pre_rank is not None and loser_pre_rank is not None and winner_pre_rank > loser_pre_rank:
+        winner_rating, loser_rating = winner_row.get("rating"), loser_row.get("rating")
+        standings_upset = (
+            winner_pre_rank is not None
+            and loser_pre_rank is not None
+            and winner_pre_rank - loser_pre_rank >= UPSET_STANDINGS_GAP
+        )
+        rating_upset = winner_rating is not None and loser_rating is not None and loser_rating > winner_rating
+        if standings_upset or rating_upset:
             underdog_victories.append(
                 {
                     "winner": winner_row["team"],
                     "winner_pre_week_standing": winner_pre_rank,
+                    "winner_week_rating": winner_rating,
                     "loser": loser_row["team"],
                     "loser_pre_week_standing": loser_pre_rank,
+                    "loser_week_rating": loser_rating,
+                    "reasons": [
+                        r
+                        for r, hit in (
+                            ("winner_was_2plus_places_lower_in_standings", standings_upset),
+                            ("loser_had_better_rating_this_week", rating_upset),
+                        )
+                        if hit
+                    ],
                 }
             )
 
