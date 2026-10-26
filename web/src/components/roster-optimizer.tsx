@@ -413,20 +413,29 @@ export function CategoryOddsBars({
           return (
             <div key={cat} className="contents">
               <span className={cn("w-12 font-medium", strongest.includes(cat) && "text-primary")}>{cat}</span>
-              {/* Unchanged part in solid grey up to the smaller value, then
-                  only the change as a full-strength green (gain) or red
-                  (loss) segment -- no translucent overlap, which read as
-                  two near-identical greens. */}
+              {/* Two bars from the left, layered by direction (user spec):
+                  gain -> green bar = new value, grey "before" bar in front
+                  of it, so the green sticking out is the improvement;
+                  loss -> grey bar = old value behind, red bar = new
+                  (shorter) value in front. Grey at 80% opacity. */}
               <div className="relative h-2 overflow-hidden rounded-full bg-muted" aria-hidden>
-                <div
-                  className={cn("absolute inset-y-0 left-0", changed ? "bg-foreground/45" : "rounded-full bg-primary/70")}
-                  style={{ width: pct(changed ? Math.min(a, b) : b) }}
-                />
-                {changed && Math.abs(delta) > 0.0005 && (
+                {!changed || Math.abs(delta) <= 0.0005 ? (
                   <div
-                    className={cn("absolute inset-y-0", delta > 0 ? "bg-win" : "bg-loss")}
-                    style={{ left: pct(Math.min(a, b)), width: pct(Math.abs(delta)) }}
+                    className={cn("absolute inset-y-0 left-0 rounded-full", changed ? "bg-muted-foreground opacity-80" : "bg-primary/70")}
+                    style={{ width: pct(b) }}
                   />
+                ) : delta > 0 ? (
+                  <>
+                    <div className="absolute inset-y-0 left-0 rounded-full bg-win" style={{ width: pct(a) }} />
+                    {/* Track-colored backing so the 80% grey doesn't pick up a green tint. */}
+                    <div className="absolute inset-y-0 left-0 rounded-full bg-muted" style={{ width: pct(b) }} />
+                    <div className="absolute inset-y-0 left-0 rounded-full bg-muted-foreground opacity-80" style={{ width: pct(b) }} />
+                  </>
+                ) : (
+                  <>
+                    <div className="absolute inset-y-0 left-0 rounded-full bg-muted-foreground opacity-80" style={{ width: pct(b) }} />
+                    <div className="absolute inset-y-0 left-0 rounded-full bg-loss" style={{ width: pct(a) }} />
+                  </>
                 )}
               </div>
               <span className="w-28 text-right tabular-nums">
@@ -447,7 +456,7 @@ export function CategoryOddsBars({
       </div>
       <p className="mt-2 text-xs text-muted-foreground">
         Blue categories are this team&apos;s current strengths. Bars show how often it would win each category in a
-        typical week{changed ? `; green and red show the gain or loss ${afterLabel ?? "after"}` : ""}.
+        typical week{changed ? `. Grey is before; green shows how far a category improves ${afterLabel ?? "after"}, red its new, lower chance` : ""}.
       </p>
     </div>
   );
