@@ -1,6 +1,7 @@
 "use client";
 
 import { formatNumber } from "@/lib/format-number";
+import { PROFILE_QUERY_TOTAL_FIELDS as QUERY_TOTAL_FIELDS } from "@/lib/query-total-fields";
 import { Suspense, useEffect, useMemo, useState, type ComponentType } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -109,33 +110,6 @@ function rankForCategory(cat: Category, rows: AggregateRow[], team: string): num
 
 const SELECTED_TEAM_KEY = SELECTED_TEAM_STORAGE_KEY;
 
-// Win/loss career totals for the "League Top 3" table -- not present in
-// team_summary.csv (that has W-L-T strings, not individually rankable
-// counts), so pulled from the generic /query endpoint instead of a new
-// export. "Total"/"Total Category" scope both RS+PO; the rest split by
-// season. Losses rank "lower is better" (fewest losses = rank 1), the same
-// convention this app already uses for "Worst Losing Streak"/"Lowest
-// Rating Weeks" in web/src/lib/team-summary-fields.ts.
-export interface QueryTotalField {
-  label: string;
-  metric: string;
-  seasons?: string[];
-  direction: "higher" | "lower";
-}
-
-export const QUERY_TOTAL_FIELDS: QueryTotalField[] = [
-  // Same underlying /query data is also surfaced as its own row on the
-  // Comparison page's table (app/team/comparison/page.tsx) under this
-  // same field name -- keep the two in sync if either changes.
-  { label: "Matchup Wins", metric: "MATCHUP_WINS", seasons: ["RS", "PO"], direction: "higher" },
-  { label: "Total Losses", metric: "MATCHUP_LOSSES", seasons: ["RS", "PO"], direction: "lower" },
-  { label: "Category Wins", metric: "CAT_WINS", seasons: ["RS", "PO"], direction: "higher" },
-  { label: "Total Category Losses", metric: "CAT_LOSSES", seasons: ["RS", "PO"], direction: "lower" },
-  { label: "Total Reg Season Wins", metric: "MATCHUP_WINS", seasons: ["RS"], direction: "higher" },
-  { label: "Total Reg Season Losses", metric: "MATCHUP_LOSSES", seasons: ["RS"], direction: "lower" },
-  { label: "Playoff Wins", metric: "MATCHUP_WINS", seasons: ["PO"], direction: "higher" },
-  { label: "Total Playoff Losses", metric: "MATCHUP_LOSSES", seasons: ["PO"], direction: "lower" },
-];
 
 function rankFromQueryRows(
   rows: QueryRow[],
@@ -175,6 +149,8 @@ export interface ProfileBootstrap {
   averages: AggregateRow[];
   categoryHistory: CategoryHistoryResponse;
   queryTotals: Record<string, QueryRow[]>;
+  // Feeds only the 3rd Place badge; {} if the server fetch failed.
+  brackets: PlayoffBracketsResponse;
 }
 
 interface ProfileViewProps {
@@ -210,16 +186,17 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
     initialBootstrap?.categoryHistory ?? null,
   );
   const [team, setTeam] = useState<string | null>(null);
-  // Only feeds the 3rd Place badge. Not part of the server bootstrap, so
-  // it's fetched client-side either way; a failed fetch resolves to {}
+  // Only feeds the 3rd Place badge. Part of the server bootstrap; fetched
+  // client-side only on the fallback path. A failed fetch resolves to {}
   // (no 3rd Place badges) rather than leaving badges stuck loading.
-  const [brackets, setBrackets] = useState<PlayoffBracketsResponse | null>(null);
+  const [brackets, setBrackets] = useState<PlayoffBracketsResponse | null>(initialBootstrap?.brackets ?? null);
 
   useEffect(() => {
+    if (initialBootstrap) return;
     getPlayoffBrackets()
       .then(setBrackets)
       .catch(() => setBrackets({}));
-  }, []);
+  }, [initialBootstrap]);
 
   const searchParams = useSearchParams();
 

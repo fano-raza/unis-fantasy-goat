@@ -616,8 +616,8 @@ export interface RatingsBootstrap {
 export const getRatingsBootstrap = (init?: RequestInit) =>
   apiFetch<RatingsBootstrap>("/league/ratings_bootstrap", init);
 
-export const getPlayoffBrackets = () =>
-  apiFetch<PlayoffBracketsResponse>("/league/playoff_brackets");
+export const getPlayoffBrackets = (init?: RequestInit) =>
+  apiFetch<PlayoffBracketsResponse>("/league/playoff_brackets", init);
 
 export type StatWindow = "season" | "d7" | "d14" | "d30" | "d90";
 

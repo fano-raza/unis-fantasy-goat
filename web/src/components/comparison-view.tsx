@@ -1,5 +1,6 @@
 "use client";
 
+import { COMPARISON_QUERY_TOTAL_FIELDS as QUERY_TOTAL_FIELDS } from "@/lib/query-total-fields";
 import { useEffect, useRef, useState } from "react";
 import {
   Card,
@@ -172,21 +173,6 @@ const COMPARISON_GROUPS: { title: string; fields: string[] }[] = [
   },
 ];
 
-// The 3 /query-backed fields the Comparison table actually renders (Winning
-// and Playoffs sections) -- a trimmed copy of Profile's own
-// QUERY_TOTAL_FIELDS (which also fetches Losses/Reg-Season-only splits for
-// League Top 3 ranking, not needed here).
-export interface QueryTotalField {
-  label: string;
-  metric: string;
-  seasons?: string[];
-}
-
-export const QUERY_TOTAL_FIELDS: QueryTotalField[] = [
-  { label: "Matchup Wins", metric: "MATCHUP_WINS", seasons: ["RS", "PO"] },
-  { label: "Category Wins", metric: "CAT_WINS", seasons: ["RS", "PO"] },
-  { label: "Playoff Wins", metric: "MATCHUP_WINS", seasons: ["PO"] },
-];
 
 export interface ComparisonBootstrap {
   meta: LeagueMeta;

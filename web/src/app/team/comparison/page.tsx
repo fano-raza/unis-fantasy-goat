@@ -1,5 +1,6 @@
 import { getLeagueMeta, getQuery, getTeamSummary, type QueryRow } from "@/lib/api";
-import { ComparisonView, QUERY_TOTAL_FIELDS, type ComparisonBootstrap } from "@/components/comparison-view";
+import { ComparisonView, type ComparisonBootstrap } from "@/components/comparison-view";
+import { COMPARISON_QUERY_TOTAL_FIELDS as QUERY_TOTAL_FIELDS } from "@/lib/query-total-fields";
 
 // See app/page.tsx for the full rationale on this pattern.
 export const revalidate = 30;
