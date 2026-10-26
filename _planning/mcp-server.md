@@ -32,7 +32,7 @@ Post in Discord:
 1. **Test as a real connector** in Claude with real questions and compare against the website. The tools were only tested via an MCP client, not with an AI choosing which tool to call.
 2. Try ChatGPT (Developer Mode connector); check whether it needs the `search`/`fetch` tool conventions.
 3. After a week or two, read the `tool=` logs for errors and questions the tools couldn't answer.
-4. **Data anomaly found, not fixed:** 2026 week 14 Chirayu (vs Fano) has 33 PTS / 1 TO, and 2026 week 15 Rohil (vs Fano) has 18 PTS / 2 TO in `2026_CompStats.csv`. They show up as all-time "fewest turnovers" and best FG%/FT% weeks in both the MCP and the site's Records. Ask the user whether those weeks are real (e.g. a forfeited week) or a stats-capture glitch.
+4. ~~Data anomaly~~ **Resolved 2026-10-26: real, not a glitch.** 2026 wk14 Chirayu (33 PTS / 1 TO) and wk15 Rohil (18 PTS / 2 TO), both vs Fano, are **deliberate unset-lineup weeks**: a known league strategy where a manager benches everyone after day 1 to guarantee at least 3 category wins (TO, usually FG%/FT%). The MCP now explains this in `league_info`/server instructions and flags `lineup_unset: true` in `team_week_records` for any completed week under 100 PTS (`UNSET_LINEUP_PTS`; real full weeks are 185+), so future ones get tagged automatically. `team_week_records` also leaves out the in-progress current week by default (its partial totals were topping every "lowest" list). The site's Records page still shows these weeks unflagged; flagging them there is a possible follow-up if the user wants it.
 5. Later: a real domain; OAuth for premium tools (phase 2 of the access model).
 
 ---

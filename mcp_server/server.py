@@ -82,6 +82,32 @@ def _calendar(year: int) -> dict[int, dict]:
     return {int(r["Week"]): r for r in rows}
 
 
+# A completed week under this many points means the manager unset their lineup on purpose:
+# a known league strategy (bench everyone after day 1 to lock in wins in TO and usually
+# FG%/FT%). Real full weeks score 185+, so the gap is wide.
+UNSET_LINEUP_PTS = 100
+
+
+def _in_progress(year: int, week: int) -> bool:
+    meta = _meta()
+    return int(year) == int(meta["current_year"]) and int(week) >= int(meta["current_week"])
+
+
+def _unset_lineup_weeks() -> set[tuple[str, int, int]]:
+    def load() -> set[tuple[str, int, int]]:
+        out = _post(
+            "/query",
+            {"metric": "PTS", "aggregation": "sum", "group_by": ["Team", "Year", "Week"], "sort_desc": False, "limit": 60},
+        )
+        return {
+            (r["Team"], int(r["Year"]), int(r["Week"]))
+            for r in out["rows"]
+            if r["value"] < UNSET_LINEUP_PTS and not _in_progress(r["Year"], r["Week"])
+        }
+
+    return _cached("unset_lineups", load)
+
+
 def _team(name: str) -> str:
     """Case-insensitive match against every manager who has ever played."""
     members = _meta()["members"]
@@ -152,6 +178,7 @@ Key facts:
 - "Week" means a fantasy matchup period, numbered from 1 each season. Most are 7 days, but some are longer (the All-Star break, some playoff rounds) or shorter (week 1). Weekly totals from a long matchup aren't comparable with a normal week. team_week_records reports each matchup's days, so mention it when it matters.
 - RS = regular season, PO = playoffs. For "all-time record" questions about a single week, include both unless the user says otherwise, but point out when the top result was a long matchup.
 - TO (turnovers) is lower-is-better. FG% and FT% are percentages: never sum them across weeks.
+- Some managers deliberately unset their lineup after day 1 of a week (benching everyone) to lock in category wins in TO and usually FG%/FT%. Those weeks have tiny counting stats and look like all-time "fewest turnovers" or "best FG%" records. team_week_records flags them (lineup_unset), and you should say so when one shows up.
 - Use team_week_records for single-week records ("most rebounds in a week", "most points in week 2"). Use stats_query for career or season totals and averages, and for any slicing the other tools don't cover.
 """
 
@@ -219,6 +246,11 @@ def league_info(year: int | None = None) -> dict:
             "The current week flips at 2 AM ET Monday, so stats for the current week are partial. "
             "A season is named by the year it ends."
         ),
+        "unset_lineup_notes": (
+            "A known strategy: a manager facing a stronger opponent benches their whole lineup after "
+            "day 1, guaranteeing wins in TO and often FG%/FT% (at least 3 categories). Those weeks show "
+            "tiny counting stats (e.g. 18 PTS) and are real results, not data errors."
+        ),
         f"calendar_{y}": weeks,
     }
 
@@ -233,6 +265,7 @@ def team_week_records(
     opponents: list[str] | None = None,
     season: SeasonFilter = "all",
     lowest: bool = False,
+    include_current_week: bool = False,
     limit: int = 10,
 ) -> dict:
     """Single-week records: the best (or, with lowest=true, worst) individual team matchup-weeks
@@ -244,9 +277,17 @@ def team_week_records(
     weeks: matchup week numbers within a season (e.g. [2] = week 2 of every season).
     season: "RS" (regular season), "PO" (playoffs) or "all".
     lowest: true for the lowest values (for TO, lowest is the best).
+    include_current_week: the in-progress week is left out by default, because its partial
+      totals aren't comparable. Set true only when asked about this week.
     Each row includes the matchup's dates and length in days. Point out any multi-week matchup.
+    Rows flagged lineup_unset=true are weeks where the manager deliberately benched everyone
+    after day 1 (a known league strategy to lock in TO and usually FG%/FT%), which is why their
+    counting stats are tiny. When one tops a "fewest"/percentage list, say so, and give the best
+    normal week too.
     """
     limit = max(1, min(limit, 50))
+    meta = _meta()
+    skip_current = not include_current_week and (years is None or int(meta["current_year"]) in years)
     out = _post(
         "/query",
         {
@@ -259,11 +300,17 @@ def team_week_records(
             "opponents": _teams(opponents),
             "seasons": _seasons(season),
             "sort_desc": not lowest,
-            "limit": limit,
+            # the in-progress week has at most one row per team; over-fetch so dropping it still fills `limit`
+            "limit": limit + (len(meta["members"]) if skip_current else 0),
         },
     )
+    unset = _unset_lineup_weeks()
     rows = []
     for r in out["rows"]:
+        if skip_current and _in_progress(r["Year"], r["Week"]):
+            continue
+        if len(rows) >= limit:
+            break
         cal = _calendar(int(r["Year"])).get(int(r["Week"]))
         row = {
             "team": r["Team"],
@@ -276,6 +323,8 @@ def team_week_records(
         if cal:
             days = (date.fromisoformat(cal["EndDate"]) - date.fromisoformat(cal["StartDate"])).days + 1
             row.update(start=cal["StartDate"], end=cal["EndDate"], days=days)
+        if (r["Team"], int(r["Year"]), int(r["Week"])) in unset:
+            row["lineup_unset"] = True
         rows.append(row)
     return _rnd({"stat": out["metric"], "order": "lowest first" if lowest else "highest first", "rows": rows})
 
@@ -309,6 +358,8 @@ def stats_query(
       this with dates attached).
     season: "RS", "PO" or "all".
     ascending: true to list the smallest values first.
+    Includes the in-progress current week (partial stats) and deliberate unset-lineup weeks
+    (see league_info). For single-week min/max records, prefer team_week_records, which handles both.
     """
     limit = max(1, min(limit, 100))
     out = _post(
