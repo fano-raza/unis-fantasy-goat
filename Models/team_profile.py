@@ -400,8 +400,13 @@ def build_team_summary_df(teams: list | None = None, reuse_managers: dict | None
         # above, which only keeps the *final* week's position per season.
         position_rows: list[dict] = []
         for year in tm.yearsPlayed:
-            per_year_rs_rating[year] = float(tm.get_avg_rating(years=[year], RS=True, PO=False))
             season = tm.regSeasons[year]
+            # Best Avg Weekly Rating (user decisions, 2026-10-25): the
+            # season's average weekly rating on a 0-1 scale (week_rating is
+            # 0-100), completed regular seasons only -- an in-progress
+            # season's handful of weeks shouldn't be anyone's "best season".
+            if season.status == "Complete":
+                per_year_rs_rating[year] = float(tm.get_avg_rating(years=[year], RS=True, PO=False)) / 100
             per_year_rs_finish[year] = int(
                 season.get_team_position_WL() if season.is_WL else season.get_team_position_Cats()
             )
@@ -500,8 +505,8 @@ def build_team_summary_df(teams: list | None = None, reuse_managers: dict | None
             "RS 1st Years": ", ".join(map(str, rs_chip_years)),
             "RS Last Place": len(rs_last_years),
             "RS Last Years": ", ".join(map(str, rs_last_years)),
-            "Best RS Rating": best_rs_rating,
-            "Best RS Rating Years": ", ".join(map(str, best_rs_rating_years)),
+            "Best Avg Weekly Rating": best_rs_rating,
+            "Best Avg Weekly Rating Years": ", ".join(map(str, best_rs_rating_years)),
             "Best RS Finish": best_rs_finish,
             "Best RS Finish Years": ", ".join(map(str, best_rs_finish_years)),
 

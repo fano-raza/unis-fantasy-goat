@@ -44,7 +44,8 @@ export function ProfileHistoryChart({ team, meta }: { team: string; meta: League
 
       // Rating-by-season: average week_rating per year -- mirrors
       // Models/team_profile.py's own avg_rating calc (rs_df["week_rating"].mean()),
-      // so this matches what "Best RS Rating" elsewhere on this page is built from.
+      // so this matches what "Best Avg Weekly Rating" elsewhere on this page is
+      // built from. Shown on a 0-1 scale like that stat (week_rating is 0-100).
       const byYear = new Map<number, number[]>();
       for (const row of rows) {
         const list = byYear.get(row.year) ?? [];
@@ -55,7 +56,7 @@ export function ProfileHistoryChart({ team, meta }: { team: string; meta: League
       const ratingByYear = new Map(
         years.map((y) => {
           const list = byYear.get(y)!;
-          return [y, list.reduce((a, b) => a + b, 0) / list.length] as const;
+          return [y, list.reduce((a, b) => a + b, 0) / list.length / 100] as const;
         }),
       );
 
@@ -103,7 +104,7 @@ export function ProfileHistoryChart({ team, meta }: { team: string; meta: League
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <label className="flex items-center gap-2 self-start label text-foreground">
-          <span className="text-muted-foreground">Overall Rating</span>
+          <span className="text-muted-foreground">Avg Weekly Rating</span>
           <Switch
             checked={mode === "place"}
             onCheckedChange={(checked) => setMode(checked ? "place" : "rating")}
@@ -138,11 +139,12 @@ export function ProfileHistoryChart({ team, meta }: { team: string; meta: League
                   // instead of hardcoding it, while keeping 0 as the real
                   // floor (ratings can't go negative).
                   domain={[0, "auto"]}
-                  width={40}
+                  width={48}
+                  tickFormatter={(v: number) => formatNumber(v)}
                   tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
                   stroke="var(--border)"
                   label={{
-                    value: "Overall Rating",
+                    value: "Avg Weekly Rating",
                     angle: -90,
                     position: "insideLeft",
                     fill: "var(--muted-foreground)",
@@ -175,7 +177,7 @@ export function ProfileHistoryChart({ team, meta }: { team: string; meta: League
                 labelFormatter={(y) => `Season ${y}`}
                 formatter={(value) => [
                   typeof value === "number" ? formatNumber(value, mode === "rating" ? 1 : 0) : String(value),
-                  mode === "rating" ? "Overall Rating" : "RS Place Finish",
+                  mode === "rating" ? "Avg Weekly Rating" : "RS Place Finish",
                 ]}
               />
               <Line

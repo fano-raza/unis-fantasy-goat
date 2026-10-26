@@ -73,14 +73,14 @@ function rankColorClass(rank: number): string {
 // Place are shown both as their own stat tile above AND here -- the user
 // asked for them included. Best/Worst Week Rating were excluded here too
 // (as single-week flukes, not meaningful "career" stats) until the user
-// asked to track them (2026-10-07). Best RS Rating (best single-season
+// asked to track them (2026-10-07). Best Avg Weekly Rating (best single-season
 // rating) was excluded too until the user asked for it (2026-10-25).
 const TOP3_EXCLUDED = new Set([
   "Championship Years",
   "MVP Years",
   "Worst Ratings",
   "Worst Rating Years",
-  "Best RS Rating Years",
+  "Best Avg Weekly Rating Years",
   "RS 1st Years",
   "RS Last Place",
   "RS Last Years",
@@ -432,10 +432,10 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
             href={`/standings/ratings?year=${latestYear(profile["MVP Years"]) ?? meta.current_year}`}
           />
           <StatTile
-            label="Best RS Rating"
-            value={typeof profile["Best RS Rating"] === "number" ? formatNumber(profile["Best RS Rating"], 1) : "—"}
-            sub={splitYears(profile["Best RS Rating Years"])}
-            href={`/standings/ratings?year=${latestYear(profile["Best RS Rating Years"]) ?? meta.current_year}`}
+            label="Best Avg Weekly Rating"
+            value={typeof profile["Best Avg Weekly Rating"] === "number" ? formatNumber(profile["Best Avg Weekly Rating"]) : "—"}
+            sub={splitYears(profile["Best Avg Weekly Rating Years"])}
+            href={`/standings/ratings?year=${latestYear(profile["Best Avg Weekly Rating Years"]) ?? meta.current_year}`}
           />
           <StatTile
             label="RS 1st Place"

@@ -130,7 +130,7 @@ const COMPARISON_GROUPS: { title: string; fields: string[] }[] = [
       "Worst Ratings",
       "RS 1st Place",
       "RS Last Place",
-      "Best RS Rating",
+      "Best Avg Weekly Rating",
       "Best RS Finish",
       "Avg Rating (out of 100)",
       "Avg Rank",

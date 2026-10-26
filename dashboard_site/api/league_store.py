@@ -563,7 +563,7 @@ class LeagueStore:
         "Worst Rating Years",
         "RS 1st Years",
         "RS Last Years",
-        "Best RS Rating Years",
+        "Best Avg Weekly Rating Years",
         "Best RS Finish Years",
     ]
 
