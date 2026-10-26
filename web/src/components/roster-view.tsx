@@ -237,6 +237,28 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
     return otherTeamsPlayers.filter((r) => !displayedElsewhere.has(r.Player));
   }
 
+  // This team's roster after the optimizer's swaps (null unless an answer
+  // with at least one swap is on screen). Incoming players' rows come from
+  // roster_ranks, which includes free agents.
+  const optimizedRoster = useMemo(() => {
+    if (!optResult || optResult.swaps.length === 0) return null;
+    const byName = new Map(rosterRows.map((r) => [r.Player, r]));
+    const dropped = new Set(optResult.swaps.map((sw) => sw.drop.name));
+    return [
+      ...teamRoster.filter((r) => !dropped.has(r.Player)),
+      ...optResult.swaps.map(
+        (sw): RosterRankRow =>
+          byName.get(sw.add.name) ?? {
+            Year: optResult.year,
+            FantasyTeam: null,
+            Player: sw.add.name,
+            NBATeam: sw.add.nba_team ?? "",
+            Rank: NaN,
+          },
+      ),
+    ];
+  }, [optResult, rosterRows, teamRoster]);
+
   const teamAverages = useMemo(() => {
     const byTeam = new Map<string, number[]>();
     for (const row of rosterRows) {
@@ -246,17 +268,24 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
       if (!byTeam.has(row.FantasyTeam)) byTeam.set(row.FantasyTeam, []);
       byTeam.get(row.FantasyTeam)!.push(row.Rank);
     }
-    const rows = [...byTeam.entries()].map(([t, ranks]) => ({ team: t, avgRank: average(ranks) ?? Infinity }));
+    const rows = [...byTeam.entries()].map(([t, ranks]) => {
+      const avg = average(ranks) ?? Infinity;
+      return { team: t, avgRank: avg, realAvgRank: avg };
+    });
     // Swap in the simulated average for this team only -- every other
     // team's real roster/rank is unaffected by a one-sided hypothetical.
-    if (simulating) {
-      const simAvg = average(displayedRoster.map((r) => r.Rank)) ?? Infinity;
+    // An optimizer answer on screen takes precedence over manual swaps
+    // (running the optimizer clears them anyway).
+    const simRoster = optimizedRoster ?? (simulating ? displayedRoster : null);
+    if (simRoster) {
+      const simAvg = average(simRoster.map((r) => r.Rank).filter(Number.isFinite)) ?? Infinity;
       for (const row of rows) {
         if (row.team === team) row.avgRank = simAvg;
       }
     }
     return rows.sort((a, b) => a.avgRank - b.avgRank);
-  }, [rosterRows, simulating, displayedRoster, team]);
+  }, [rosterRows, simulating, displayedRoster, optimizedRoster, team]);
+  const rankingsSimulated = optimizedRoster != null || simulating;
 
   // This team's place in teamAverages (1-indexed) -- shown inline next to
   // Average Rank so it doesn't require scrolling down to Roster Rankings.
@@ -548,12 +577,17 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                     <TableCell
                       className={cn(
                         "team-name",
-                        simulating && row.team === team && "text-yellow-500",
+                        rankingsSimulated && row.team === team && "text-yellow-500",
                       )}
                     >
                       {row.team}
                     </TableCell>
                     <TableCell className="text-right font-mono tabular-nums">
+                      {rankingsSimulated && row.team === team && Number.isFinite(row.realAvgRank) && (
+                        <span className="mr-2 font-sans text-xs text-muted-foreground">
+                          was {row.realAvgRank.toFixed(1)}
+                        </span>
+                      )}
                       {Number.isFinite(row.avgRank) ? row.avgRank.toFixed(1) : "—"}
                     </TableCell>
                   </TableRow>
