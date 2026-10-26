@@ -70,6 +70,15 @@ function todayKey(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: EASTERN_TZ });
 }
 
+// The league's day for week boundaries: the Eastern date, but until 2 AM ET
+// it's still the previous day (late West Coast games) -- same cutoff as the
+// API's "current week" and stat_updater.py.
+function leagueTodayKey(): string {
+  const hourMinute = new Date().toLocaleTimeString("en-GB", { timeZone: EASTERN_TZ, hour12: false, hour: "2-digit", minute: "2-digit" });
+  const beforeCutoff = hourMinute <= "02:00";
+  return new Date(Date.now() - (beforeCutoff ? 24 * 60 * 60 * 1000 : 0)).toLocaleDateString("en-CA", { timeZone: EASTERN_TZ });
+}
+
 // Every "YYYY-MM-DD" date in [start, end] inclusive, both ISO date-only
 // strings. A fantasy week isn't always a clean 7-day Mon-Sun block --
 // ESPN-era week 1 runs Tue-Sun (6 days), and some seasons' playoff
@@ -100,7 +109,7 @@ function dayLabel(day: string): string {
 // formula, no isCurrentSeason branch needed.
 function latestWeek(weeks: WeekCalendarRow[]): number | null {
   if (weeks.length === 0) return null;
-  const today = todayKey();
+  const today = leagueTodayKey();
   const started = weeks.filter((w) => w.StartDate <= today);
   return started.length > 0 ? started[started.length - 1].Week : weeks[0].Week;
 }

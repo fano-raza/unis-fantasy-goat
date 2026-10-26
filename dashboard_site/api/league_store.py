@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import date
+from datetime import date, time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -196,9 +196,10 @@ class LeagueStore:
         year_df = cal_df[cal_df["Year"] == year]
         if year_df.empty:
             return None
-        # Eastern date, not date.today(): the droplet runs on UTC, which
-        # flipped "this week" to the next one at 8 PM ET every Sunday.
-        today = _eastern_today().isoformat()
+        # The league's day (Eastern, 2 AM cutoff), not date.today(): the
+        # droplet runs on UTC, which flipped "this week" to the next one at
+        # 8 PM ET every Sunday.
+        today = _league_today().isoformat()
         match = year_df[(year_df["StartDate"] <= today) & (today <= year_df["EndDate"])]
         if match.empty:
             return None
@@ -1614,6 +1615,23 @@ class LeagueStore:
 
 
 _league_store: LeagueStore | None = None
+
+
+# Until this time (inclusive) a new Eastern day still counts as the previous
+# one -- late West Coast games run past midnight. Same cutoff as
+# stat_updater.py and discord/weekly_rankings.py, so "current week" flips at
+# 2 AM ET Monday everywhere (user decision, 2026-10-26).
+LEAGUE_DAY_CUTOFF = time(2, 0)
+
+
+def _league_today() -> date:
+    """Today's date for week boundaries: the US Eastern date, but before the
+    2 AM cutoff it's still "yesterday"."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    now = datetime.now(ZoneInfo("America/New_York"))
+    return now.date() - timedelta(days=1) if now.time() <= LEAGUE_DAY_CUTOFF else now.date()
 
 
 def _eastern_today() -> date:
