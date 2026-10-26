@@ -196,7 +196,9 @@ class LeagueStore:
         year_df = cal_df[cal_df["Year"] == year]
         if year_df.empty:
             return None
-        today = date.today().isoformat()
+        # Eastern date, not date.today(): the droplet runs on UTC, which
+        # flipped "this week" to the next one at 8 PM ET every Sunday.
+        today = _eastern_today().isoformat()
         match = year_df[(year_df["StartDate"] <= today) & (today <= year_df["EndDate"])]
         if match.empty:
             return None
