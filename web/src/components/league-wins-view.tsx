@@ -1,5 +1,6 @@
 "use client";
 
+import { useLiveRefetch } from "@/lib/live-data";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
@@ -125,14 +126,19 @@ function LeagueWinsPageInner({ initialBootstrap }: LeagueWinsViewProps) {
   // and this payload is tiny (a handful of teams' summed W-L-T), so a full
   // Apply-gated flow (like Career Stats/Analysis' mobile filter drawer)
   // would be unnecessary friction here.
+  // Re-fetches quietly when the API loads newer live stats.
+  const live = useLiveRefetch();
   useEffect(() => {
     if (year == null || !weekRange) return;
     if (skipNextFetch.current) {
       skipNextFetch.current = false;
       return;
     }
-    setIsLoading(true);
-    setError(null);
+    const silent = live.isRefetch();
+    if (!silent) {
+      setIsLoading(true);
+      setError(null);
+    }
     const [minWeek, maxWeekSel] = weekRange;
     const timeout = setTimeout(() => {
       // "Prior" = the same range with its single latest week dropped, so
@@ -150,15 +156,17 @@ function LeagueWinsPageInner({ initialBootstrap }: LeagueWinsViewProps) {
           setHistory(hist);
         })
         .catch((err) => {
+          if (silent) return; // keep the current data on a background failure
           setStandings(null);
           setPreviousStandings(null);
           setHistory(null);
           setError(err instanceof Error ? err.message : String(err));
         })
-        .finally(() => setIsLoading(false));
+        .finally(() => !silent && setIsLoading(false));
     }, 200);
     return () => clearTimeout(timeout);
-  }, [year, weekRange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [year, weekRange, live.version]);
 
   const historyChartData = useMemo(() => {
     if (!history || !weekRange) return [];

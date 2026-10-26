@@ -677,6 +677,10 @@ export interface RefreshStatus {
   // vs. draft/player_stats/team_summary once daily-ish), so a single global
   // timestamp was misleading. See SourceLastUpdated for the per-page display.
   sources: Record<RefreshSource, string | null>;
+  // The same timestamps as of the data the API is actually serving (lags
+  // `sources` by up to one 90 s reload) -- open pages re-fetch when these
+  // change (see lib/live-data.tsx). Optional for an older API.
+  loaded?: Record<RefreshSource, string | null>;
 }
 
 export const getRefreshStatus = () =>

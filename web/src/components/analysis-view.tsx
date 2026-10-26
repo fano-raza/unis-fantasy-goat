@@ -1,5 +1,6 @@
 "use client";
 
+import { useLiveRefetch } from "@/lib/live-data";
 import { useEffect, useMemo, useState } from "react";
 import {
   Card,
@@ -96,9 +97,12 @@ export function AnalysisView({ initialMeta }: { initialMeta: LeagueMeta | null }
     localStorage.setItem(GRAPHS_KEY, JSON.stringify({ ids: graphIds, nextId: nextGraphId }));
   }, [graphsHydrated, graphIds, nextGraphId]);
 
+  // Re-fetches quietly when the API loads newer live stats.
+  const live = useLiveRefetch();
   useEffect(() => {
     if (!filter) return;
-    setRowsLoading(true);
+    const silent = live.isRefetch();
+    if (!silent) setRowsLoading(true);
     getAnalysisRows({
       years: filter.years,
       weeks: filter.weeks,
@@ -107,8 +111,10 @@ export function AnalysisView({ initialMeta }: { initialMeta: LeagueMeta | null }
       PO: filter.po,
     })
       .then(setRows)
-      .finally(() => setRowsLoading(false));
-  }, [filter]);
+      .catch(() => {}) // a background failure keeps the current rows
+      .finally(() => !silent && setRowsLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, live.version]);
 
   const allWeeks = useMemo(() => {
     if (!meta) return [];

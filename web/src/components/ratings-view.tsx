@@ -1,5 +1,6 @@
 "use client";
 
+import { useLiveRefetch } from "@/lib/live-data";
 import { formatNumber } from "@/lib/format-number";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -178,14 +179,19 @@ function RatingsPageInner({ initialBootstrap }: RatingsViewProps) {
   // Debounced live-refetch -- a slider drag fires many intermediate values,
   // and this payload is tiny, so a full Apply-gated flow (like Career
   // Stats/Analysis' mobile filter drawer) would be unnecessary friction here.
+  // Re-fetches quietly when the API loads newer live stats.
+  const live = useLiveRefetch();
   useEffect(() => {
     if (year == null || weeksInRange.length === 0) return;
     if (skipNextFetch.current) {
       skipNextFetch.current = false;
       return;
     }
-    setIsLoading(true);
-    setError(null);
+    const silent = live.isRefetch();
+    if (!silent) {
+      setIsLoading(true);
+      setError(null);
+    }
     const timeout = setTimeout(() => {
       const ratingsReq = { years: [year], weeks: weeksInRange, RS: ratingsRs, PO: ratingsPo };
       const ratingsFetcher = ratingsStatMode === "totals" ? getTotals : getAverages;
@@ -212,15 +218,17 @@ function RatingsPageInner({ initialBootstrap }: RatingsViewProps) {
           setRatingsHistory(analysisRows);
         })
         .catch((err) => {
+          if (silent) return; // keep the current data on a background failure
           setRatingsRows([]);
           setRatingsLeaders(null);
           setRatingsHistory([]);
           setError(err instanceof Error ? err.message : String(err));
         })
-        .finally(() => setIsLoading(false));
+        .finally(() => !silent && setIsLoading(false));
     }, 200);
     return () => clearTimeout(timeout);
-  }, [year, weeksInRange, ratingsStatMode, ratingsRs, ratingsPo]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [year, weeksInRange, ratingsStatMode, ratingsRs, ratingsPo, live.version]);
 
   // Only teams actually shown in the current ratings rows, not the full
   // league roster.

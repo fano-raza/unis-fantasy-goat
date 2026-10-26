@@ -9,6 +9,7 @@ import { FloatingMenuButton } from "@/components/floating-menu-button";
 import { GlobalLastUpdated } from "@/components/global-last-updated";
 import { MobileMenuProvider } from "@/components/mobile-menu-context";
 import { PremiumProvider } from "@/components/premium";
+import { LiveDataProvider } from "@/lib/live-data";
 import { API_BASE_URL } from "@/lib/api";
 import { themeInitScript } from "@/lib/theme";
 import "./globals.css";
@@ -62,6 +63,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             Suspense fallback forces a static/dynamic split at this level). */}
         <link rel="preconnect" href={API_BASE_URL} crossOrigin="anonymous" />
         <link rel="dns-prefetch" href={API_BASE_URL} />
+        <LiveDataProvider>
         <PremiumProvider>
         <MobileMenuProvider>
           {/* Sticky on mobile only (feature request, 2026-10-06) -- the home
@@ -100,6 +102,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           </main>
         </MobileMenuProvider>
         </PremiumProvider>
+        </LiveDataProvider>
         <footer className="border-t border-border">
           <div className="mx-auto w-full max-w-5xl px-4 py-4 text-center text-xs text-muted-foreground sm:px-6">
             <a

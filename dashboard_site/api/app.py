@@ -60,7 +60,11 @@ app.add_middleware(
 @app.middleware("http")
 async def add_short_cache_header(request: Request, call_next):
     response = await call_next(request)
-    if request.method == "GET" and request.url.path.startswith(("/league/", "/meta", "/refresh_status")):
+    if request.method == "GET" and request.url.path.startswith("/refresh_status"):
+        # Open pages poll this to decide when to re-fetch their tables -- a
+        # cached answer would delay every live update by up to its max-age.
+        response.headers["Cache-Control"] = "no-store"
+    elif request.method == "GET" and request.url.path.startswith(("/league/", "/meta")):
         response.headers["Cache-Control"] = "public, max-age=30, stale-while-revalidate=60"
     return response
 
@@ -114,14 +118,23 @@ def _scan_source_mtimes(ref_dir: Path, data_store: StatsStore) -> dict[str, date
     }
 
 
+def _iso_sources(sources: dict[str, datetime | None]) -> dict[str, str | None]:
+    return {k: v.isoformat() if v else None for k, v in sources.items()}
+
+
 def _refresh_data() -> None:
-    global store, league_store
+    global store, league_store, loaded_sources
+    # Scanned BEFORE reading the files, so these timestamps never claim newer
+    # data than what actually got loaded (a write landing mid-reload just
+    # shows up on the next cycle).
+    scanned = _iso_sources(_scan_source_mtimes(store.ref_dir, store))
     new_store = StatsStore()
     reset_league_store()
     new_league_store = get_league_store(new_store)
     with _state_lock:
         store = new_store
         league_store = new_league_store
+        loaded_sources = scanned
 
 
 def _refresh_loop() -> None:
@@ -132,6 +145,11 @@ def _refresh_loop() -> None:
         except Exception as exc:
             print(f"dashboard data refresh failed: {exc}")
 
+
+# Per-source file timestamps as of the data currently in memory -- what open
+# pages compare to decide when re-fetching would actually return new numbers
+# (see /refresh_status). Lags `sources` by up to one reload cycle.
+loaded_sources: dict[str, str | None] = _iso_sources(_scan_source_mtimes(store.ref_dir, store))
 
 threading.Thread(target=_refresh_loop, daemon=True).start()
 
@@ -164,11 +182,15 @@ def refresh_status() -> dict[str, str | dict[str, str | None] | None]:
     # right now, even if a reload is mid-flight.
     with _state_lock:
         current_store = store
-    sources = {k: v.isoformat() if v else None for k, v in _scan_source_mtimes(current_store.ref_dir, current_store).items()}
+        current_loaded = loaded_sources
+    sources = _iso_sources(_scan_source_mtimes(current_store.ref_dir, current_store))
     return {
         # Kept for any existing consumer of the old flat shape.
         "last_updated": sources.get("live"),
         "sources": sources,
+        # What the API is actually serving right now; when one of these
+        # changes, open pages quietly re-fetch (web/src/lib/live-data.tsx).
+        "loaded": current_loaded,
     }
 
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { useLiveRefetch } from "@/lib/live-data";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Card,
@@ -69,24 +70,29 @@ export function UltraView({ initialBootstrap }: UltraViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allWeeks.length, year]);
 
+  // Re-fetches quietly when the API loads newer live stats.
+  const live = useLiveRefetch();
   useEffect(() => {
     if (year == null || weeks.length === 0) return;
     if (skipNextFetch.current) {
       skipNextFetch.current = false;
       return;
     }
-    setLoading(true);
+    const silent = live.isRefetch();
+    if (!silent) setLoading(true);
     getAverages({ years: [year], weeks, RS: true, PO: true })
       .then((res) => {
         setRows(res);
         setError(null);
       })
       .catch((err) => {
+        if (silent) return; // keep the current rows on a background failure
         setRows([]);
         setError(err instanceof Error ? err.message : String(err));
       })
-      .finally(() => setLoading(false));
-  }, [year, weeks]);
+      .finally(() => !silent && setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [year, weeks, live.version]);
 
   // Only teams actually shown in the current filtered rows, not the full
   // league roster.

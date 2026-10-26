@@ -1,9 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { getRefreshStatus, type RefreshSource } from "@/lib/api";
-
-const POLL_INTERVAL_MS = 60_000;
+import type { RefreshSource } from "@/lib/api";
+import { useRefreshSources } from "@/lib/live-data";
 
 function pad(n: number): string {
   return String(n).padStart(2, "0");
@@ -32,29 +30,11 @@ function formatCompact(date: Date): string {
 // existing height without forcing a wider card via whitespace-nowrap on a
 // narrow viewport.
 export function SourceLastUpdated({ source }: { source: RefreshSource }) {
-  const [date, setDate] = useState<Date | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function poll() {
-      try {
-        const { sources } = await getRefreshStatus();
-        const value = sources[source];
-        if (cancelled || !value) return;
-        setDate(new Date(value));
-      } catch {
-        // Non-critical UI element -- leave the last known value in place.
-      }
-    }
-
-    poll();
-    const interval = setInterval(poll, POLL_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [source]);
+  // Polled app-wide by LiveDataProvider (lib/live-data.tsx), which also
+  // drives the pages' background re-fetches.
+  const sources = useRefreshSources();
+  const value = sources?.[source];
+  const date = value ? new Date(value) : null;
 
   if (!date) return null;
 

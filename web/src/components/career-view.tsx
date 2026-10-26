@@ -1,5 +1,6 @@
 "use client";
 
+import { useLiveRefetch } from "@/lib/live-data";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Card,
@@ -63,13 +64,16 @@ export function CareerStatsView({ initialBootstrap }: CareerStatsViewProps) {
     getCareerBootstrap().then(apply);
   }, [initialBootstrap]);
 
+  // Re-fetches quietly when the API loads newer live stats.
+  const live = useLiveRefetch();
   useEffect(() => {
     if (!filter) return;
     if (skipNextFetch.current) {
       skipNextFetch.current = false;
       return;
     }
-    setLoading(true);
+    const silent = live.isRefetch();
+    if (!silent) setLoading(true);
     const req = {
       years: filter.years,
       weeks: filter.weeks,
@@ -96,11 +100,13 @@ export function CareerStatsView({ initialBootstrap }: CareerStatsViewProps) {
         setError(null);
       })
       .catch((err) => {
+        if (silent) return; // keep the current rows on a background failure
         setRows([]);
         setError(err instanceof Error ? err.message : String(err));
       })
-      .finally(() => setLoading(false));
-  }, [filter, statMode]);
+      .finally(() => !silent && setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, statMode, live.version]);
 
   const allWeeks = useMemo(() => {
     if (!meta) return [];
