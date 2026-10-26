@@ -179,6 +179,10 @@ export interface RosterRankRow {
   Player: string;
   NBATeam: string;
   Rank: number;
+  // Current lineup slot for a rostered player -- "IR" = injured reserve
+  // (not playing; left out of the premium win-chance math). Empty/null for
+  // free agents and seasons exported before this existed.
+  LineupSlot?: string | null;
 }
 
 export interface RosterRanksRequest {
@@ -438,17 +442,17 @@ export interface RosterCategoryOdds {
   current: Record<OptimizerCategory, number>;
   start_matchup_win: number;
   current_matchup_win: number;
-  applied: { drop: string; add: string }[];
-  // "Drop -> Add" for swaps the server couldn't apply (e.g. a player with
-  // no stats this season).
-  skipped: string[];
+  // Active (non-IR) players counted, real vs hypothetical.
+  start_active_count: number;
+  current_active_count: number;
+  // Hypothetical-roster names with no stats this season (left out).
+  unknown: string[];
 }
 
-export const getRosterCategoryOdds = (req: {
-  team: string;
-  password: string;
-  swaps: { drop: string; add: string }[];
-}) => post<RosterCategoryOdds>("/league/roster_category_odds", req);
+// `roster`: the hypothetical ACTIVE roster (names) -- after swaps,
+// removals and players brought back from IR; omit for the real roster.
+export const getRosterCategoryOdds = (req: { team: string; password: string; roster?: string[] }) =>
+  post<RosterCategoryOdds>("/league/roster_category_odds", req);
 
 // Every week of a season, keyed by week number as a string (JSON object
 // keys are always strings, even though the backend's dict is int-keyed --

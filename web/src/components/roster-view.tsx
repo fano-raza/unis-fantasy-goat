@@ -48,7 +48,7 @@ import {
 } from "@/lib/api";
 import { useSelectedTeam } from "@/lib/use-selected-team";
 import { ordinal } from "@/lib/team-summary-fields";
-import { ArrowDown, ArrowLeftRight, ArrowUp, RotateCcw, TriangleAlert } from "lucide-react";
+import { ArrowDown, ArrowLeftRight, ArrowUp, RotateCcw, TriangleAlert, X } from "lucide-react";
 
 const EASTERN_TZ = "America/New_York";
 // This league starts 10 players -- a day where more than 10 of a team's
@@ -133,6 +133,9 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
   // player's real team is untouched, since this is a "what if I had them"
   // simulation, not a real trade.
   const [swaps, setSwaps] = useState<Map<string, RosterRankRow>>(new Map());
+  // Real roster players simulated as removed outright (the row's X), keyed
+  // by original player like `swaps`.
+  const [removed, setRemoved] = useState<Set<string>>(new Set());
   const [openSwapSlot, setOpenSwapSlot] = useState<string | null>(null);
 
   // Roster Optimizer run in progress / its answer, shown in place of the
@@ -150,6 +153,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
   // and any optimizer answer (it was for the previous team).
   useEffect(() => {
     setSwaps(new Map());
+    setRemoved(new Set());
     setOptResult(null);
   }, [team, year]);
 
@@ -215,20 +219,39 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
     [rosterRows, team],
   );
 
+  // This team's players sitting in an IR slot (not playing). Shown greyed
+  // out, left out of the win-chance math, and offered first in every other
+  // slot's swap menu ("bring him back from IR in place of X").
+  const irPlayers = useMemo(() => new Set(teamRoster.filter((r) => r.LineupSlot === "IR").map((r) => r.Player)), [teamRoster]);
+
   // One "slot" per real roster spot, holding either the real player or
-  // whatever they've been hypothetically swapped for.
-  const slots = useMemo(
-    () => teamRoster.map((orig) => ({ originalPlayer: orig.Player, display: swaps.get(orig.Player) ?? orig })),
-    [teamRoster, swaps],
-  );
+  // whatever they've been hypothetically swapped for. An IR player swapped
+  // into another slot is "activated": his own IR row is hidden while he
+  // shows in that slot.
+  const slots = useMemo(() => {
+    const activated = new Set([...swaps.values()].map((r) => r.Player).filter((p) => irPlayers.has(p)));
+    return teamRoster
+      .filter((orig) => !activated.has(orig.Player))
+      .map((orig) => {
+        const display = swaps.get(orig.Player) ?? orig;
+        return {
+          originalPlayer: orig.Player,
+          display,
+          onIR: irPlayers.has(display.Player) && display.Player === orig.Player,
+          removed: removed.has(orig.Player),
+        };
+      });
+  }, [teamRoster, swaps, removed, irPlayers]);
   const sortedSlots = useMemo(() => [...slots].sort((a, b) => a.display.Rank - b.display.Rank), [slots]);
-  const displayedRoster = useMemo(() => sortedSlots.map((s) => s.display), [sortedSlots]);
-  const simulating = swaps.size > 0;
-  // The manual swaps as (drop, add) names, for the premium category panel.
-  const manualSwaps = useMemo(
-    () => [...swaps.entries()].map(([drop, row]) => ({ drop, add: row.Player })),
-    [swaps],
-  );
+  // Everyone still on the (possibly simulated) roster, IR included -- what
+  // Average Rank and Roster Rankings use, same as every other team's.
+  const displayedRoster = useMemo(() => sortedSlots.filter((s) => !s.removed).map((s) => s.display), [sortedSlots]);
+  // Only players who'd actually play: no IR, no removed.
+  const activeRoster = useMemo(() => sortedSlots.filter((s) => !s.removed && !s.onIR).map((s) => s.display), [sortedSlots]);
+  const simulating = swaps.size > 0 || removed.size > 0;
+  // The simulated active roster for the premium category panel (null = the
+  // real roster, no what-if).
+  const simulatedActiveNames = useMemo(() => (simulating ? activeRoster.map((r) => r.Player) : null), [simulating, activeRoster]);
 
   const displayedAvgRank = useMemo(() => average(displayedRoster.map((r) => r.Rank)), [displayedRoster]);
 
@@ -241,6 +264,23 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
       slots.filter((s) => s.originalPlayer !== originalPlayer).map((s) => s.display.Player),
     );
     return otherTeamsPlayers.filter((r) => !displayedElsewhere.has(r.Player));
+  }
+
+  // This team's own IR players that can be brought back in a given slot's
+  // place -- not removed, and not already activated into another slot.
+  function irCandidatesForSlot(originalPlayer: string): RosterRankRow[] {
+    const usedElsewhere = new Set(
+      [...swaps.entries()].filter(([orig]) => orig !== originalPlayer).map(([, r]) => r.Player),
+    );
+    return teamRoster.filter((r) => irPlayers.has(r.Player) && !removed.has(r.Player) && !usedElsewhere.has(r.Player));
+  }
+
+  function undoSlot(originalPlayer: string) {
+    setSwaps((prev) => {
+      const next = new Map(prev);
+      next.delete(originalPlayer);
+      return next;
+    });
   }
 
   // This team's roster after the optimizer's swaps (null unless an answer
@@ -325,7 +365,8 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
   // game is forced to sit.
   const playersPerDay = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const row of displayedRoster) {
+    // IR/removed players don't take a starting spot.
+    for (const row of activeRoster) {
       const games = gamesByNBATeam.get(row.NBATeam) ?? [];
       const daysPlaying = new Set(games.map((g) => easternDateKey(g.Date)));
       for (const day of daysPlaying) {
@@ -333,7 +374,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
       }
     }
     return counts;
-  }, [displayedRoster, gamesByNBATeam, weekDays]);
+  }, [activeRoster, gamesByNBATeam, weekDays]);
 
   const now = Date.now();
   const today = todayKey();
@@ -399,6 +440,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                 // Ignore an answer for a team the page has since moved off.
                 if (res.team !== currentTeam.current) return;
                 setSwaps(new Map());
+                setRemoved(new Set());
                 setOptResult(res);
               }}
             />
@@ -413,7 +455,15 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
               Simulated roster
             </CardDescription>
             <CardAction>
-              <Button type="button" variant="outline" size="sm" onClick={() => setSwaps(new Map())}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSwaps(new Map());
+                  setRemoved(new Set());
+                }}
+              >
                 Reset Roster
               </Button>
             </CardAction>
@@ -491,10 +541,17 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                   const gameDaysThisWeek = new Set(games.map((g) => easternDateKey(g.Date)));
                   const isSwappedIn = row.Player !== slot.originalPlayer;
                   const candidates = candidatesForSlot(slot.originalPlayer);
+                  const irCandidates = irCandidatesForSlot(slot.originalPlayer);
+                  // IR (still on IR) and removed rows are dimmed: neither plays.
+                  const dimmed = slot.onIR || slot.removed;
                   return (
-                    <TableRow key={slot.originalPlayer}>
+                    <TableRow key={slot.originalPlayer} className={cn(dimmed && "text-muted-foreground [&>td]:opacity-60")}>
                       <TableCell className="sticky left-0 z-10 bg-card font-sans font-semibold">
                         <div className="flex items-center gap-1.5">
+                          {slot.onIR || slot.removed ? (
+                            // Keeps names aligned with the swappable rows.
+                            <span className="size-6 shrink-0" aria-hidden />
+                          ) : (
                           <Popover
                             open={openSwapSlot === slot.originalPlayer}
                             onOpenChange={(open) => setOpenSwapSlot(open ? slot.originalPlayer : null)}
@@ -510,7 +567,22 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                                 <CommandInput placeholder="Search players..." />
                                 <CommandList>
                                   <CommandEmpty>No players found.</CommandEmpty>
-                                  <CommandGroup>
+                                  {irCandidates.length > 0 && (
+                                    <CommandGroup heading="Activate from IR">
+                                      {irCandidates.map((r) => (
+                                        <CommandItem
+                                          key={`ir-${r.Player}`}
+                                          onSelect={() => {
+                                            setSwaps((prev) => new Map(prev).set(slot.originalPlayer, r));
+                                            setOpenSwapSlot(null);
+                                          }}
+                                        >
+                                          {r.Player} <span className="ml-1 text-muted-foreground">({r.NBATeam})</span>
+                                        </CommandItem>
+                                      ))}
+                                    </CommandGroup>
+                                  )}
+                                  <CommandGroup heading={irCandidates.length > 0 ? "Other players" : undefined}>
                                     {candidates.map((r) => (
                                       <CommandItem
                                         key={r.Player}
@@ -527,18 +599,24 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                               </Command>
                             </PopoverContent>
                           </Popover>
-                          <span className={cn(isSwappedIn && "text-yellow-500")}>{row.Player}</span>
-                          {isSwappedIn && (
+                          )}
+                          <span className={cn(isSwappedIn && "text-yellow-500", slot.removed && "line-through")}>{row.Player}</span>
+                          {slot.onIR && (
+                            <span className="rounded-sm bg-muted px-1 font-sans text-[0.6875rem] font-bold text-muted-foreground" title="On injured reserve: not counted in win chances">
+                              IR
+                            </span>
+                          )}
+                          {slot.removed ? (
                             <Button
                               type="button"
                               variant="ghost"
                               size="icon"
                               className="size-6 shrink-0 text-muted-foreground"
-                              title={`Put ${slot.originalPlayer} back`}
-                              aria-label={`Put ${slot.originalPlayer} back`}
+                              title={`Put ${row.Player} back`}
+                              aria-label={`Put ${row.Player} back`}
                               onClick={() =>
-                                setSwaps((prev) => {
-                                  const next = new Map(prev);
+                                setRemoved((prev) => {
+                                  const next = new Set(prev);
                                   next.delete(slot.originalPlayer);
                                   return next;
                                 })
@@ -546,6 +624,37 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                             >
                               <RotateCcw className="size-3.5" />
                             </Button>
+                          ) : (
+                            <>
+                              {isSwappedIn && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-6 shrink-0 text-muted-foreground"
+                                  title={`Put ${slot.originalPlayer} back`}
+                                  aria-label={`Put ${slot.originalPlayer} back`}
+                                  onClick={() => undoSlot(slot.originalPlayer)}
+                                >
+                                  <RotateCcw className="size-3.5" />
+                                </Button>
+                              )}
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="size-6 shrink-0 text-muted-foreground hover:text-loss"
+                                title={`Remove ${row.Player} from the roster`}
+                                aria-label={`Remove ${row.Player} from the roster`}
+                                onClick={() => {
+                                  // Removing the slot also drops any swap in it.
+                                  undoSlot(slot.originalPlayer);
+                                  setRemoved((prev) => new Set(prev).add(slot.originalPlayer));
+                                }}
+                              >
+                                <X className="size-3.5" />
+                              </Button>
+                            </>
                           )}
                         </div>
                       </TableCell>
@@ -584,7 +693,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
           projections). Hidden while an optimizer answer is on screen, which
           has its own category breakdown. */}
       {year === meta.current_year && team && !(optResult && optResult.swaps.length > 0) && (
-        <RosterCategoryOddsCard team={team} swaps={manualSwaps} />
+        <RosterCategoryOddsCard team={team} roster={simulatedActiveNames} />
       )}
 
       <Card>

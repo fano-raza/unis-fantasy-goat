@@ -28,10 +28,12 @@ const PREVIEW = [
 
 /**
  * Premium panel on the Roster page (current season): this team's weekly win
- * chance in each category, and how the page's manual what-if swaps change
- * it. Visible to everyone; locked until premium mode is on.
+ * chance in each category, and how the page's what-ifs (swaps, removals,
+ * players brought back from IR) change it. IR players never count. Visible
+ * to everyone; locked until premium mode is on. `roster` is the simulated
+ * ACTIVE roster's names, or null for no what-if.
  */
-export function RosterCategoryOddsCard({ team, swaps }: { team: string; swaps: { drop: string; add: string }[] }) {
+export function RosterCategoryOddsCard({ team, roster }: { team: string; roster: string[] | null }) {
   const premium = usePremium();
   return (
     <Card>
@@ -47,7 +49,7 @@ export function RosterCategoryOddsCard({ team, swaps }: { team: string; swaps: {
       </CardHeader>
       <CardContent>
         {premium.unlocked && premium.password ? (
-          <UnlockedOdds team={team} swaps={swaps} password={premium.password} onRejected={premium.lock} />
+          <UnlockedOdds team={team} roster={roster} password={premium.password} onRejected={premium.lock} />
         ) : (
           <LockedPreview onUnlock={() => premium.requireUnlock()} />
         )}
@@ -82,26 +84,27 @@ function LockedPreview({ onUnlock }: { onUnlock: () => void }) {
 
 function UnlockedOdds({
   team,
-  swaps,
+  roster,
   password,
   onRejected,
 }: {
   team: string;
-  swaps: { drop: string; add: string }[];
+  roster: string[] | null;
   password: string;
   onRejected: () => void;
 }) {
   const [odds, setOdds] = useState<RosterCategoryOdds | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // Stable dependency for the swap list (a new array every render upstream).
-  const swapsKey = JSON.stringify(swaps);
+  // Stable dependency for the roster list (a new array every render upstream).
+  const rosterKey = JSON.stringify(roster);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     const id = setTimeout(() => {
-      getRosterCategoryOdds({ team, password, swaps: JSON.parse(swapsKey) })
+      const simulated: string[] | null = JSON.parse(rosterKey);
+      getRosterCategoryOdds({ team, password, ...(simulated ? { roster: simulated } : {}) })
         .then((res) => {
           if (cancelled) return;
           setOdds(res);
@@ -116,7 +119,9 @@ function UnlockedOdds({
           setError(
             err instanceof ApiError && err.status === 404
               ? `No current roster found for ${team}.`
-              : "Couldn't load win chances. Try again in a moment.",
+              : err instanceof ApiError && err.status === 422
+                ? "None of the players on this simulated roster have stats this season."
+                : "Couldn't load win chances. Try again in a moment.",
           );
         })
         .finally(() => !cancelled && setLoading(false));
@@ -125,11 +130,11 @@ function UnlockedOdds({
       cancelled = true;
       clearTimeout(id);
     };
-  }, [team, swapsKey, password, onRejected]);
+  }, [team, rosterKey, password, onRejected]);
 
   if (error && !odds) return <p className="text-sm text-muted-foreground">{error}</p>;
 
-  const swapped = odds != null && odds.applied.length > 0;
+  const swapped = roster != null && odds != null;
   return (
     <LoadingOverlay active={loading} hasContent={odds != null} label="Calculating win chances">
       {odds && (
@@ -155,14 +160,14 @@ function UnlockedOdds({
             after={odds.current}
             afterLabel="with your swaps"
           />
-          {!swapped && (
+          <p className="text-xs text-muted-foreground">
+            Counts {swapped ? odds.current_active_count : odds.start_active_count} active players; players on IR
+            aren&apos;t counted.
+            {!swapped && " Swap, remove, or bring back a player from IR above to see how each category would change."}
+          </p>
+          {odds.unknown.length > 0 && (
             <p className="text-xs text-muted-foreground">
-              Swap a player on the roster above to see how each category would change.
-            </p>
-          )}
-          {odds.skipped.length > 0 && (
-            <p className="text-xs text-muted-foreground">
-              Not counted (no stats this season yet): {odds.skipped.join(", ")}.
+              Not counted (no stats this season yet): {odds.unknown.join(", ")}.
             </p>
           )}
         </div>
