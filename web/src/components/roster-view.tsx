@@ -47,7 +47,7 @@ import {
 } from "@/lib/api";
 import { useSelectedTeam } from "@/lib/use-selected-team";
 import { ordinal } from "@/lib/team-summary-fields";
-import { ArrowLeftRight, TriangleAlert } from "lucide-react";
+import { ArrowDown, ArrowLeftRight, ArrowUp, RotateCcw, TriangleAlert } from "lucide-react";
 
 const EASTERN_TZ = "America/New_York";
 // This league starts 10 players -- a day where more than 10 of a team's
@@ -522,6 +522,25 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                             </PopoverContent>
                           </Popover>
                           <span className={cn(isSwappedIn && "text-yellow-500")}>{row.Player}</span>
+                          {isSwappedIn && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="size-6 shrink-0 text-muted-foreground"
+                              title={`Put ${slot.originalPlayer} back`}
+                              aria-label={`Put ${slot.originalPlayer} back`}
+                              onClick={() =>
+                                setSwaps((prev) => {
+                                  const next = new Map(prev);
+                                  next.delete(slot.originalPlayer);
+                                  return next;
+                                })
+                              }
+                            >
+                              <RotateCcw className="size-3.5" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell className="text-muted-foreground">{row.NBATeam}</TableCell>
@@ -587,6 +606,14 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                         <span className="mr-2 font-sans text-xs text-muted-foreground">
                           was {row.realAvgRank.toFixed(1)}
                         </span>
+                      )}
+                      {rankingsSimulated && row.team === team && Number.isFinite(row.avgRank) && row.avgRank !== row.realAvgRank && (
+                        // Lower average rank is better, so a drop is an improvement.
+                        row.avgRank < row.realAvgRank ? (
+                          <ArrowUp className="mr-1 inline size-3.5 align-[-2px] text-win" aria-label="Improved" />
+                        ) : (
+                          <ArrowDown className="mr-1 inline size-3.5 align-[-2px] text-loss" aria-label="Worse" />
+                        )
                       )}
                       {Number.isFinite(row.avgRank) ? row.avgRank.toFixed(1) : "—"}
                     </TableCell>
