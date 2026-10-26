@@ -158,7 +158,6 @@ function UnlockedOdds({
             strongest={odds.strongest}
             before={odds.start}
             after={odds.current}
-            afterLabel="with your swaps"
           />
           <p className="text-xs text-muted-foreground">
             Counts {swapped ? odds.current_active_count : odds.start_active_count} active players; players on IR

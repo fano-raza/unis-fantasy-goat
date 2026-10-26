@@ -375,7 +375,6 @@ function CategoryDetails({ result }: { result: RosterOptimizerResult }) {
           strongest={result.strongest}
           before={result.start}
           after={result.end}
-          afterLabel="after the swaps"
         />
       </div>
     </details>
@@ -392,15 +391,12 @@ export function CategoryOddsBars({
   strongest,
   before,
   after,
-  afterLabel,
 }: {
   categories: OptimizerCategory[];
   strongest: OptimizerCategory[];
   before: Record<OptimizerCategory, number>;
   // Omitted (or identical to before) -> just the current chances.
   after?: Record<OptimizerCategory, number>;
-  // Completes "...before (grey) and ___", e.g. "after the swaps".
-  afterLabel?: string;
 }) {
   const changed = after != null && categories.some((c) => Math.abs(after[c] - before[c]) > 0.0005);
   return (
@@ -455,8 +451,7 @@ export function CategoryOddsBars({
         })}
       </div>
       <p className="mt-2 text-xs text-muted-foreground">
-        Blue categories are this team&apos;s current strengths. Bars show how often it would win each category in a
-        typical week{changed ? `. Grey is before; green shows how far a category improves ${afterLabel ?? "after"}, red its new, lower chance` : ""}.
+        Blue categories are this team&apos;s current strengths.
       </p>
     </div>
   );
