@@ -1,26 +1,28 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { ArrowLeftRight, ArrowRight, Lock } from "lucide-react";
+import { useState, type FormEvent, type ReactNode } from "react";
+import { ArrowLeftRight, ArrowRight, Lock, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SteppableSelect } from "@/components/steppable-select";
-import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { cn } from "@/lib/utils";
+import { ordinal } from "@/lib/team-summary-fields";
 import {
   ApiError,
+  checkRosterOptimizerPassword,
   runRosterOptimizer,
-  type OptimizerCategory,
-  type OptimizerPlayer,
   type RosterOptimizerResult,
+  type RosterRankRow,
 } from "@/lib/api";
 
 // Kept for the browser session only, after the server has accepted it --
 // the password itself is checked server-side (never shipped in the bundle).
 const PASSWORD_KEY = "roster-optimizer-password";
-// Category changes smaller than this (2 points of weekly win chance) aren't
-// worth calling out in a swap's "helps / costs" line.
-const NOTABLE = 0.02;
+// The optimizer itself answers in well under a second; holding the loading
+// veil up this long lets a couple of OPTIMIZER_PHRASES actually be read.
+const MIN_RUN_MS = 3000;
+export const OPTIMIZER_PHRASE_MS = 1500;
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 const pts = (x: number) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.abs(Math.round(x * 100))}`;
@@ -31,6 +33,13 @@ function readStoredPassword(): string {
   } catch {
     return "";
   }
+}
+
+function storePassword(password: string | null) {
+  try {
+    if (password) sessionStorage.setItem(PASSWORD_KEY, password);
+    else sessionStorage.removeItem(PASSWORD_KEY);
+  } catch {}
 }
 
 function errorMessage(err: unknown): { text: string; badPassword: boolean } {
@@ -46,189 +55,276 @@ function errorMessage(err: unknown): { text: string; badPassword: boolean } {
   return { text: "Couldn't reach the server. Try again in a moment.", badPassword: false };
 }
 
-/**
- * "Optimize roster" button for the Roster page (current season only): opens a
- * dialog that runs the backtested Roster Optimizer for `team` and shows this
- * week's recommended drop/add swaps. See _planning/roster-optimizer.md.
- */
-export function RosterOptimizerButton({ team, rosterSize }: { team: string; rosterSize: number }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <Button type="button" size="sm" onClick={() => setOpen(true)} disabled={!team || rosterSize === 0}>
-        <ArrowLeftRight className="size-4" />
-        Optimize roster
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-2xl">
-          {open && <OptimizerPanel team={team} rosterSize={rosterSize} />}
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
+type Step = "password" | "swaps";
 
-function OptimizerPanel({ team, rosterSize }: { team: string; rosterSize: number }) {
-  // Lazy initializers are safe here: this panel only mounts after a click
-  // (inside the opened dialog), never during server render/hydration.
-  const [password, setPassword] = useState(readStoredPassword);
-  const [rememberedPassword, setRememberedPassword] = useState(() => readStoredPassword() !== "");
-  const [maxSwaps, setMaxSwaps] = useState(Math.min(3, rosterSize));
-  const [result, setResult] = useState<RosterOptimizerResult | null>(null);
-  const [loading, setLoading] = useState(false);
+/**
+ * "Optimize" button for the Roster page (current season only). Asks for the
+ * password (checked by the server, then remembered for the browser session),
+ * then how many players to swap out, then closes and runs the backtested
+ * Roster Optimizer for `team` -- the page shows the loading veil while
+ * `onRunningChange(true)` and the comparison once `onResult` fires. See
+ * _planning/roster-optimizer.md.
+ */
+export function RosterOptimizerButton({
+  team,
+  rosterSize,
+  disabled,
+  onRunningChange,
+  onResult,
+}: {
+  team: string;
+  rosterSize: number;
+  disabled?: boolean;
+  onRunningChange: (running: boolean) => void;
+  onResult: (result: RosterOptimizerResult) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [step, setStep] = useState<Step>("password");
+  const [password, setPassword] = useState("");
+  const [maxSwaps, setMaxSwaps] = useState(3);
+  const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function run(e?: FormEvent) {
-    e?.preventDefault();
+  function openDialog() {
+    const stored = readStoredPassword();
+    setPassword(stored);
+    setStep(stored ? "swaps" : "password");
+    setMaxSwaps((n) => Math.max(1, Math.min(n, rosterSize)));
+    setError(null);
+    setOpen(true);
+  }
+
+  async function submitPassword(e: FormEvent) {
+    e.preventDefault();
     if (!password) return;
-    setLoading(true);
+    setChecking(true);
     setError(null);
     try {
-      const res = await runRosterOptimizer({ team, password, max_swaps: maxSwaps });
-      setResult(res);
-      setRememberedPassword(true);
-      try {
-        sessionStorage.setItem(PASSWORD_KEY, password);
-      } catch {}
+      await checkRosterOptimizerPassword(password);
+      storePassword(password);
+      setStep("swaps");
+    } catch (err) {
+      setError(errorMessage(err).text);
+      setPassword("");
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function submitSwaps(e: FormEvent) {
+    e.preventDefault();
+    setOpen(false);
+    onRunningChange(true);
+    try {
+      const [result] = await Promise.all([
+        runRosterOptimizer({ team, password, max_swaps: maxSwaps }),
+        new Promise((resolve) => setTimeout(resolve, MIN_RUN_MS)),
+      ]);
+      onResult(result);
     } catch (err) {
       const { text, badPassword } = errorMessage(err);
-      setError(text);
       if (badPassword) {
-        setRememberedPassword(false);
+        storePassword(null);
         setPassword("");
-        try {
-          sessionStorage.removeItem(PASSWORD_KEY);
-        } catch {}
+        setStep("password");
       }
+      setError(text);
+      setOpen(true);
     } finally {
-      setLoading(false);
+      onRunningChange(false);
     }
   }
 
   const swapOptions = Array.from({ length: rosterSize }, (_, i) => i + 1);
 
   return (
-    <div className="flex flex-col gap-5">
-      <DialogHeader>
-        <DialogTitle className="font-display text-2xl font-bold [font-variation-settings:'opsz'_36]">
-          Optimize {team}&apos;s roster
-        </DialogTitle>
-        <DialogDescription>
-          Finds the free-agent pickups that most raise this team&apos;s chances of winning its weekly matchups,
-          based on projected production for the rest of the season. Run it once a week.
-        </DialogDescription>
-      </DialogHeader>
+    <>
+      <Button type="button" size="sm" onClick={openDialog} disabled={disabled || !team || rosterSize === 0}>
+        <ArrowLeftRight className="size-4" />
+        Optimize
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-2xl font-bold [font-variation-settings:'opsz'_36]">
+              Optimize {team}&apos;s roster
+            </DialogTitle>
+            <DialogDescription>
+              {step === "password"
+                ? "Enter the optimizer password to continue."
+                : "Finds the free-agent pickups that most raise this team's chances of winning its weekly matchups, based on projected production for the rest of the season."}
+            </DialogDescription>
+          </DialogHeader>
 
-      <form onSubmit={run} className="flex flex-wrap items-end gap-4">
-        {!rememberedPassword && (
-          <label className="flex flex-col gap-1.5">
-            <span className="label">Password</span>
-            <span className="relative">
-              <Lock className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  setError(null);
-                }}
-                autoFocus
-                autoComplete="current-password"
-                className="h-8 w-48 rounded-md border border-input bg-background pr-3 pl-8 text-sm outline-none focus-visible:border-ring"
-              />
-            </span>
-          </label>
-        )}
-        <SteppableSelect label="Swaps" value={maxSwaps} onValueChange={setMaxSwaps} options={swapOptions} />
-        <Button type="submit" size="sm" disabled={loading || !password}>
-          {result ? "Run again" : "Find swaps"}
-        </Button>
-      </form>
+          {step === "password" ? (
+            <form onSubmit={submitPassword} className="flex flex-wrap items-end gap-3">
+              <label className="flex flex-col gap-1.5">
+                <span className="label">Password</span>
+                <span className="relative">
+                  <Lock className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      setError(null);
+                    }}
+                    autoFocus
+                    autoComplete="current-password"
+                    className="h-8 w-52 rounded-md border border-input bg-background pr-3 pl-8 text-sm outline-none focus-visible:border-ring"
+                  />
+                </span>
+              </label>
+              <Button type="submit" size="sm" disabled={checking || !password}>
+                {checking ? "Checking…" : "Continue"}
+              </Button>
+            </form>
+          ) : (
+            <form onSubmit={submitSwaps} className="flex flex-col gap-4">
+              <p className="text-sm font-medium">How many players are you willing to swap out?</p>
+              <div className="flex flex-wrap items-end gap-3">
+                <SteppableSelect label="Up to" value={maxSwaps} onValueChange={setMaxSwaps} options={swapOptions} />
+                <Button type="submit" size="sm">
+                  <ArrowLeftRight className="size-4" />
+                  Optimize
+                </Button>
+              </div>
+            </form>
+          )}
 
-      {error && <p className="text-sm text-loss">{error}</p>}
-
-      {loading && (
-        <div className="py-8">
-          <LoadingBasketballs label="Weighing every swap" />
-        </div>
-      )}
-
-      {!loading && result && <Results result={result} />}
-    </div>
+          {error && <p className="text-sm text-loss">{error}</p>}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
-function Results({ result }: { result: RosterOptimizerResult }) {
+type RowStatus = "kept" | "out" | "in";
+interface CompareRow {
+  player: RosterRankRow;
+  status: RowStatus;
+}
+
+function average(values: number[]): number | null {
+  const finite = values.filter(Number.isFinite);
+  return finite.length ? finite.reduce((a, b) => a + b, 0) / finite.length : null;
+}
+
+const byRank = (a: CompareRow, b: CompareRow) =>
+  (Number.isFinite(a.player.Rank) ? a.player.Rank : Infinity) - (Number.isFinite(b.player.Rank) ? b.player.Rank : Infinity);
+
+/**
+ * The optimizer's answer, drawn over the Roster page's own columns (NBA
+ * Team, Rank, Games Left). Desktop: the current roster (players leaving in
+ * red) beside the roster after the swaps (players joining in green).
+ * Narrower screens: one table, each player leaving followed directly by
+ * the player replacing them.
+ */
+export function OptimizerResults({
+  result,
+  roster,
+  allPlayers,
+  gamesLeft,
+  placementFor,
+  onClose,
+}: {
+  result: RosterOptimizerResult;
+  // This team's real roster, as the Roster page shows it.
+  roster: RosterRankRow[];
+  // Every player that season (rostered or free agent), for the incoming
+  // players' Rank/NBA team -- same names the optimizer joins on server-side.
+  allPlayers: RosterRankRow[];
+  gamesLeft: (row: RosterRankRow) => ReactNode;
+  // This team's league placement if its average rank were `avgRank`.
+  placementFor: (avgRank: number) => number | null;
+  onClose: () => void;
+}) {
   const improved = result.swaps.length > 0;
+  const byName = new Map(allPlayers.map((r) => [r.Player, r]));
+  const dropped = new Set(result.swaps.map((sw) => sw.drop.name));
+  const incoming = (sw: RosterOptimizerResult["swaps"][number]): RosterRankRow =>
+    byName.get(sw.add.name) ?? {
+      Year: result.year,
+      FantasyTeam: null,
+      Player: sw.add.name,
+      NBATeam: sw.add.nba_team ?? "",
+      Rank: NaN,
+    };
+
+  const current: CompareRow[] = roster
+    .map((player) => ({ player, status: dropped.has(player.Player) ? "out" : "kept" }) as CompareRow)
+    .sort(byRank);
+  const after: CompareRow[] = [
+    ...current.filter((r) => r.status === "kept"),
+    ...result.swaps.map((sw) => ({ player: incoming(sw), status: "in" }) as CompareRow),
+  ].sort(byRank);
+  // Mobile: the current order, with each replacement right under the
+  // player it replaces.
+  const replacementFor = new Map(result.swaps.map((sw) => [sw.drop.name, incoming(sw)]));
+  const inline: CompareRow[] = current.flatMap((r) => {
+    const add = replacementFor.get(r.player.Player);
+    return add ? [r, { player: add, status: "in" as const }] : [r];
+  });
+
+  const beforeAvg = average(current.map((r) => r.player.Rank));
+  const afterAvg = average(after.map((r) => r.player.Rank));
+
   return (
-    <div className="flex flex-col gap-6">
-      <section aria-label="Weekly matchup win chance" className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="label">Weekly matchup win chance</span>
-        <span className="font-display text-3xl font-bold tabular-nums [font-variation-settings:'opsz'_36]">
-          {pct(result.start_matchup_win)}
-          {improved && (
-            <>
-              <ArrowRight className="mx-1.5 inline size-5 align-[-2px] text-muted-foreground" aria-label="to" />
-              <span className="text-win">{pct(result.end_matchup_win)}</span>
-            </>
-          )}
-        </span>
-        {improved && (
-          <span className="text-sm text-muted-foreground">
-            with {result.swaps.length} {result.swaps.length === 1 ? "swap" : "swaps"}
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+        <div className="flex flex-col gap-1">
+          <span className="label">Weekly matchup win chance</span>
+          <span className="font-display text-3xl leading-none font-bold tabular-nums [font-variation-settings:'opsz'_36]">
+            {pct(result.start_matchup_win)}
+            {improved && (
+              <>
+                <ArrowRight className="mx-1.5 inline size-5 align-[-2px] text-muted-foreground" aria-label="to" />
+                <span className="text-win">{pct(result.end_matchup_win)}</span>
+              </>
+            )}
+            {improved && (
+              <span className="ml-2 font-sans text-sm font-normal text-muted-foreground">
+                with {result.swaps.length} {result.swaps.length === 1 ? "swap" : "swaps"}
+              </span>
+            )}
           </span>
-        )}
-      </section>
+        </div>
+        <Button type="button" variant="outline" size="sm" onClick={onClose}>
+          Back to roster
+        </Button>
+      </div>
 
       {improved ? (
-        <ol className="flex flex-col gap-3">
-          {result.swaps.map((sw, i) => {
-            const changes = Object.entries(sw.category_change) as [OptimizerCategory, number][];
-            const helps = changes.filter(([, d]) => d >= NOTABLE).sort((a, b) => b[1] - a[1]).map(([c]) => c);
-            const costs = changes.filter(([, d]) => d <= -NOTABLE).sort((a, b) => a[1] - b[1]).map(([c]) => c);
-            return (
-              <li key={`${sw.drop.id}-${sw.add.id}`} className="rounded-lg bg-muted/60 p-3">
-                <div className="flex items-start gap-3">
-                  <span className="font-display text-lg leading-6 font-bold text-muted-foreground tabular-nums">
-                    {i + 1}
-                  </span>
-                  <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-start">
-                    <PlayerLine verb="Drop" player={sw.drop} />
-                    <ArrowRight className="hidden size-4 self-center text-muted-foreground sm:block" />
-                    <PlayerLine verb="Add" player={sw.add} />
-                  </div>
-                </div>
-                <p className="mt-2 pl-7 text-xs text-muted-foreground">
-                  {helps.length > 0 && (
-                    <>
-                      Helps <span className="font-medium text-win">{helps.join(", ")}</span>
-                    </>
-                  )}
-                  {helps.length > 0 && costs.length > 0 && " · "}
-                  {costs.length > 0 && (
-                    <>
-                      costs <span className="font-medium text-loss">{costs.join(", ")}</span>
-                    </>
-                  )}
-                  {sw.matchup_win_after != null && (
-                    <>
-                      {(helps.length > 0 || costs.length > 0) && " · "}
-                      win chance after: {pct(sw.matchup_win_after)}
-                    </>
-                  )}
-                </p>
-              </li>
-            );
-          })}
-        </ol>
+        <>
+          <div className="hidden gap-6 lg:grid lg:grid-cols-2">
+            <section aria-label="Current roster">
+              <h3 className="mb-2 text-sm font-semibold">Current roster</h3>
+              <CompareTable rows={current} avgRank={beforeAvg} placement={beforeAvg != null ? placementFor(beforeAvg) : null} gamesLeft={gamesLeft} />
+            </section>
+            <section aria-label="Roster after swaps">
+              <h3 className="mb-2 text-sm font-semibold">
+                After {result.swaps.length} {result.swaps.length === 1 ? "swap" : "swaps"}
+              </h3>
+              <CompareTable rows={after} avgRank={afterAvg} placement={afterAvg != null ? placementFor(afterAvg) : null} gamesLeft={gamesLeft} />
+            </section>
+          </div>
+          <div className="lg:hidden">
+            <CompareTable
+              rows={inline}
+              avgRank={afterAvg}
+              beforeAvgRank={beforeAvg}
+              placement={afterAvg != null ? placementFor(afterAvg) : null}
+              gamesLeft={gamesLeft}
+            />
+          </div>
+          <CategoryDetails result={result} />
+        </>
       ) : (
         <p className="rounded-lg bg-muted/60 p-3 text-sm">
           No swap is worth making this week: none of the available players would raise this team&apos;s weekly win
           chance by at least 1 point. Check back next week.
         </p>
       )}
-
-      <CategoryTable result={result} />
 
       <p className="text-xs text-muted-foreground">
         Win chances are against an average opponent in this league, and turnovers are left out. Stats as of{" "}
@@ -238,33 +334,107 @@ function Results({ result }: { result: RosterOptimizerResult }) {
   );
 }
 
-function PlayerLine({ verb, player }: { verb: "Drop" | "Add"; player: OptimizerPlayer }) {
-  const g = player.per_game;
-  const flagged = player.injury_status && player.injury_status !== "ACTIVE";
+const ROW_STYLE: Record<RowStatus, string> = {
+  kept: "",
+  out: "bg-loss/10 hover:bg-loss/15",
+  in: "bg-win/10 hover:bg-win/15",
+};
+const EDGE_STYLE: Record<RowStatus, string> = {
+  kept: "",
+  out: "shadow-[inset_3px_0_0_var(--loss)]",
+  in: "shadow-[inset_3px_0_0_var(--win)]",
+};
+
+function CompareTable({
+  rows,
+  avgRank,
+  beforeAvgRank,
+  placement,
+  gamesLeft,
+}: {
+  rows: CompareRow[];
+  avgRank: number | null;
+  // When set, the Average Rank row reads "before → after" (mobile's single table).
+  beforeAvgRank?: number | null;
+  placement: number | null;
+  gamesLeft: (row: RosterRankRow) => ReactNode;
+}) {
+  // Single-table (mobile) layout: shorter headers and wrapping names so
+  // all four columns fit a phone's width.
+  const compact = beforeAvgRank !== undefined;
   return (
-    <div className="min-w-0">
-      <div className="flex items-baseline gap-1.5">
-        <span className={cn("text-xs font-medium", verb === "Drop" ? "text-loss" : "text-win")}>{verb}</span>
-        <span className="truncate font-semibold">{player.name}</span>
-        {player.nba_team && <span className="text-xs text-muted-foreground">{player.nba_team}</span>}
-      </div>
-      <div className="text-xs text-muted-foreground tabular-nums">
-        {g.PTS} pts · {g.REB} reb · {g.AST} ast · {g["3PTM"]} 3pm · {g.STL} stl · {g.BLK} blk
-      </div>
-      <div className="text-xs text-muted-foreground tabular-nums">
-        Plays ~{pct(player.availability)} of games
-        {flagged && <span className="text-loss"> · {player.injury_status!.replaceAll("_", " ").toLowerCase()}</span>}
-      </div>
-    </div>
+    <Table>
+      {compact && <caption className="sr-only">Team is the NBA team; Left is games left this week.</caption>}
+      <TableHeader>
+        <TableRow>
+          <TableHead>Player</TableHead>
+          <TableHead>{compact ? "Team" : "NBA Team"}</TableHead>
+          <TableHead className="text-right">Rank</TableHead>
+          <TableHead className="text-right">{compact ? "Left" : "Games Left"}</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        <TableRow className="bg-focus-row">
+          {compact ? (
+            // Single-table (mobile) layout: one full-width row, so the
+            // before -> after reading doesn't widen the Rank column.
+            <TableCell colSpan={4}>
+              <span className="flex items-baseline justify-between gap-3">
+                <span className="team-name text-primary">Average Rank</span>
+                <span className="font-mono font-extrabold whitespace-nowrap tabular-nums text-primary">
+                  {beforeAvgRank != null && (
+                    <span className="font-bold text-muted-foreground">
+                      {beforeAvgRank.toFixed(1)}
+                      <ArrowRight className="mx-1 inline size-3 align-[-1px]" aria-label="to" />
+                    </span>
+                  )}
+                  {avgRank != null ? avgRank.toFixed(1) : "—"}
+                  {placement != null && (
+                    <span className="ml-1 font-sans text-xs font-bold text-muted-foreground">({ordinal(placement)})</span>
+                  )}
+                </span>
+              </span>
+            </TableCell>
+          ) : (
+            <>
+              <TableCell className="team-name text-primary">Average Rank</TableCell>
+              <TableCell />
+              <TableCell className="text-right font-mono font-extrabold whitespace-nowrap tabular-nums text-primary">
+                {avgRank != null ? avgRank.toFixed(1) : "—"}
+                {placement != null && (
+                  <span className="ml-1 font-sans text-xs font-bold text-muted-foreground">({ordinal(placement)})</span>
+                )}
+              </TableCell>
+              <TableCell />
+            </>
+          )}
+        </TableRow>
+        {rows.map(({ player, status }) => (
+          <TableRow key={`${status}-${player.Player}`} className={ROW_STYLE[status]}>
+            <TableCell className={cn("font-sans font-semibold", compact && "whitespace-normal", EDGE_STYLE[status])}>
+              <span className="flex items-center gap-1.5 leading-tight">
+                {status === "out" && <Minus className="size-3.5 shrink-0 text-loss" aria-label="Leaving" />}
+                {status === "in" && <Plus className="size-3.5 shrink-0 text-win" aria-label="Joining" />}
+                <span className={cn(status === "out" && "text-loss", status === "in" && "text-win")}>{player.Player}</span>
+              </span>
+            </TableCell>
+            <TableCell className="text-muted-foreground">{player.NBATeam || "—"}</TableCell>
+            <TableCell className="text-right font-mono tabular-nums">
+              {Number.isFinite(player.Rank) ? player.Rank : "—"}
+            </TableCell>
+            <TableCell className="text-right font-mono tabular-nums">{gamesLeft(player)}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
-function CategoryTable({ result }: { result: RosterOptimizerResult }) {
-  const improved = result.swaps.length > 0;
+function CategoryDetails({ result }: { result: RosterOptimizerResult }) {
   return (
-    <section aria-label="Win chance by category">
-      <h3 className="mb-2 text-sm font-semibold">Win chance by category</h3>
-      <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-1.5 text-sm">
+    <details className="group">
+      <summary className="cursor-pointer text-sm font-semibold select-none">Win chance by category</summary>
+      <div className="mt-3 grid max-w-xl grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-1.5 text-sm">
         {result.categories.map((cat) => {
           const before = result.start[cat];
           const after = result.end[cat];
@@ -274,24 +444,16 @@ function CategoryTable({ result }: { result: RosterOptimizerResult }) {
               <span className={cn("w-12 font-medium", result.strongest.includes(cat) && "text-primary")}>{cat}</span>
               <div className="relative h-2 overflow-hidden rounded-full bg-muted" aria-hidden>
                 <div className="absolute inset-y-0 left-0 rounded-full bg-foreground/25" style={{ width: pct(before) }} />
-                {improved && (
-                  <div
-                    className={cn("absolute inset-y-0 left-0 rounded-full", delta >= 0 ? "bg-win/80" : "bg-loss/80")}
-                    style={{ width: pct(after), opacity: 0.85 }}
-                  />
-                )}
+                <div
+                  className={cn("absolute inset-y-0 left-0 rounded-full", delta >= 0 ? "bg-win/80" : "bg-loss/80")}
+                  style={{ width: pct(after), opacity: 0.85 }}
+                />
               </div>
               <span className="w-28 text-right tabular-nums">
-                {improved ? (
-                  <>
-                    <span className="text-muted-foreground">{pct(before)}</span> → {pct(after)}{" "}
-                    <span className={cn("text-xs", delta > 0.005 ? "text-win" : delta < -0.005 ? "text-loss" : "text-muted-foreground")}>
-                      {pts(delta)}
-                    </span>
-                  </>
-                ) : (
-                  pct(before)
-                )}
+                <span className="text-muted-foreground">{pct(before)}</span> → {pct(after)}{" "}
+                <span className={cn("text-xs", delta > 0.005 ? "text-win" : delta < -0.005 ? "text-loss" : "text-muted-foreground")}>
+                  {pts(delta)}
+                </span>
               </span>
             </div>
           );
@@ -299,9 +461,9 @@ function CategoryTable({ result }: { result: RosterOptimizerResult }) {
       </div>
       <p className="mt-2 text-xs text-muted-foreground">
         Blue categories are this team&apos;s current strengths. Bars show how often it would win each category in a
-        typical week{improved ? ", before (grey) and after the swaps" : ""}.
+        typical week, before (grey) and after the swaps.
       </p>
-    </section>
+    </details>
   );
 }
 

@@ -54,3 +54,28 @@ export const LOADING_PHRASES: string[] = [
   "Rotating on defense",
   "Nothing but net",
 ];
+
+// Shown over the roster while the Roster Optimizer runs: optimization
+// jargon that sounds smart and is mostly nonsense.
+export const OPTIMIZER_PHRASES: string[] = [
+  "Descending the gradient",
+  "Annealing the bench",
+  "Solving the knapsack of minutes",
+  "Running Monte Carlo on the waiver wire",
+  "Minimizing turnover entropy",
+  "Backpropagating through the box score",
+  "Escaping a local minimum",
+  "Bootstrapping the free-agent pool",
+  "Relaxing the roster constraints",
+  "Computing the Hessian of hustle",
+  "Normalizing load-management variance",
+  "Regressing to the mean, on purpose",
+  "Cross-validating the eye test",
+  "Pareto-optimizing the frontcourt",
+  "Linear-programming the rotation",
+  "Inverting the matrix of bad contracts",
+  "Simulating ten thousand Tuesdays",
+  "Sampling the posterior of bench minutes",
+  "Tuning hyperparameters",
+  "Maximizing expected box-score utility",
+];

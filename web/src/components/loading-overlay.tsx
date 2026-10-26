@@ -18,22 +18,26 @@ export function LoadingOverlay({
   active,
   hasContent,
   label,
+  phrases,
+  intervalMs,
   children,
 }: {
   active: boolean;
   hasContent: boolean;
   label?: string;
+  phrases?: string[];
+  intervalMs?: number;
   children: ReactNode;
 }) {
   if (active && !hasContent) {
-    return <LoadingBasketballs label={label} />;
+    return <LoadingBasketballs label={label} phrases={phrases} intervalMs={intervalMs} />;
   }
   return (
     <div className="relative">
       {children}
       {active && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80">
-          <LoadingBasketballs label={label} />
+          <LoadingBasketballs label={label} phrases={phrases} intervalMs={intervalMs} />
         </div>
       )}
     </div>

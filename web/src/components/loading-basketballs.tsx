@@ -20,16 +20,27 @@ const PHRASE_INTERVAL_MS = 2500;
 // index starts at a fixed 0 so server and client's first render match,
 // then an effect randomizes the start and begins rotating -- avoids a
 // hydration mismatch from Math.random() running during SSR.
-export function LoadingBasketballs({ label }: { label?: string }) {
+//
+// `phrases`/`intervalMs` override the default list and pace for a specific
+// wait (e.g. the Roster Optimizer's OPTIMIZER_PHRASES).
+export function LoadingBasketballs({
+  label,
+  phrases = LOADING_PHRASES,
+  intervalMs = PHRASE_INTERVAL_MS,
+}: {
+  label?: string;
+  phrases?: string[];
+  intervalMs?: number;
+}) {
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
-    setIndex(Math.floor(Math.random() * LOADING_PHRASES.length));
+    setIndex(Math.floor(Math.random() * phrases.length));
     const id = setInterval(() => {
-      setIndex((i) => (i + 1) % LOADING_PHRASES.length);
-    }, PHRASE_INTERVAL_MS);
+      setIndex((i) => (i + 1) % phrases.length);
+    }, intervalMs);
     return () => clearInterval(id);
-  }, []);
+  }, [phrases, intervalMs]);
 
   return (
     <div
@@ -52,7 +63,7 @@ export function LoadingBasketballs({ label }: { label?: string }) {
         aria-hidden="true"
         className="label"
       >
-        {LOADING_PHRASES[index]}
+        {phrases[index % phrases.length]}
       </p>
       <style>{`
         .loading-basketball {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Card,
   CardAction,
@@ -32,7 +32,8 @@ import { LabeledSelect } from "@/components/labeled-select";
 import { SteppableSelect } from "@/components/steppable-select";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { LoadingOverlay } from "@/components/loading-overlay";
-import { RosterOptimizerButton } from "@/components/roster-optimizer";
+import { OPTIMIZER_PHRASE_MS, OptimizerResults, RosterOptimizerButton } from "@/components/roster-optimizer";
+import { OPTIMIZER_PHRASES } from "@/lib/loading-phrases";
 import { cn } from "@/lib/utils";
 import {
   getNBASchedule,
@@ -40,6 +41,7 @@ import {
   getWeekCalendar,
   type LeagueMeta,
   type NBAScheduleGame,
+  type RosterOptimizerResult,
   type RosterRankRow,
   type WeekCalendarRow,
 } from "@/lib/api";
@@ -132,9 +134,22 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
   const [swaps, setSwaps] = useState<Map<string, RosterRankRow>>(new Map());
   const [openSwapSlot, setOpenSwapSlot] = useState<string | null>(null);
 
-  // Changing team/year invalidates whatever swaps were being simulated.
+  // Roster Optimizer run in progress / its answer, shown in place of the
+  // roster table until "Back to roster" (see roster-optimizer.tsx).
+  const [optimizing, setOptimizing] = useState(false);
+  const [optResult, setOptResult] = useState<RosterOptimizerResult | null>(null);
+  // The team on screen right now, for discarding an optimizer answer that
+  // arrives after the user has switched teams mid-run.
+  const currentTeam = useRef(team);
+  useEffect(() => {
+    currentTeam.current = team;
+  }, [team]);
+
+  // Changing team/year invalidates whatever swaps were being simulated,
+  // and any optimizer answer (it was for the previous team).
   useEffect(() => {
     setSwaps(new Map());
+    setOptResult(null);
   }, [team, year]);
 
   useEffect(() => {
@@ -250,6 +265,13 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
     return idx === -1 ? null : idx + 1;
   }, [teamAverages, team]);
 
+  // Where this team would place in Roster Rankings with a given average
+  // rank (every other team's real average unchanged).
+  function placementFor(avgRank: number): number | null {
+    if (!team) return null;
+    return teamAverages.filter((r) => r.team !== team && r.avgRank < avgRank).length + 1;
+  }
+
   // NBA team abbreviation -> that week's games, pre-grouped so per-player
   // lookups below are O(1) instead of re-scanning every game per player.
   const gamesByNBATeam = useMemo(() => {
@@ -280,6 +302,13 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
 
   const now = Date.now();
   const today = todayKey();
+
+  function gamesLeftLabel(row: RosterRankRow): ReactNode {
+    if (scheduleLoading) return "…";
+    const games = gamesByNBATeam.get(row.NBATeam) ?? [];
+    const remaining = games.filter((g) => new Date(g.Date).getTime() > now).length;
+    return `${remaining}/${games.length}`;
+  }
   // Roster data isn't week-aware -- Ref/roster_ranks.csv is a single
   // per-season snapshot (frozen end-of-season for closed years, "as of
   // today" for the current year), not tracked week by week. Showing it
@@ -321,18 +350,29 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
           )}
           <label className="flex items-center gap-2 label text-foreground">
             <span className="text-muted-foreground">Games Left</span>
-            <Switch checked={showFullWeek} onCheckedChange={setShowFullWeek} />
+            <Switch checked={showFullWeek} onCheckedChange={setShowFullWeek} disabled={optResult != null && optResult.swaps.length > 0} />
             <span className="text-muted-foreground">Full Week Grid</span>
           </label>
           {/* Works on current rosters and free agents, so current season only. */}
           {year === meta.current_year && (
-            <RosterOptimizerButton team={team} rosterSize={teamRoster.length} />
+            <RosterOptimizerButton
+              team={team}
+              rosterSize={teamRoster.length}
+              disabled={optimizing}
+              onRunningChange={setOptimizing}
+              onResult={(res) => {
+                // Ignore an answer for a team the page has since moved off.
+                if (res.team !== currentTeam.current) return;
+                setSwaps(new Map());
+                setOptResult(res);
+              }}
+            />
           )}
         </CardContent>
       </Card>
 
       <Card>
-        {simulating && (
+        {simulating && !optResult && (
           <CardHeader>
             <CardDescription className="font-semibold text-primary">
               Simulated roster
@@ -345,8 +385,24 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
           </CardHeader>
         )}
         <CardContent>
-          <LoadingOverlay active={rosterLoading} hasContent={rosterRows.length > 0} label="Loading roster">
-          {rosterError ? (
+          <LoadingOverlay
+            active={rosterLoading || optimizing}
+            hasContent={rosterRows.length > 0}
+            label={optimizing ? "Optimizing roster" : "Loading roster"}
+            phrases={optimizing ? OPTIMIZER_PHRASES : undefined}
+            intervalMs={optimizing ? OPTIMIZER_PHRASE_MS : undefined}
+          >
+          {optResult && (
+            <OptimizerResults
+              result={optResult}
+              roster={teamRoster}
+              allPlayers={rosterRows}
+              gamesLeft={gamesLeftLabel}
+              placementFor={placementFor}
+              onClose={() => setOptResult(null)}
+            />
+          )}
+          {optResult && optResult.swaps.length > 0 ? null : rosterError ? (
             <p className="text-sm text-muted-foreground">No roster data for {year} ({rosterError}).</p>
           ) : teamRoster.length === 0 ? (
             <p className="text-sm text-muted-foreground">No roster data for {team} in {year}.</p>

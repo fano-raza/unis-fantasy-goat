@@ -421,6 +421,11 @@ export interface RosterOptimizerResult {
 export const runRosterOptimizer = (req: { team: string; password: string; max_swaps: number }) =>
   post<RosterOptimizerResult>("/league/roster_optimizer", req);
 
+// Confirms the password (401 if wrong) without running the optimizer, so
+// the Roster page can ask for it before asking how many swaps to make.
+export const checkRosterOptimizerPassword = (password: string) =>
+  post<{ ok: true }>("/league/roster_optimizer/check_password", { password });
+
 // Every week of a season, keyed by week number as a string (JSON object
 // keys are always strings, even though the backend's dict is int-keyed --
 // see dashboard_site/api/league_store.py::weekly_leaderboard_season).
