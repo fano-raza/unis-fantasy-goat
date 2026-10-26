@@ -137,3 +137,47 @@ def test_store_clamps_max_swaps_to_roster_size(store):
 def test_store_unknown_team(store):
     with pytest.raises(KeyError):
         store.roster_optimizer("Nobody")
+
+
+# --- Premium mode: shared password check + manual-swap category odds ------
+
+def test_premium_check_password_alias(monkeypatch):
+    monkeypatch.setenv("ROSTER_OPTIMIZER_PASSWORD", "secret")
+    assert client.post("/premium/check_password", json={"password": "wrong"}).status_code == 401
+    assert client.post("/premium/check_password", json={"password": "secret"}).json() == {"ok": True}
+
+
+def test_category_odds_endpoint_is_password_gated(monkeypatch):
+    monkeypatch.setenv("ROSTER_OPTIMIZER_PASSWORD", "secret")
+    called = []
+    monkeypatch.setattr(app_module.league_store, "roster_category_odds", lambda *a: called.append(a) or {})
+    body = {"team": "T", "password": "wrong", "swaps": [{"drop": "P1", "add": "P20"}]}
+    assert client.post("/league/roster_category_odds", json=body).status_code == 401 and not called
+    body["password"] = "secret"
+    assert client.post("/league/roster_category_odds", json=body).status_code == 200
+    assert called == [("T", [("P1", "P20")])]
+
+
+def test_store_category_odds_no_swaps_matches_optimizer_start(store):
+    odds = store.roster_category_odds("T", [])
+    opt = store.roster_optimizer("T", max_swaps=1)
+    assert odds["start"] == odds["current"] == opt["start"]
+    assert odds["start_matchup_win"] == opt["start_matchup_win"]
+    assert odds["applied"] == [] and odds["skipped"] == []
+
+
+def test_store_category_odds_with_swaps(store):
+    # T owns P13-P16; P17+ are free agents; P1 is on team A (one-sided add).
+    swaps = [("P13", "P1"), ("P99", "P20"), ("P14", "P15"), ("P14", "P13")]
+    odds = store.roster_category_odds("T", swaps)
+    # P99 has no stats; P15 is already on T; P13 left in swap 1, so it can come back for P14.
+    assert odds["applied"] == [{"drop": "P13", "add": "P1"}, {"drop": "P14", "add": "P13"}]
+    assert odds["skipped"] == ["P99 -> P20", "P14 -> P15"]
+    assert odds["current"] != odds["start"]
+    assert set(odds["current"]) == set(odds["categories"])
+    assert all(0 <= v <= 1 for v in odds["current"].values())
+
+
+def test_store_category_odds_unknown_team(store):
+    with pytest.raises(KeyError):
+        store.roster_category_odds("Nobody", [])

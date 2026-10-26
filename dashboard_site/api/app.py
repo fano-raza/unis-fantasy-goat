@@ -24,6 +24,7 @@ from .schemas import (
     QueryResponse,
     DraftPicksRequest,
     RecordsRequest,
+    RosterCategoryOddsRequest,
     RosterOptimizerPasswordRequest,
     RosterOptimizerRequest,
     RosterRanksRequest,
@@ -400,12 +401,27 @@ def _check_roster_optimizer_password(password: str) -> None:
         raise HTTPException(status_code=401, detail="Wrong password.")
 
 
+@app.post("/premium/check_password")
 @app.post("/league/roster_optimizer/check_password")
-def league_roster_optimizer_check_password(req: RosterOptimizerPasswordRequest) -> dict:
-    """Lets the Roster page confirm the password before asking how many swaps
-    to run, without running the optimizer itself."""
+def premium_check_password(req: RosterOptimizerPasswordRequest) -> dict:
+    """Premium mode login: confirms the password (the same one every premium
+    feature checks server-side) without running anything. The old
+    /league/roster_optimizer/check_password path is kept as an alias."""
     _check_roster_optimizer_password(req.password)
     return {"ok": True}
+
+
+@app.post("/league/roster_category_odds")
+def league_roster_category_odds(req: RosterCategoryOddsRequest) -> dict:
+    """Premium: per-category weekly win chances for a team's roster, before
+    and after the Roster page's manual what-if swaps."""
+    _check_roster_optimizer_password(req.password)
+    try:
+        return league_store.roster_category_odds(req.team, [(s.drop, s.add) for s in req.swaps])
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc.args[0])) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.post("/league/roster_optimizer")

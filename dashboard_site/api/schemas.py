@@ -119,6 +119,17 @@ class RosterOptimizerPasswordRequest(BaseModel):
     password: str
 
 
+class RosterSwap(BaseModel):
+    drop: str
+    add: str
+
+
+class RosterCategoryOddsRequest(BaseModel):
+    team: str
+    password: str
+    swaps: list[RosterSwap] = Field(default_factory=list, max_length=20)
+
+
 class RosterOptimizerRequest(BaseModel):
     team: str
     password: str
