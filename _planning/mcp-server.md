@@ -1,8 +1,43 @@
 # MCP server for the app
 
-Let league members query the league's data from their own AI chat accounts (Claude, ChatGPT, …) by adding the app as an MCP connector. This doc holds everything known so far and every open question. Nothing has been built yet.
+Let league members query the league's data from their own AI chat accounts (Claude, ChatGPT, …) by adding the app as an MCP connector. **Status (2026-10-26): v1 live** at `https://134-209-168-108.sslip.io/mcp`. Code in `mcp_server/server.py`, compose service `mcp-server`, Caddy route `/mcp*`. Not yet tested as a real connector inside Claude or ChatGPT (see [Next steps](#next-steps)).
 
-**Status (2026-10-26):** idea scoped in chat with the user, not started. The user will pick it up in a new session. Start with [Open questions](#open-questions-decide-with-the-user-first).
+## Decisions (2026-10-26)
+
+- **Access:** open, read-only, no auth (Claude supports authless remote servers). Premium tools left out.
+- **Domain:** keep the sslip.io URL for now.
+- **Scope:** the user's bar is that questions like "who has the record for most rebounds in week 2" get answered correctly. No StatBot `ask` tool: the AI does the language part, so the tools only need to be expressive and well described. Player-level data is limited to rosters and draft picks.
+- **Usage logging:** every tool call is logged with its args (`docker logs unisfantasy-mcp-server | grep tool=`).
+
+## What was built
+
+- `mcp_server/server.py`: `mcp` SDK **2.3** (note: v2 renamed `FastMCP` to `MCPServer` (`mcp.server.mcpserver`); raise `mcp.server.mcpserver.exceptions.ToolError` for messages the AI should see, since any other exception is masked as "Error executing tool X"). Stateless streamable HTTP with JSON responses, port 8091. Per-IP rate limit of 60 requests/min (`MCP_RATE_LIMIT_PER_MIN`), using X-Forwarded-For from Caddy. `/mcp/health`. Pure httpx proxy to `dashboard-api:8090`, with no pandas. Runs at ~66 MB under a 128 MB `mem_limit`.
+- **Tools (13):** `league_info` (rules, formats, calendar), `team_week_records` (single-week records, each row carrying the matchup's dates + length in days), `stats_query` (`/query` wrapper), `weekly_results`, `standings`, `team_profile`, `head_to_head`, `records`, `season_stats`, `roster`, `draft`, `playoffs`, `nba_schedule`. Team names match case-insensitively, with a helpful error listing valid names.
+- The server `instructions` + tool docstrings carry the league quirks: TO lower-is-better, never sum FG%/FT%, RS vs PO, multi-week matchups (All-Star break; the 2019 playoffs were 14-day rounds, which is why the all-time single-"week" REB record is 812), and the partial current week.
+- **Bug fixed along the way (`dashboard_site/api/query_engine.py`):** `/query` counted 2027's pre-seeded placeholder weeks and the not-yet-started current week as 0-0-9 tied matchups (17 phantom draws per team) and as 0-stat weeks (they won "fewest turnovers"). The new `_drop_unplayed` filters rows with no PTS/FGA, on the `/query`/`/timeseries` path only. The website's `/query` consumers (Profile/Comparison wins/losses) were unaffected, since phantom ties add no W/L.
+
+## How to connect (for the league)
+
+Post in Discord:
+
+> **Ask an AI about our league.** You can now add the league's stats to your own Claude chat.
+> 1. In Claude (claude.ai or the desktop app), go to **Settings → Connectors → Add custom connector**.
+> 2. Name: `Unis Fantasy GOAT`. URL: `https://134-209-168-108.sslip.io/mcp`. No login needed.
+> 3. In a chat, make sure the connector is switched on (the tools/"+" menu), then ask away: "who has the most rebounds ever in week 2?", "Fano vs Amil all-time head to head", "who's had the best draft score each year?"
+>
+> Custom connectors need a paid Claude plan. ChatGPT can also add it as a custom connector in Developer Mode, though which plans get this changes often and we haven't tested it yet.
+
+## Next steps
+
+1. **Test as a real connector** in Claude with real questions and compare against the website. The tools were only tested via an MCP client, not with an AI choosing which tool to call.
+2. Try ChatGPT (Developer Mode connector); check whether it needs the `search`/`fetch` tool conventions.
+3. After a week or two, read the `tool=` logs for errors and questions the tools couldn't answer.
+4. **Data anomaly found, not fixed:** 2026 week 14 Chirayu (vs Fano) has 33 PTS / 1 TO, and 2026 week 15 Rohil (vs Fano) has 18 PTS / 2 TO in `2026_CompStats.csv`. They show up as all-time "fewest turnovers" and best FG%/FT% weeks in both the MCP and the site's Records. Ask the user whether those weeks are real (e.g. a forfeited week) or a stats-capture glitch.
+5. Later: a real domain; OAuth for premium tools (phase 2 of the access model).
+
+---
+
+*Original scoping notes (pre-build) follow.*
 
 ---
 
