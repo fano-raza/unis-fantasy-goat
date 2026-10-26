@@ -417,11 +417,11 @@ def league_roster_category_odds(req: RosterCategoryOddsRequest) -> dict:
     and after the Roster page's manual what-if swaps."""
     _check_roster_optimizer_password(req.password)
     try:
-        return league_store.roster_category_odds(req.team, [(s.drop, s.add) for s in req.swaps])
+        return league_store.roster_category_odds(req.team, req.roster)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc.args[0])) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.post("/league/roster_optimizer")

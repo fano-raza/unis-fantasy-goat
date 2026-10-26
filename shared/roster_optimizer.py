@@ -320,19 +320,25 @@ def league_ratings(team_values: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(r, index=team_values.index, columns=MAIN_CATS)
 
 
-def roster_scale(rosters: dict[str, list], roster_size: int | None = None) -> dict[str, float]:
+def roster_scale(
+    rosters: dict[str, list], roster_size: int | None = None, unscaled: frozenset | set = frozenset()
+) -> dict[str, float]:
     """Per-team multiplier that puts every team's totals on the same roster
-    size (default: the league's most common size; ties -> the larger)."""
-    sizes = [len(ids) for ids in rosters.values()]
+    size (default: the league's most common size; ties -> the larger).
+    Teams in `unscaled` keep their real totals (1.0) -- a hypothetical
+    roster with a player removed must actually lose his stats."""
+    sizes = [len(ids) for team, ids in rosters.items() if team not in unscaled]
     if roster_size is None:
         counts = pd.Series(sizes).value_counts()
         roster_size = int(max(counts[counts == counts.max()].index))
-    return {team: roster_size / len(ids) for team, ids in rosters.items()}
+    return {team: 1.0 if team in unscaled else roster_size / len(ids) for team, ids in rosters.items()}
 
 
-def team_component_sums(players: pd.DataFrame, rosters: dict[str, list], roster_size: int | None = None) -> pd.DataFrame:
+def team_component_sums(
+    players: pd.DataFrame, rosters: dict[str, list], roster_size: int | None = None, unscaled: frozenset | set = frozenset()
+) -> pd.DataFrame:
     """Each team's component totals, scaled to a common roster size."""
-    scale = roster_scale(rosters, roster_size)
+    scale = roster_scale(rosters, roster_size, unscaled)
     return pd.DataFrame(
         {team: players.loc[ids, COMPONENTS].sum().to_numpy() * scale[team] for team, ids in rosters.items()},
         index=COMPONENTS,
@@ -454,6 +460,7 @@ def optimize(
     free_agents: list,
     config: OptimizerConfig | None = None,
     targets: list[str] | None = None,
+    unscaled_teams: frozenset | set = frozenset(),
 ) -> OptimizerResult:
     """Greedy drop/add search for `team`. players = blend_players() output;
     rosters = every fantasy team -> PlayerIds; free_agents = PlayerIds
@@ -468,7 +475,7 @@ def optimize(
     comps = players[COMPONENTS].to_numpy(dtype=float)
     pos = {pid: i for i, pid in enumerate(players.index)}
 
-    sums = team_component_sums(players, rosters, config.roster_size)
+    sums = team_component_sums(players, rosters, config.roster_size, unscaled_teams)
     values = pd.DataFrame(category_values(sums.to_numpy()), index=sums.index, columns=MAIN_CATS)
     shown = considered_cats(config)
     mode = config.objective
@@ -527,7 +534,7 @@ def optimize(
     if config.exclude_unsigned and "NBATeam" in players:
         injured |= set(players.index[players["NBATeam"] == "FA"])
     pool = [pid for pid in free_agents if pid in pos and pid not in original and pid not in injured]
-    scale = roster_scale(rosters, config.roster_size)[team]
+    scale = roster_scale(rosters, config.roster_size, unscaled_teams)[team]
     team_sum = sums.loc[team].to_numpy(dtype=float)
     current = float(score(category_values(team_sum)))
     result = OptimizerResult(

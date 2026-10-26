@@ -69,7 +69,12 @@ from shared.atomic_write import atomic_write  # noqa: E402
 from shared.runtime_config import REF_DIR  # noqa: E402
 
 OUTPUT_PATH = REF_DIR / "roster_ranks.csv"
-COLUMNS = ["Year", "FantasyTeam", "Player", "NBATeam", "Rank"]
+# LineupSlot (added 2026-10-25): the rostered player's current lineup slot
+# -- "IR" for injured reserve (the one value consumers act on: IR players
+# are left out of the premium win-chance math), else the platform's slot
+# ("BE", "PG", ...); empty for free agents and for rows exported before
+# this column existed.
+COLUMNS = ["Year", "FantasyTeam", "Player", "NBATeam", "Rank", "LineupSlot"]
 
 # Comfortably above the real full-pool size (938 players, confirmed live
 # for 2022) without needing pagination -- ESPN's kona_player_info view
@@ -97,6 +102,10 @@ def _espn_roster_ranks_for_year(year: int) -> list[dict]:
     headers = {"x-fantasy-filter": json.dumps(filters)}
     data = league.espn_request.league_get(params=params, headers=headers)
 
+    # kona_player_info has no lineup slot -- that comes from the team rosters
+    # League() already loaded (verified live for 2027: "IR"/"BE"/"PG"/...).
+    slot_by_name = {p.name: getattr(p, "lineupSlot", "") for t in league.teams for p in t.roster}
+
     rows: list[dict] = []
     for entry in data["players"]:
         player = Player(entry, year)
@@ -108,6 +117,7 @@ def _espn_roster_ranks_for_year(year: int) -> list[dict]:
                 "Player": player.name,
                 "NBATeam": player.proTeam,
                 "Rank": player.rank,
+                "LineupSlot": slot_by_name.get(player.name, "") if fantasy_team else "",
             }
         )
     return rows
@@ -190,6 +200,7 @@ def _yahoo_roster_ranks_for_year(year: int) -> list[dict]:
     teams_blob = roster_data["fantasy_content"]["league"][1]["teams"]
 
     owner_by_name: dict[str, str] = {}
+    slot_by_name: dict[str, str] = {}
     for key, team_entry in teams_blob.items():
         if key == "count" or not isinstance(team_entry, dict):
             continue
@@ -206,9 +217,18 @@ def _yahoo_roster_ranks_for_year(year: int) -> list[dict]:
         for pkey, player_entry in roster_players.items():
             if pkey == "count" or not isinstance(player_entry, dict):
                 continue
+            name = None
             for field in player_entry["player"][0]:
                 if isinstance(field, dict) and "name" in field:
-                    owner_by_name[field["name"]["full"]] = fantasy_team
+                    name = field["name"]["full"]
+                    owner_by_name[name] = fantasy_team
+            # Best effort (not verified live -- 2027 is ESPN): Yahoo's
+            # selected_position, with its injured-list slots normalized to
+            # "IR" like ESPN's.
+            if name is not None and len(player_entry["player"]) > 1 and isinstance(player_entry["player"][1], dict):
+                sel = player_entry["player"][1].get("selected_position") or []
+                pos = next((x["position"] for x in sel if isinstance(x, dict) and "position" in x), "")
+                slot_by_name[name] = "IR" if pos in ("IL", "IL+") else pos
 
     return [
         {
@@ -217,6 +237,7 @@ def _yahoo_roster_ranks_for_year(year: int) -> list[dict]:
             "Player": name,
             "NBATeam": info["NBATeam"],
             "Rank": info["Rank"],
+            "LineupSlot": slot_by_name.get(name, ""),
         }
         for name, info in players.items()
     ]

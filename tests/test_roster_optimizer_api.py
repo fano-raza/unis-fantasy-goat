@@ -151,33 +151,75 @@ def test_category_odds_endpoint_is_password_gated(monkeypatch):
     monkeypatch.setenv("ROSTER_OPTIMIZER_PASSWORD", "secret")
     called = []
     monkeypatch.setattr(app_module.league_store, "roster_category_odds", lambda *a: called.append(a) or {})
-    body = {"team": "T", "password": "wrong", "swaps": [{"drop": "P1", "add": "P20"}]}
+    body = {"team": "T", "password": "wrong", "roster": ["P1", "P14"]}
     assert client.post("/league/roster_category_odds", json=body).status_code == 401 and not called
     body["password"] = "secret"
     assert client.post("/league/roster_category_odds", json=body).status_code == 200
-    assert called == [("T", [("P1", "P20")])]
+    del body["roster"]
+    assert client.post("/league/roster_category_odds", json=body).status_code == 200
+    assert called == [("T", ["P1", "P14"]), ("T", None)]
 
 
-def test_store_category_odds_no_swaps_matches_optimizer_start(store):
-    odds = store.roster_category_odds("T", [])
+def test_store_category_odds_no_what_if_matches_optimizer_start(store):
+    odds = store.roster_category_odds("T")
     opt = store.roster_optimizer("T", max_swaps=1)
+    # Every team is at full size here, so not rescaling T changes nothing.
     assert odds["start"] == odds["current"] == opt["start"]
     assert odds["start_matchup_win"] == opt["start_matchup_win"]
-    assert odds["applied"] == [] and odds["skipped"] == []
+    assert odds["unknown"] == [] and odds["start_active_count"] == odds["current_active_count"] == 4
 
 
-def test_store_category_odds_with_swaps(store):
-    # T owns P13-P16; P17+ are free agents; P1 is on team A (one-sided add).
-    swaps = [("P13", "P1"), ("P99", "P20"), ("P14", "P15"), ("P14", "P13")]
-    odds = store.roster_category_odds("T", swaps)
-    # P99 has no stats; P15 is already on T; P13 left in swap 1, so it can come back for P14.
-    assert odds["applied"] == [{"drop": "P13", "add": "P1"}, {"drop": "P14", "add": "P13"}]
-    assert odds["skipped"] == ["P99 -> P20", "P14 -> P15"]
+def test_store_category_odds_hypothetical_roster(store):
+    # T owns P13-P16; P1 is on team A (one-sided add); P99 doesn't exist.
+    odds = store.roster_category_odds("T", ["P1", "P14", "P15", "P16", "P99", "P1"])
+    assert odds["unknown"] == ["P99"] and odds["current_active_count"] == 4
     assert odds["current"] != odds["start"]
-    assert set(odds["current"]) == set(odds["categories"])
     assert all(0 <= v <= 1 for v in odds["current"].values())
+
+
+def test_store_category_odds_removal_costs_stats(store):
+    # Dropping a player without a replacement must lower counting categories
+    # (no rescaling of T back up to a full roster).
+    full = store.roster_category_odds("T", ["P13", "P14", "P15", "P16"])
+    short = store.roster_category_odds("T", ["P13", "P14", "P15"])
+    assert short["current_active_count"] == 3
+    for cat in ("PTS", "REB", "AST"):
+        assert short["current"][cat] <= full["current"][cat]
+    assert short["current_matchup_win"] < full["current_matchup_win"]
+
+
+def test_store_category_odds_rejects_empty_roster(store):
+    with pytest.raises(ValueError):
+        store.roster_category_odds("T", ["Nobody"])
+
+
+def test_ir_players_left_out_of_active_rosters(tmp_path, monkeypatch):
+    _write_ref(tmp_path, np.random.default_rng(5))
+    rr = pd.read_csv(tmp_path / "roster_ranks.csv")
+    rr["LineupSlot"] = ""
+    rr.loc[rr["Player"] == "P16", "LineupSlot"] = "IR"
+    rr.to_csv(tmp_path / "roster_ranks.csv", index=False)
+
+    class FakeStats:
+        ref_dir = str(tmp_path)
+
+    s = LeagueStore.__new__(LeagueStore)
+    s.store = FakeStats()
+    s._player_stats_df = s._roster_ranks_df = s._player_projections_df = s._week_calendar_df = None
+    monkeypatch.setattr(s, "meta", lambda: {"current_year": 2027})
+    _, rosters, free_agents, _, name_to_id = s._optimizer_inputs()
+    assert name_to_id["P16"] not in rosters["T"] and len(rosters["T"]) == 3
+    assert name_to_id["P16"] not in free_agents  # still rostered, just inactive
+    odds = s.roster_category_odds("T")
+    assert odds["start_active_count"] == 3
+    # Bringing him back from IR (in place of P13) is a valid what-if.
+    back = s.roster_category_odds("T", ["P16", "P14", "P15"])
+    assert back["unknown"] == [] and back["current"] != back["start"]
+    # The optimizer never drops an IR player.
+    for sw in s.roster_optimizer("T", max_swaps=3)["swaps"]:
+        assert sw["drop"]["name"] != "P16"
 
 
 def test_store_category_odds_unknown_team(store):
     with pytest.raises(KeyError):
-        store.roster_category_odds("Nobody", [])
+        store.roster_category_odds("Nobody")

@@ -119,15 +119,11 @@ class RosterOptimizerPasswordRequest(BaseModel):
     password: str
 
 
-class RosterSwap(BaseModel):
-    drop: str
-    add: str
-
-
 class RosterCategoryOddsRequest(BaseModel):
     team: str
     password: str
-    swaps: list[RosterSwap] = Field(default_factory=list, max_length=20)
+    # The hypothetical ACTIVE roster (player names); omitted -> real roster.
+    roster: list[str] | None = Field(None, max_length=30)
 
 
 class RosterOptimizerRequest(BaseModel):

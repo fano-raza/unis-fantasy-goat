@@ -697,9 +697,12 @@ class LeagueStore:
         return float(max(0, (today - start).days))
 
     def _optimizer_inputs(self) -> tuple[int, dict[str, list], list, pd.DataFrame, dict]:
-        """Shared prep for the premium roster tools: (year, rosters as
+        """Shared prep for the premium roster tools: (year, ACTIVE rosters as
         PlayerIds per fantasy team, free-agent PlayerIds, blended players,
-        PlayerName -> PlayerId). The blended players only change when the
+        PlayerName -> PlayerId). Players in an IR slot (roster_ranks.csv's
+        LineupSlot == "IR") aren't playing, so they're left out of every
+        team's active roster -- and, being rostered, out of the free-agent
+        pool too. The blended players only change when the
         daily exports or the season day do, so they're cached on this
         instance (rebuilt on the API's periodic data reload anyway) --
         manual-swap category odds call this on every swap."""
@@ -710,12 +713,15 @@ class LeagueStore:
         rr = rr[rr["Year"] == year]
 
         name_to_id = dict(zip(stats["Player"], stats["PlayerId"]))
+        on_ir = rr["LineupSlot"].eq("IR") if "LineupSlot" in rr else pd.Series(False, index=rr.index)
         rosters: dict[str, list] = {}
-        for row in rr.itertuples():
+        rostered: set = set()
+        for row, ir in zip(rr.itertuples(), on_ir):
             owner = row.FantasyTeam
             if isinstance(owner, str) and owner and row.Player in name_to_id:
-                rosters.setdefault(owner, []).append(name_to_id[row.Player])
-        rostered = {pid for ids in rosters.values() for pid in ids}
+                rostered.add(name_to_id[row.Player])
+                if not ir:
+                    rosters.setdefault(owner, []).append(name_to_id[row.Player])
         free_agents = [pid for pid in stats["PlayerId"] if pid not in rostered]
 
         days_elapsed = self._season_days_elapsed(year)
@@ -802,14 +808,17 @@ class LeagueStore:
             },
         }
 
-    def roster_category_odds(self, team: str, swaps: list[tuple[str, str]]) -> dict:
-        """Premium: `team`'s weekly win chance in each category, for its real
-        roster and with hypothetical (drop, add) swaps applied -- the Roster
-        page's manual what-if swaps. Same scoring as the optimizer's
-        before/after numbers (ro.optimize with no swaps allowed), so the two
-        always agree. One-sided like the page's simulation: an added
-        player's real team keeps him. Swaps naming a player with no stats
-        this season are skipped and listed in `skipped`."""
+    def roster_category_odds(self, team: str, roster: list[str] | None = None) -> dict:
+        """Premium: `team`'s weekly win chance in each category for its real
+        active roster ("start") and for a hypothetical active roster
+        ("current") -- the Roster page's what-ifs (swaps, removals, players
+        brought back from IR), sent as the full list of player names that
+        would be active. None -> no what-if (current == start). Same scoring
+        as the optimizer (ro.optimize with no swaps allowed), except this
+        team's totals are never rescaled to a full roster: removing a player
+        must cost his stats. One-sided like the page's simulation: an added
+        player's real team keeps him. Names with no stats this season are
+        left out and listed in `unknown`."""
         year, rosters, free_agents, players, name_to_id = self._optimizer_inputs()
         if team not in rosters:
             raise KeyError(f"no {year} roster found for team {team!r}")
@@ -817,21 +826,25 @@ class LeagueStore:
         cats = [c for c in ro.MAIN_CATS if c not in config.ignored_cats]
 
         def evaluate(roster_ids: list) -> tuple[dict, float, list[str]]:
-            result = ro.optimize(team, players, {**rosters, team: roster_ids}, [], config)
+            result = ro.optimize(team, players, {**rosters, team: roster_ids}, [], config, unscaled_teams={team})
             return result.start_ratings, result.start_matchup_win, result.targets
 
         start, start_win, strongest = evaluate(list(rosters[team]))
-        id_to_name = {pid: name for name, pid in name_to_id.items()}
-        roster = list(rosters[team])
-        applied, skipped = [], []
-        for drop, add in swaps:
-            drop_id, add_id = name_to_id.get(drop), name_to_id.get(add)
-            if drop_id not in roster or add_id is None or add_id in roster:
-                skipped.append(f"{drop} -> {add}")
-                continue
-            roster[roster.index(drop_id)] = add_id
-            applied.append({"drop": id_to_name[drop_id], "add": id_to_name[add_id]})
-        current, current_win, _ = evaluate(roster) if applied else (start, start_win, strongest)
+        unknown: list[str] = []
+        if roster is None:
+            current, current_win = start, start_win
+            active = len(rosters[team])
+        else:
+            ids = []
+            for name in dict.fromkeys(roster):  # de-duplicated, order kept
+                if name in name_to_id:
+                    ids.append(name_to_id[name])
+                else:
+                    unknown.append(name)
+            if not ids:
+                raise ValueError("none of those players have stats this season")
+            current, current_win, _ = evaluate(ids)
+            active = len(ids)
 
         return {
             "team": team,
@@ -842,8 +855,9 @@ class LeagueStore:
             "current": {c: round(current[c], 4) for c in cats},
             "start_matchup_win": round(start_win, 4),
             "current_matchup_win": round(current_win, 4),
-            "applied": applied,
-            "skipped": skipped,
+            "start_active_count": len(rosters[team]),
+            "current_active_count": active,
+            "unknown": unknown,
         }
 
     def weekly_recap(self, year: int, week: int) -> dict | None:
