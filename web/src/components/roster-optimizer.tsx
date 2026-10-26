@@ -413,15 +413,19 @@ export function CategoryOddsBars({
           return (
             <div key={cat} className="contents">
               <span className={cn("w-12 font-medium", strongest.includes(cat) && "text-primary")}>{cat}</span>
+              {/* Unchanged part in solid grey up to the smaller value, then
+                  only the change as a full-strength green (gain) or red
+                  (loss) segment -- no translucent overlap, which read as
+                  two near-identical greens. */}
               <div className="relative h-2 overflow-hidden rounded-full bg-muted" aria-hidden>
                 <div
-                  className={cn("absolute inset-y-0 left-0 rounded-full", changed ? "bg-foreground/25" : "bg-primary/70")}
-                  style={{ width: pct(b) }}
+                  className={cn("absolute inset-y-0 left-0", changed ? "bg-foreground/45" : "rounded-full bg-primary/70")}
+                  style={{ width: pct(changed ? Math.min(a, b) : b) }}
                 />
-                {changed && (
+                {changed && Math.abs(delta) > 0.0005 && (
                   <div
-                    className={cn("absolute inset-y-0 left-0 rounded-full", delta >= 0 ? "bg-win/80" : "bg-loss/80")}
-                    style={{ width: pct(a), opacity: 0.85 }}
+                    className={cn("absolute inset-y-0", delta > 0 ? "bg-win" : "bg-loss")}
+                    style={{ left: pct(Math.min(a, b)), width: pct(Math.abs(delta)) }}
                   />
                 )}
               </div>
@@ -443,7 +447,7 @@ export function CategoryOddsBars({
       </div>
       <p className="mt-2 text-xs text-muted-foreground">
         Blue categories are this team&apos;s current strengths. Bars show how often it would win each category in a
-        typical week{changed ? `, before (grey) and ${afterLabel ?? "after"}` : ""}.
+        typical week{changed ? `; green and red show the gain or loss ${afterLabel ?? "after"}` : ""}.
       </p>
     </div>
   );
