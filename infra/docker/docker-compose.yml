@@ -74,6 +74,24 @@ services:
       - /srv/unisfantasy/data:/srv/unisfantasy/data:ro
     restart: unless-stopped
 
+  # Public, read-only MCP server (league stats as AI-chat tools) -- see
+  # mcp_server/server.py and _planning/mcp-server.md. Proxies dashboard-api
+  # over the compose network; caddy routes /mcp* here. No `ports:` for the
+  # same reason as dashboard-api. mem_limit keeps it from crowding the
+  # droplet's ~1 GB.
+  mcp-server:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.mcp
+    container_name: unisfantasy-mcp-server
+    environment:
+      DASHBOARD_API_BASE_URL: http://dashboard-api:8090
+      PORT: "8091"
+    mem_limit: 128m
+    depends_on:
+      - dashboard-api
+    restart: unless-stopped
+
   # Reverse proxy + automatic HTTPS (Let's Encrypt) in front of
   # dashboard-api. Caddyfile currently points at a sslip.io hostname (no
   # owned domain yet) -- swap to a real domain there + point DNS when one
@@ -91,6 +109,7 @@ services:
       - caddy_config:/config
     depends_on:
       - dashboard-api
+      - mcp-server
 
 volumes:
   caddy_data:

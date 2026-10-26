@@ -530,9 +530,24 @@ class StatsStore:
         matchup_df["MATCHUP_POINTS"] = matchup_df["MATCHUP_WINS"] + 0.49 * matchup_df["MATCHUP_DRAWS"]
         return matchup_df
 
+    @staticmethod
+    def _drop_unplayed(df: pd.DataFrame) -> pd.DataFrame:
+        # 2027 was onboarded with its whole schedule pre-seeded as blank
+        # placeholder rows (PTS NaN), and the stat updater writes all-zero
+        # rows for a week that has started but has no games yet. Left in,
+        # /query counted every one of them as a 0-0-9 tied matchup (17
+        # phantom draws per team in 2027) and as a 0-stat week (min/avg/count).
+        # Only this generic aggregate path filters them: self.df keeps them
+        # because league_store reads the full schedule from it.
+        played = pd.Series(False, index=df.index)
+        for col in ("PTS", "FGA"):
+            if col in df.columns:
+                played |= df[col].fillna(0) > 0
+        return df[played]
+
     def _ensure_matchup_df(self) -> pd.DataFrame:
         if self._matchup_df is None:
-            base_df = self._filter_real_po_rows(self.df)
+            base_df = self._filter_real_po_rows(self._drop_unplayed(self.df))
             matchup_df = self._build_matchup_features(base_df)
             self._matchup_df = self._apply_po_official_winner(matchup_df)
         return self._matchup_df
@@ -589,7 +604,7 @@ class StatsStore:
         if canonical_metric in MATCHUP_METRICS:
             return self._ensure_matchup_df()
 
-        out = self.df
+        out = self._drop_unplayed(self.df)
         if count_only and "Count" in out.columns:
             out = out[out["Count"] == True]
         return out
