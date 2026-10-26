@@ -160,13 +160,12 @@ export function MobileNav() {
               </div>
             );
           })}
-          {/* mt-auto pins Premium + settings to the bottom of the
-              full-height drawer; Premium sits just above the settings. */}
-          <div className="mt-auto flex flex-col gap-3 pt-6 pb-2">
-            <PremiumNavButton variant="drawer" onClick={() => setOpen(false)} />
-            <div className="px-3">
-              <LightModeSwitch />
-            </div>
+          {/* Right below Champions Lounge, the last NAV_LINKS entry (user
+              request, 2026-10-26). */}
+          <PremiumNavButton variant="drawer" onClick={() => setOpen(false)} />
+          {/* mt-auto pins it to the bottom of the full-height drawer. */}
+          <div className="mt-auto px-3 pt-6 pb-2">
+            <LightModeSwitch />
           </div>
         </DialogPrimitive.Popup>
       </DialogPortal>
