@@ -434,8 +434,11 @@ export function ComparisonView({ initialBootstrap }: ComparisonViewProps) {
       ) : (
         <>
           {(dataLoading || selectedRows.length >= 2) && (
-            <Card>
+            <Card className="overflow-clip">
               <CardHeader>
+                {/* Card is overflow-clip (not its default overflow-hidden):
+                    hidden makes the card a scroll container, trapping the
+                    sticky table headers below; clip still clips without it. */}
                 <CardTitle>Head-to-Head</CardTitle>
                 <CardDescription>
                   Summed matchup record against every other selected team
@@ -444,7 +447,7 @@ export function ComparisonView({ initialBootstrap }: ComparisonViewProps) {
               <CardContent>
                 <LoadingOverlay active={dataLoading} hasContent={false} label="Loading">
                 {h2h ? (
-                  <Table className="table-fixed">
+                  <Table className="table-fixed" containerClassName="overflow-x-clip">
                     <TableHeader>
                       <TableRow>
                         <TableHead
@@ -524,13 +527,13 @@ export function ComparisonView({ initialBootstrap }: ComparisonViewProps) {
             const fields = group.fields.filter((f) => comparisonFields.includes(f));
             if (fields.length === 0 && !dataLoading) return null;
             return (
-              <Card key={group.title}>
+              <Card key={group.title} className="overflow-clip">
                 <CardHeader>
                   <CardTitle>{group.title}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <LoadingOverlay active={dataLoading} hasContent={false} label="Loading">
-                  <Table className="table-fixed">
+                  <Table className="table-fixed" containerClassName="overflow-x-clip">
                     <TableHeader>
                       <TableRow>
                         <TableHead
@@ -568,7 +571,10 @@ export function ComparisonView({ initialBootstrap }: ComparisonViewProps) {
                               <TableCell
                                 key={row.Team}
                                 className={cn(
-                                  "whitespace-normal text-right sm:whitespace-nowrap",
+                                  // Wraps at every width: long year lists
+                                  // (e.g. 5 playoff years) would otherwise
+                                  // run past the clipped table edge.
+                                  "whitespace-normal text-right",
                                   highlightClass[highlight[row.Team]],
                                   emphasized && "font-bold text-base",
                                 )}

@@ -5,11 +5,19 @@ import { AnimatePresence, motion } from "motion/react"
 
 import { cn } from "@/lib/utils"
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+// `containerClassName` overrides the scroll wrapper -- e.g. "overflow-x-clip"
+// for a table whose header is sticky against the page: an overflow-x-auto
+// wrapper is itself a scroll container, so a sticky <th> with a top offset
+// would pin inside the table (overlapping its first rows) instead of the page.
+function Table({
+  className,
+  containerClassName,
+  ...props
+}: React.ComponentProps<"table"> & { containerClassName?: string }) {
   return (
     <div
       data-slot="table-container"
-      className="relative w-full overflow-x-auto"
+      className={cn("relative w-full overflow-x-auto", containerClassName)}
     >
       <table
         data-slot="table"
