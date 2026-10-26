@@ -1,5 +1,6 @@
 "use client";
 
+import { formatNumber } from "@/lib/format-number";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import {
@@ -93,9 +94,9 @@ function formatValue(value: number | null | undefined, cat: Category, mode: Stat
   // the season starts) -- a bare `=== undefined` check let null through
   // to `.toFixed()` below and crashed the whole page, 2026-10-17.
   if (value == null) return "—";
-  if (mode === "rating") return value.toFixed(1);
+  if (mode === "rating") return formatNumber(value, 1);
   if (cat === "FG%" || cat === "FT%") return value.toFixed(3);
-  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+  return formatNumber(value, 1);
 }
 
 // Team is always frozen on horizontal scroll; Score (only present when
@@ -410,7 +411,7 @@ export function StatTable({
                 );
               })}
               <TableCell className="text-right font-extrabold text-primary">
-                {row.rating ?? "—"}
+                {row.rating != null ? formatNumber(row.rating) : "—"}
               </TableCell>
             </TableRow>
           );

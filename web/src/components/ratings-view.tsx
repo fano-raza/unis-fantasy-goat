@@ -1,5 +1,6 @@
 "use client";
 
+import { formatNumber } from "@/lib/format-number";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
@@ -49,7 +50,7 @@ import { STANDINGS_VIEW_OPTIONS, STANDINGS_VIEW_PATHS } from "@/lib/standings-na
 
 function formatCatValue(cat: Category, value: number): string {
   if (cat === "FG%" || cat === "FT%") return value.toFixed(3);
-  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+  return formatNumber(value, 1);
 }
 
 // This view's graph: at week X, each team's value is the average of its

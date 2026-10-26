@@ -1,5 +1,6 @@
 "use client";
 
+import { formatNumber } from "@/lib/format-number";
 import { useEffect, useMemo, useState } from "react";
 import {
   CartesianGrid,
@@ -173,7 +174,7 @@ export function ProfileHistoryChart({ team, meta }: { team: string; meta: League
                 }}
                 labelFormatter={(y) => `Season ${y}`}
                 formatter={(value) => [
-                  typeof value === "number" ? value.toFixed(mode === "rating" ? 1 : 0) : String(value),
+                  typeof value === "number" ? formatNumber(value, mode === "rating" ? 1 : 0) : String(value),
                   mode === "rating" ? "Overall Rating" : "RS Place Finish",
                 ]}
               />

@@ -1,5 +1,6 @@
 "use client";
 
+import { formatNumber } from "@/lib/format-number";
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import {
@@ -86,7 +87,7 @@ function aggregate(players: PlayerStat[], statWindow: StatWindow, mode: "totals"
 function formatStat(cat: Category, value: number | null): string {
   if (value === null) return "—";
   if (cat === "FG%" || cat === "FT%") return value.toFixed(3);
-  return value.toFixed(1);
+  return formatNumber(value, 1);
 }
 
 // Direct (not inverted) coloring: `comparison` is Team A's own value

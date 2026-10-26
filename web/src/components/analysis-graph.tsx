@@ -1,5 +1,6 @@
 "use client";
 
+import { formatNumber } from "@/lib/format-number";
 import { useEffect, useMemo, useState } from "react";
 import {
   CartesianGrid,
@@ -290,7 +291,7 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
                     }}
                     labelFormatter={(x) => `${xField.label}: ${x}`}
                     formatter={(value, name) => [
-                      typeof value === "number" ? value.toFixed(decimalsFor(yField.key)) : String(value),
+                      typeof value === "number" ? formatNumber(value, decimalsFor(yField.key)) : String(value),
                       name,
                     ]}
                   />
@@ -455,7 +456,7 @@ function EdgeTooltip({
           .map((key) => (
             <div key={key} className="flex items-center justify-between gap-3">
               <span className="text-muted-foreground">{key}</span>
-              <span className="font-mono tabular-nums">{row[key].toFixed(decimals)}</span>
+              <span className="font-mono tabular-nums">{formatNumber(row[key], decimals)}</span>
             </div>
           ))}
       </div>

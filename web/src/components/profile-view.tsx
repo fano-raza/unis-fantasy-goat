@@ -1,5 +1,6 @@
 "use client";
 
+import { formatNumber } from "@/lib/format-number";
 import { Suspense, useEffect, useMemo, useState, type ComponentType } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -72,13 +73,13 @@ function rankColorClass(rank: number): string {
 // Place are shown both as their own stat tile above AND here -- the user
 // asked for them included. Best/Worst Week Rating were excluded here too
 // (as single-week flukes, not meaningful "career" stats) until the user
-// asked to track them (2026-10-07).
+// asked to track them (2026-10-07). Best RS Rating (best single-season
+// rating) was excluded too until the user asked for it (2026-10-25).
 const TOP3_EXCLUDED = new Set([
   "Championship Years",
   "MVP Years",
   "Worst Ratings",
   "Worst Rating Years",
-  "Best RS Rating",
   "Best RS Rating Years",
   "RS 1st Years",
   "RS Last Place",
@@ -432,7 +433,7 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
           />
           <StatTile
             label="Best RS Rating"
-            value={typeof profile["Best RS Rating"] === "number" ? profile["Best RS Rating"].toFixed(1) : "—"}
+            value={typeof profile["Best RS Rating"] === "number" ? formatNumber(profile["Best RS Rating"], 1) : "—"}
             sub={splitYears(profile["Best RS Rating Years"])}
             href={`/standings/ratings?year=${latestYear(profile["Best RS Rating Years"]) ?? meta.current_year}`}
           />
