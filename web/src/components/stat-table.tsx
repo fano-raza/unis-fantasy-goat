@@ -173,6 +173,40 @@ export function StatTable({
   const [sort, setSort] = useState<SortState | null>(null);
   const baseline = focusTeam ? rows.find((r) => r.team === focusTeam) : undefined;
 
+  // Flags cells whose value just changed (e.g. a background live refetch
+  // landed new stats) so they can pop via the `animate-stat-pop` utility.
+  // Keyed by `team|cat|mode` (and `team|rating`) rather than row identity,
+  // since sorting reorders `rows` without changing any values. The ref
+  // holds no state on its own render -- it's a snapshot to diff the next
+  // `rows` against -- so a mode switch (stat vs rating) naturally doesn't
+  // flag anything: that key simply hasn't been seen before.
+  const prevValuesRef = useRef<Map<string, number | null> | null>(null);
+  const [changedKeys, setChangedKeys] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    const next = new Map<string, number | null>();
+    for (const row of rows) {
+      for (const cat of MAIN_CATS) {
+        const source = mode === "stat" ? row.stats : row.ratings;
+        next.set(`${row.team}|${cat}|${mode}`, source[cat] ?? null);
+      }
+      next.set(`${row.team}|rating`, row.rating ?? null);
+    }
+
+    const prev = prevValuesRef.current;
+    prevValuesRef.current = next;
+    if (!prev) return;
+
+    const changed = new Set<string>();
+    for (const [key, value] of next) {
+      if (prev.has(key) && prev.get(key) !== value) changed.add(key);
+    }
+    if (changed.size === 0) return;
+
+    setChangedKeys(changed);
+    const timeout = setTimeout(() => setChangedKeys(new Set()), 700);
+    return () => clearTimeout(timeout);
+  }, [rows, mode]);
+
   // Per-category max-min across every row currently in the table (in the
   // active stat/rating mode), for isCloseValue's threshold. Sorting only
   // reorders `rows`, never changes which rows are present, so this doesn't
@@ -387,6 +421,7 @@ export function StatTable({
                   baseSource &&
                   !isFocus &&
                   isCloseValue(value, baseSource[cat], categoryRanges[cat]);
+                const justChanged = changedKeys.has(`${row.team}|${cat}|${mode}`);
                 return (
                   <TableCell
                     key={cat}
@@ -398,20 +433,26 @@ export function StatTable({
                   >
                     {record ? (
                       <span className="flex flex-col items-end leading-tight">
-                        <span>{formatValue(value, cat, mode)}</span>
+                        <span className={cn(justChanged && "animate-stat-pop")}>
+                          {formatValue(value, cat, mode)}
+                        </span>
                         <span className="font-mono text-[10px] text-muted-foreground">
                           ({record.w}-{record.l}
                           {record.t > 0 ? `-${record.t}` : ""})
                         </span>
                       </span>
                     ) : (
-                      formatValue(value, cat, mode)
+                      <span className={cn(justChanged && "animate-stat-pop")}>
+                        {formatValue(value, cat, mode)}
+                      </span>
                     )}
                   </TableCell>
                 );
               })}
               <TableCell className="text-right font-extrabold text-primary">
-                {row.rating != null ? formatNumber(row.rating) : "—"}
+                <span className={cn(changedKeys.has(`${row.team}|rating`) && "animate-stat-pop")}>
+                  {row.rating != null ? formatNumber(row.rating) : "—"}
+                </span>
               </TableCell>
             </TableRow>
           );

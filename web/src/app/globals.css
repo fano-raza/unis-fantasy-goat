@@ -247,3 +247,22 @@
     letter-spacing: 0.005em;
     font-variation-settings: "opsz" 72;
 }
+
+/* A stat value just changed under a background live refetch (see
+   useLiveRefetch in lib/live-data.tsx) -- briefly enlarges the number so the
+   update is noticeable without a layout-shifting flash or color change. */
+@keyframes stat-pop {
+    0% {
+        transform: scale(1);
+    }
+    40% {
+        transform: scale(1.22);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+@utility animate-stat-pop {
+    display: inline-block;
+    animation: stat-pop 0.7s ease-out;
+}
