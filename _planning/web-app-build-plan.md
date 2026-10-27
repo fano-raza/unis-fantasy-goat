@@ -689,7 +689,10 @@ User's goal: for any target team, find the 5 of 9 categories it's best positione
 - [x] User answers the questions in the doc (two modes: Fair = both +1, Fleece = you +1 / partner ≥ −1; no lopsided trades; your gain first; auto drop/FA add OK; premium in Trade Hub, UI guidance to come)
 - [x] `shared/trade_finder.py` + 18 tests (brute-force equivalence)
 - [x] Backtest on 2019–2023: top trades don't reliably help the trading team (Fair −0.01, Fleece +0.10 wins, n.s.; hold-out negative); partners gain +0.3 (winner's curse)
-- [ ] User picks next step (winner's-curse guards + re-backtest, or ship as an idea generator)
+- [x] User picked: keep tuning until reliably good
+- [x] Tuning round 1 (oracle harness, 910k candidates): worked on 2019–21, **failed the 2022–23 hold-out** (trading team ≈ 0, partner +1.5)
+- [ ] Fresh hold-out 2024–26 (ESPN public projections + game logs, Yahoo checkpoint rosters)
+- [ ] Over-performer / projection model (user idea) -> re-run trade finder -> judge once on 2024–26
 - [ ] Endpoint + Trade Hub UI (premium) + deploy
 
 ## Session log
@@ -1048,3 +1051,4 @@ User's goal: for any target team, find the 5 of 9 categories it's best positione
 - **2026-10-26 — MCP: stale tool lists**: claude.ai never re-fetched tools/list after the games tools were added (known claude.ai bug; restart, new chat and version bump don't help). Added permanent `capabilities` + `run(capability, arguments)` tools, and `league_info` now lists all capabilities live, so future tools are reachable without members refreshing. Details in `mcp-server.md`.
 - **2026-10-27 — Trade Recommender scoped**: user asked to scope trade recommendations on the optimizer's rating (pick a player, find trades that improve both teams; multi-player later; mid-scope added: partner may lose < 3 pts). Prototyped on live 2027 data, wrote [`trade-recommender.md`](trade-recommender.md) (Phase 7) with findings, design and questions. Prototype in `_planning/prototypes/`. Nothing built.
 - **2026-10-27 — Trade Recommender built + backtested**: user chose Fair / Fleece modes, 1-for-1 + 2-for-1, no lopsided trades, sort by own gain, auto drop + FA fill, premium in Trade Hub. Built `shared/trade_finder.py` (0.23 s/search), 18 tests incl. brute-force equivalence, `scripts/backtest_trade_finder.py`. First backtest run was inflated by a replay bug (incoming players added even after the outgoing one was already gone in reality -> extra players); fixed to one-for-one substitutions and reran. Clean result: the top trades don't reliably help the trading team (Fair −0.01, Fleece +0.10 wins rest-of-season, hold-out negative); partners gain ~+0.3 (winner's curse); beats a random value-fair trade by ~+0.5. Not in the app; options written up in [`trade-recommender.md`](trade-recommender.md).
+- **2026-10-27 — Trade Finder tuning round 1**: built an oracle harness (actual rest-of-season production; tracks frozen replay at r≈0.55). Tried caps, GP floors, value margins, calibrated ranking, and four-view robustness on 2019–21. Pre-registered the final candidate (rank by average of four views); it failed the 2022–23 hold-out (you ≈ 0, partner +1.5). Conclusion: projection error dominates. Next: fresh 2024–26 hold-out from ESPN's public endpoint + Yahoo rosters, and an over-performer projection model (user's idea).

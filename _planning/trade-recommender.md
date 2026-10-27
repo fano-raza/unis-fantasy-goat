@@ -100,7 +100,44 @@ By seasons: Fleece was +0.29 [+0.10, +0.50] on 2019–21 but −0.16 [−0.41, +
 
 **Earlier run, discarded:** the first pass added incoming players even on days the outgoing one was already gone in real life, which gave teams extra players. It showed Fair +0.41 / Fleece +0.55 for you; that was the inflation, not the tool.
 
-## Options from here (user to choose)
+## Tuning round 1 (2026-10-27) — user: "keep tweaking until it's reliably good"
+
+**Method.** [`scripts/trade_finder_tuning.py`](../scripts/trade_finder_tuning.py) builds a broad candidate set (every team × every active player × every checkpoint, loose thresholds: 910,000 trades over 2019–23) with the model's predictions and an **oracle score**: the same standings scoring using each player's *actual* rest-of-season production (rosters frozen at the checkpoint + the trade). The oracle removes matchup luck and lineup effects. It tracks the frozen-roster replay well (correlation ~0.55; ~0.1 wins per oracle point over ~10 remaining weeks), so policies can be compared without a 35-minute replay each. Tuning used 2019–21 only; 2022–23 was checked once at the end against criteria written down beforehand.
+
+**Replay note.** The backtest's real-roster substitution (a trade only stands while the outgoing player is still on that team's real roster) dilutes every effect, because managers churn rosters. Frozen-roster replay (both teams frozen at the checkpoint, with vs without the trade; the optimizer's one-time-swap method) is the cleaner comparison. Both are reported.
+
+**Diagnosis (2019–21).**
+- The model's ranking has signal: candidates predicted at +4–7 points really gained +1–1.5; small predictions really lost.
+- Predictions above +10 are mostly projection error (actual negative).
+- Top picks are overconfident by 2–3× (Fair predicted +5.7, actual +2.5).
+- Biggest single error: the free agent you add in a 2-for-1 is over-projected (≈ −1.3 value), as in the optimizer. The partner's drop is under-projected (+2).
+
+**Levers tried (2019–21, oracle, top pick per team-checkpoint).** Of these, only the robustness checks (rank by the average gain across four views) went to the hold-out.
+
+| Lever | Result |
+|---|---|
+| Cap on predicted gain, min games for incoming players, extra value margin, your own value net, 1-for-1 only | Noise-level changes (±0.5 pts on n = 156) |
+| Calibrated ranking (regression of actual gain on prediction + features, leave-one-season-out) | Better at predicting the average candidate (corr 0.30 vs 0.11) but worse top picks (Fleece +1.9 vs +5.1) |
+| Robustness checks: four views (blend, real stats for players with ≥ 8 GP, preseason prior only, free agents −15%); worst-view floors; rank by worst or average | Small; averaging the four views was the most consistent, lifting the weakest season in both modes |
+
+**Pre-registered final candidate:** mode rules on the blend, rank by the average gain across the four views. Pass = on 2022–23 your oracle gain > 0 with its CI clear of 0, frozen-replay wins > 0, Fair partner ≥ 0.
+
+| Top pick per team-checkpoint | 2019–21 oracle (you) | 2019–21 frozen wins | **2022–23 oracle (you)** | **2022–23 frozen wins** | 2022–23 partner oracle |
+|---|---|---|---|---|---|
+| Fair, current | +2.48 [+1.28, +3.65] | +0.33 [+0.12, +0.55] | +0.03 [−1.70, +1.72] | +0.08 [−0.20, +0.38] | +1.64 |
+| Fair, final | +2.61 [+1.49, +3.80] | +0.29 [+0.06, +0.53] | −0.09 [−1.75, +1.54] | +0.02 [−0.25, +0.29] | +1.67 |
+| Fleece, current | +5.08 [+3.89, +6.27] | +0.52 [+0.26, +0.78] | +0.29 [−1.31, +1.88] | +0.08 [−0.20, +0.35] | +1.39 |
+| Fleece, final | +5.38 [+4.25, +6.55] | +0.65 [+0.41, +0.89] | −0.20 [−1.87, +1.43] | +0.12 [−0.14, +0.38] | +1.43 |
+
+**Verdict: fails the hold-out.** It worked on the tuning seasons and not on 2022–23; the partner keeps the value. The category-fit edge the model finds is real but smaller than player-projection error, so **better projections are the lever**. 2022–23 is now spent as a hold-out; further tuning against it would be self-deception.
+
+## Next phase (started 2026-10-27)
+
+1. **Fresh hold-out: 2024–2026.** ESPN's public endpoint (`/apis/v3/games/fba/seasons/{year}/players?view=kona_player_info`, no league needed) still serves those seasons' game logs (split 5) and season projections (`statSourceId=1`, ~400–460 players). Still to check: whether those projections are preseason or later snapshots. Our league's rosters on checkpoint dates come from Yahoo (roster by date). The oracle evaluation needs only checkpoint rosters + projections + game logs (no daily replay).
+2. **Over-performer / projection model** (user idea, 2026-10-27): find early-season signals of players beating their preseason projection (minutes, shot volume, role changes, age), trained on 2019–23. Plug into both the trade finder and the optimizer.
+3. Re-run the trade finder with the new projections. Judge once on 2024–26 with criteria written down beforehand.
+
+## Earlier options (superseded by the user's choice of option 1)
 
 1. **Winner's-curse guards, then re-backtest (recommended).** This is the same kind of fix that worked for the optimizer, where flattering projections were the main problem. Candidates:
    - require a bigger predicted gain;
