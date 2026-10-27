@@ -12,6 +12,7 @@ See _planning/mcp-server.md for scope and decisions.
 from __future__ import annotations
 
 import functools
+import hashlib
 import json
 import logging
 import os
@@ -194,7 +195,9 @@ mcp = MCPServer(
     name="Unis Fantasy GOAT",
     instructions=INSTRUCTIONS,
     website_url="https://unis-fantasy-goat.vercel.app",
-    version="1.0.0",
+    # Changes whenever this file does, so clients that cache the tool list per server version
+    # (claude.ai reused a stale list after tools were added) see a new version on every deploy.
+    version="1.1.0+" + hashlib.sha256(Path(__file__).read_bytes()).hexdigest()[:8],
 )
 
 
