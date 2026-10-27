@@ -15,8 +15,10 @@ import functools
 import json
 import logging
 import os
+import threading
 import time
-from datetime import date
+from datetime import date, datetime, timezone
+from pathlib import Path
 from collections import defaultdict, deque
 from typing import Any, Literal
 
@@ -31,6 +33,10 @@ from starlette.responses import JSONResponse, PlainTextResponse
 API_BASE = os.getenv("DASHBOARD_API_BASE_URL", "http://dashboard-api:8090").rstrip("/")
 RATE_LIMIT_PER_MIN = int(os.getenv("MCP_RATE_LIMIT_PER_MIN", "60"))
 META_TTL_S = 300
+# Questions the AI couldn't answer, for us to review (Open/Done/Ignored checklist, same shape as
+# feature_requests.md). The container only has this one directory mounted read-write.
+GAPS_PATH = Path(os.getenv("MCP_GAPS_PATH", "/srv/unisfantasy/data/mcp/mcp_gaps.md"))
+GAPS_MAX_BYTES = 2_000_000
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("mcp_server")
@@ -180,6 +186,7 @@ Key facts:
 - TO (turnovers) is lower-is-better. FG% and FT% are percentages: never sum them across weeks.
 - Some managers deliberately unset their lineup after day 1 of a week (benching everyone) to lock in category wins in TO and usually FG%/FT%. Those weeks have tiny counting stats and look like all-time "fewest turnovers" or "best FG%" records. team_week_records flags them (lineup_unset), and you should say so when one shows up.
 - Use team_week_records for single-week records ("most rebounds in a week", "most points in week 2"). Use stats_query for career or season totals and averages, and for any slicing the other tools don't cover.
+- If you can't fully and confidently answer a question about the league with these tools (the data isn't there, no tool covers it, a tool errored, or you'd have to guess), call report_unanswered once with the user's question and what was missing, then tell the user it's been logged for the league's maintainers. Don't use it for questions unrelated to this league.
 """
 
 mcp = MCPServer(
@@ -545,6 +552,48 @@ def nba_schedule(start_date: str, end_date: str) -> dict:
         "games_per_team": dict(sorted(per_team.items(), key=lambda kv: (-kv[1], kv[0]))),
         "games": [{"date_utc": g["Date"], "home": g["HomeTeam"], "away": g["AwayTeam"]} for g in games],
     }
+
+
+_gaps_lock = threading.Lock()
+
+
+def _clean(text: str, cap: int) -> str:
+    return " ".join(text.split())[:cap].replace("<!--", "").replace("-->", "")
+
+
+@mcp.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=False))
+@_logged
+def report_unanswered(question: str, reason: str, tools_tried: list[str] | None = None) -> dict:
+    """Log a league question you couldn't answer well, so the league's maintainers can add the
+    missing data or tool. Call it once per unanswered question, after trying the relevant tools.
+
+    question: the user's question, as close to their wording as possible.
+    reason: what was missing or went wrong (e.g. "no player-level weekly stats", "no tool for
+      trade history", "stats_query errored on metric X").
+    tools_tried: names of the tools you tried.
+    """
+    q = _clean(question, 500)
+    if not q:
+        raise ToolError("question is empty.")
+    why = _clean(reason, 300)
+    tried = ", ".join(_clean(t, 40) for t in (tools_tried or [])[:10])
+    with _gaps_lock:
+        GAPS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        if not GAPS_PATH.exists():
+            GAPS_PATH.write_text("# MCP unanswered questions\n\n## Open\n\n## Done\n\n## Ignored\n")
+        text = GAPS_PATH.read_text()
+        if f'"{q}"'.lower() in text.lower():
+            return {"logged": False, "note": "Already logged; the maintainers have it."}
+        if len(text.encode()) > GAPS_MAX_BYTES:
+            return {"logged": False, "note": "The log is full right now. The maintainers will review it."}
+        entry = f'- [ ] [{datetime.now(timezone.utc).date()}] "{q}" -- why: {why}'
+        if tried:
+            entry += f" (tried: {tried})"
+        marker = "## Open\n"
+        i = text.find(marker)
+        text = text + f"\n{marker}{entry}\n" if i == -1 else text[: i + len(marker)] + entry + "\n" + text[i + len(marker) :]
+        GAPS_PATH.write_text(text)
+    return {"logged": True, "note": "Logged for the league's maintainers to review."}
 
 
 # --------------------------------------------------------------------------

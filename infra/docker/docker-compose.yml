@@ -87,6 +87,11 @@ services:
     environment:
       DASHBOARD_API_BASE_URL: http://dashboard-api:8090
       PORT: "8091"
+    # Read-write, but only its own subfolder: report_unanswered appends
+    # questions the AI couldn't answer to mcp/mcp_gaps.md. The rest of the
+    # data dir stays out of reach of this public-facing container.
+    volumes:
+      - /srv/unisfantasy/data/mcp:/srv/unisfantasy/data/mcp
     mem_limit: 128m
     depends_on:
       - dashboard-api
