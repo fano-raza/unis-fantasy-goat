@@ -681,6 +681,16 @@ User's goal: for any target team, find the 5 of 9 categories it's best positione
   - **Proposed next iteration (pending user)**: replace the min-max objective with expected weekly category wins vs each opponent (normal approximation with week-to-week variance — margins count, with diminishing returns), plus a winner's-curse guard (shrink FA projections / require a projected edge larger than noise); re-run the same backtest.
 - **Superseded open issues from round 1** (kept for history): (1) the 10% injured weight makes it drop injured stars (LeBron, Curry, Flagg, Banchero, Kyrie, Duren are all OUT) — wrong for a season-long tool if the injury is short; (2) uneven roster sizes (4 teams at 14, 6 at 13) inflate 14-man teams' counting totals; (3) noise-level swaps (+0.000–0.01) need a minimum-gain cutoff; (4) every team is pointed at the same few best FAs (expected per-team, but only one team can claim each).
 
+### Phase 7 — Trade Recommender — SCOPED (2026-10-27), not built
+
+**Scope, prototype findings and open questions live in [`trade-recommender.md`](trade-recommender.md).** Pick 1–2 of your players → search other rosters for trades that help you (≥ +1 pt) while the partner loses < 3 pts (user's rule), using the optimizer's standings scoring with both teams rescored. Prototype on live data: strict win-win 1-for-1 trades are nearly nonexistent (6 of 14,744); the 3-point rule gives 125/128 players options; 2-for-1 (with FA fill) produces real win-wins. Needs a perceived-value check (model loves e.g. Hartenstein → LaMelo). Awaiting user answers before building.
+
+- [x] Scope + prototype (2026-10-27)
+- [ ] User answers the questions in the doc
+- [ ] `shared/trade_finder.py` + tests
+- [ ] Backtest on 2019–2023 data
+- [ ] Endpoint + Roster-page UI (premium) + deploy
+
 ## Session log
 
 - **2026-08-09 (session 1)**: Reviewed `_planning/fantasy-league-app-plan.md`. Did a Phase-0 grounding pass over the actual repo (found dashboard_site, DashApp, and the Discord bot's query engine — none of which the original plan knew about). Asked clarifying questions; got decisions above. Confirmed Weighted Rank formula location, audited dashboard_site's API, extracted DashApp's view shapes as reference. Plan above is the result.
@@ -1035,3 +1045,4 @@ User's goal: for any target team, find the 5 of 9 categories it's best positione
 - **2026-10-26 — MCP: unset-lineup weeks**: the user confirmed the 2026 wk14/15 low-stat weeks are real (deliberate lineup unsetting to lock in TO/FG%/FT%). `team_week_records` now flags them (`lineup_unset`, <100 PTS completed weeks) and skips the in-progress week by default. See `mcp-server.md` next-steps item 4.
 - **2026-10-26 — MCP: gaps log + daily games**: `report_unanswered` tool logs questions the AI couldn't answer to `data/mcp/mcp_gaps.md`, and the Discord daily games (MapTap/Worldle/Flagle/WhenTaken/Travle/Krillion) are exposed via new `/games/*` API endpoints + 5 MCP tools. Details in `mcp-server.md`.
 - **2026-10-26 — MCP: stale tool lists**: claude.ai never re-fetched tools/list after the games tools were added (known claude.ai bug; restart, new chat and version bump don't help). Added permanent `capabilities` + `run(capability, arguments)` tools, and `league_info` now lists all capabilities live, so future tools are reachable without members refreshing. Details in `mcp-server.md`.
+- **2026-10-27 — Trade Recommender scoped**: user asked to scope trade recommendations on the optimizer's rating (pick a player, find trades that improve both teams; multi-player later; mid-scope added: partner may lose < 3 pts). Prototyped on live 2027 data, wrote [`trade-recommender.md`](trade-recommender.md) (Phase 7) with findings, design and questions. Prototype in `_planning/prototypes/`. Nothing built.
