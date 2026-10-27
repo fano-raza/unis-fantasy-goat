@@ -42,8 +42,10 @@ def small_league():
     return players, rosters, fas
 
 
-def all_trades(team, give, players, rosters, fas, mode):
-    return tf.find_trades(team, give, players, rosters, fas, tf.TradeConfig(mode=mode, max_results=None, fa_shortlist=50))
+def all_trades(team, give, players, rosters, fas, mode, fa_weight=1.0):
+    # fa_weight=1.0: scores must equal ro.optimize's exactly (the brute-force reference)
+    return tf.find_trades(team, give, players, rosters, fas,
+                          tf.TradeConfig(mode=mode, max_results=None, fa_shortlist=50, fa_weight=fa_weight))
 
 
 def test_base_scores_match_the_optimizer(small_league):
@@ -218,3 +220,52 @@ def test_backtest_trade_changes_cover_both_sides_of_a_two_for_one():
     from scripts.backtest_trade_finder import trade_changes
     t = tf.Trade("2-for-1", "B", [1, 2], [7], 8, 50, 0.02, 0.01, 0.6, 0.5, 0.5, 0.4, 1.0, 0.5, 0.2)
     assert trade_changes("A", t) == {"A": [(1, 7), (2, 50)], "B": [(7, 1), (8, 2)]}
+
+
+def test_free_agent_weight_discounts_only_your_pickup(small_league):
+    players, rosters, fas = small_league
+    x = rosters["t0"][0]
+    full = {(tuple(t.give), t.get[0], t.partner): t for t in all_trades("t0", [x], players, rosters, fas, "fleece")
+            .trades if t.shape == "2-for-1"}
+    cut = {(tuple(t.give), t.get[0], t.partner): t for t in tf.find_trades(
+        "t0", [x], players, rosters, fas, tf.TradeConfig(mode="fleece", max_results=None, fa_shortlist=50,
+                                                        min_gain=-1, partner_min_gain=-1, fa_weight=0.7)).trades
+        if t.shape == "2-for-1"}
+    common = set(full) & set(cut)
+    assert common
+    for k in common:
+        assert cut[k].gain < full[k].gain            # your pickup counts for less
+        if cut[k].fa_add == full[k].fa_add:          # same pickup -> partner scored identically
+            assert cut[k].partner_gain == pytest.approx(full[k].partner_gain, abs=1e-12)
+
+
+def test_default_config_is_the_backtested_one():
+    assert tf.TradeConfig().fa_weight == 0.7
+
+
+# ---------------------------------------------------------------------------
+# shared/projection_adjust.py
+# ---------------------------------------------------------------------------
+
+def test_projection_adjust_params_load_and_zero_coefs_are_identity():
+    from shared import projection_adjust as pa
+    params = pa.load_params()
+    assert set(params["coefs"]) == set(pa.COMP)
+    blend = pd.DataFrame({c: [1.0, 2.0] for c in pa.COMP}, index=[1, 2])
+    blend["FGA"], blend["FTA"] = 3.0, 3.0
+    games = pd.DataFrame({"PlayerId": [1, 1, 2], "ScoringPeriod": [1, 2, 2],
+                          **{c: [1.0, 2.0, 3.0] for c in pa.COMP}, "MIN": [20.0, 30.0, 25.0], "GS": [0.0, 1.0, 1.0]})
+    feats = pa.features(blend, pa.windows(games, 10, blend.index), pd.Series([22.0, 25.0], index=[1, 2]))
+    zero = {c: np.zeros(len(pa.FEATURES)) for c in pa.COMP}
+    pd.testing.assert_frame_equal(pa.correct(blend, feats, zero)[pa.COMP], blend[pa.COMP])
+    adj = pa.adjusted_players(blend, games, 10, pd.Series([22.0, 25.0], index=[1, 2]), params)
+    assert (adj[pa.COMP] >= 0).all().all()
+    assert (adj["FGM"] <= adj["FGA"]).all() and (adj["FTM"] <= adj["FTA"]).all()
+
+
+def test_uncertainty_shrinks_with_games_played():
+    from shared import projection_adjust as pa
+    params = pa.load_params()
+    blend = pd.DataFrame({c: [10.0, 10.0] for c in pa.COMP}, index=[1, 2])
+    sd = pa.uncertainty(blend, pd.Series([0, 40], index=[1, 2]), params["uncertainty"])
+    assert (sd.loc[1, ["PTS", "REB", "AST"]] > sd.loc[2, ["PTS", "REB", "AST"]]).all()

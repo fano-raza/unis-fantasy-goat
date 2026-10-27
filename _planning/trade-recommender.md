@@ -1,6 +1,6 @@
 # Trade Recommender
 
-**Status (2026-10-27):** algorithm built ([`shared/trade_finder.py`](../shared/trade_finder.py)), tested, and backtested on 2019–2023. **Not in the app.** The backtest does **not** show that the recommended trades help the team that makes them (see [Backtest](#backtest-2026-10-27)), so the next step is the user's call: iterate on the algorithm, or ship it as a trade-idea tool without a claimed benefit. UI guidance (it'll live in Trade Hub) is still to come from the user.
+**Status (2026-10-27, end of day):** the algorithm **passed a pre-registered hold-out check on 2024–26** in both modes (see [Final check result](#final-check-result-2024-26-hold-out)). It's committed in [`shared/trade_finder.py`](../shared/trade_finder.py) with backtested defaults. **Not in the app yet.** Still needed: live minutes/starts data for the projection correction, the endpoint, and the Trade Hub UI (the user will give UI guidance).
 
 Sister tool to the [Roster Optimizer](roster-optimizer.md). It uses the same player projections and the same team scoring, but searches trades with other managers instead of free-agent pickups.
 
@@ -171,6 +171,43 @@ By seasons: Fleece was +0.29 [+0.10, +0.50] on 2019–21 but −0.16 [−0.41, +
   2. Fair's partner oracle gain is ≥ 0 (mean).
   3. Frozen-roster replay wins are > 0 (point estimate) in both modes.
 - **Reported alongside:** the blend as built, and 1-for-1 Fleece alone.
+
+### Final check result (2024–26 hold-out)
+
+Run once, exactly as pre-registered; 180 team-checkpoints (10 teams × 6 checkpoints × 3 seasons).
+
+| Top recommendation | Your oracle gain | Frozen-replay wins (you) | Partner oracle / wins | Verdict |
+|---|---|---|---|---|
+| **Fair, final** (n = 146; 81% of team-checkpoints had one) | **+1.36 [+0.17, +2.50]**, 56% positive | **+0.29 [+0.08, +0.52]** | +0.04 / −0.29 | **Pass** |
+| **Fleece, final** (n = 180) | **+1.72 [+0.68, +2.77]**, 63% positive | **+0.29 [+0.07, +0.49]** | −0.44 / −0.15 | **Pass** |
+| Fair, blend as built | +1.03 [−0.15, +2.19] | +0.16 [−0.06, +0.38] | +0.64 / −0.01 | would fail |
+| Fleece, blend as built | +3.17 [+2.01, +4.29] | +0.39 [+0.17, +0.61] | −1.67 / −0.19 | (would pass) |
+| Fleece, 1-for-1 only, corrected | +1.76 [+1.00, +2.59] | +0.07 [−0.11, +0.25] | −1.25 / −0.17 | — |
+
+By season, final (oracle you): Fair 2024 +3.1 / 2025 +1.9 / 2026 −0.6; Fleece +3.9 / +1.5 / −0.2. Frozen wins: Fair +0.50 / +0.47 / −0.05; Fleece +0.55 / +0.13 / +0.17.
+
+**What it means, plainly:**
+- **The top recommended trade helps the team that makes it, on average, by about +0.3 matchup wins over the rest of the season.** It's a real but modest edge, and individual trades are close to a coin flip: 56–63% of them help.
+- **Fair mode doesn't really deliver "both teams improve."** The partner breaks even on actual production (+0.04) and loses slightly on simulated wins (−0.29). Read Fair as "a trade that looks fair to them and helps you"; partner gains aren't a reliable promise.
+- **Fleece as originally built also did well on this hold-out** (+0.39 wins). The 2022–23 failure was partly season-specific. The final config is needed for Fair (as-built Fair fails) and is more balanced toward the partner in Fleece.
+- 2026 (the most recent season) was the weakest for both.
+
+**Live coverage (2027, week 1, blend projections, one picked player):** Fleece finds at least one trade for 56% of players (median 2). **Fair finds one for only 5%.** Expect "no fair trade found" to be the common answer in Fair mode; the backtest's 81% was per team, searching every player. UI implication to raise with the user.
+
+### Backtested configuration (now the code defaults)
+
+- `TradeConfig(fa_weight=0.7)`: your 2-for-1 pickup counts at 70% of its projection, for your score only. The partner is scored with it at face value, exactly as backtested.
+- Players: `blend_players` → `projection_adjust.adjusted_players(...)` with [`shared/projection_adjust_params.json`](../shared/projection_adjust_params.json) (coefficients fitted on 2018/2019/2021/2022). **Needs this season's per-game logs with minutes and starts.** The live `player_stats.csv` doesn't have them; ESPN's public endpoint does (as in `export_espn_public_season.py`), so add a daily export to the stat-updater.
+- Mode rules, value filter and sorting unchanged.
+- Tests: 99 total. Trade finder: brute-force equivalence at `fa_weight=1.0`, the pickup discount, and the projection-adjust identity/clipping/uncertainty checks.
+
+### Next steps
+
+1. Daily export of this season's per-game logs (minutes, starts) → wire `adjusted_players` into `LeagueStore` (shared with `_optimizer_inputs`).
+2. `POST /league/trade_finder {team, password, give, mode}` + API tests.
+3. Trade Hub UI, per the user's guidance (premium). Raise Fair mode's low coverage.
+4. **Check the Roster Optimizer with the corrected projections** before switching it (rule agreed with the user: share projection changes only if they help both tools). Run its weekly backtest with `adjusted_players`.
+5. Over-performer idea (user): the correction doesn't detect them better than the blend (AUC 0.81 both). A dedicated look with outside data (age, team context, injuries to teammates) is the remaining avenue.
 
 ## Earlier options (superseded by the user's choice of option 1)
 

@@ -17,8 +17,13 @@ Pure pandas/numpy.
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
+
+PARAMS_PATH = Path(__file__).with_name("projection_adjust_params.json")
 
 COMP = ["FGM", "FGA", "FTM", "FTA", "3PTM", "REB", "AST", "STL", "BLK", "TO", "PTS"]
 FEATURES = ["szn_minus_blend", "r14_minus_szn", "r30_minus_szn", "dmin_recent_x_rate", "dmin_prior_x_rate",
@@ -132,3 +137,22 @@ def fit_uncertainty(pred: dict[str, pd.Series], actual: dict[str, pd.Series], gp
         floor = float(np.sqrt(np.average((a[small] - p[small]) ** 2, weights=w[small]))) if small.any() else 0.0
         params[c] = (float(max(a0, 0.0)), float(max(b, 0.0)), floor)
     return params
+
+
+def load_params(path: Path = PARAMS_PATH) -> dict:
+    """The fitted coefficients (as arrays) and uncertainty parameters."""
+    p = json.loads(Path(path).read_text())
+    if p["features"] != FEATURES:
+        raise ValueError("projection_adjust_params.json was fitted with a different feature list")
+    return {"coefs": {c: np.array(v) for c, v in p["coefs"].items()},
+            "uncertainty": {c: tuple(v) for c, v in p["uncertainty"].items()}}
+
+
+def adjusted_players(blend: pd.DataFrame, games: pd.DataFrame, cp: int, prior_mpg: pd.Series,
+                     params: dict | None = None) -> pd.DataFrame:
+    """blend_players() output with the per-game lines corrected. games: this
+    season's per-game rows (PlayerId, ScoringPeriod, COMP, MIN, GS);
+    prior_mpg: preseason minutes expectation per player (ESPN projection,
+    else last season)."""
+    params = params or load_params()
+    return correct(blend, features(blend, windows(games, cp, blend.index), prior_mpg), params["coefs"])

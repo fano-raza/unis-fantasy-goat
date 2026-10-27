@@ -681,7 +681,7 @@ User's goal: for any target team, find the 5 of 9 categories it's best positione
   - **Proposed next iteration (pending user)**: replace the min-max objective with expected weekly category wins vs each opponent (normal approximation with week-to-week variance — margins count, with diminishing returns), plus a winner's-curse guard (shrink FA projections / require a projected edge larger than noise); re-run the same backtest.
 - **Superseded open issues from round 1** (kept for history): (1) the 10% injured weight makes it drop injured stars (LeBron, Curry, Flagg, Banchero, Kyrie, Duren are all OUT) — wrong for a season-long tool if the injury is short; (2) uneven roster sizes (4 teams at 14, 6 at 13) inflate 14-man teams' counting totals; (3) noise-level swaps (+0.000–0.01) need a minimum-gain cutoff; (4) every team is pointed at the same few best FAs (expected per-team, but only one team can claim each).
 
-### Phase 7 — Trade Recommender — BUILT + BACKTESTED (2026-10-27), not in the app
+### Phase 7 — Trade Recommender — PASSED 2024–26 HOLD-OUT (2026-10-27), not in the app
 
 **Scope, prototype findings and open questions live in [`trade-recommender.md`](trade-recommender.md).** Pick 1–2 of your players → search other rosters for trades that help you (≥ +1 pt) while the partner loses < 3 pts (user's rule), using the optimizer's standings scoring with both teams rescored. Prototype on live data: strict win-win 1-for-1 trades are nearly nonexistent (6 of 14,744); the 3-point rule gives 125/128 players options; 2-for-1 (with FA fill) produces real win-wins. Needs a perceived-value check (model loves e.g. Hartenstein → LaMelo). Awaiting user answers before building.
 
@@ -691,8 +691,11 @@ User's goal: for any target team, find the 5 of 9 categories it's best positione
 - [x] Backtest on 2019–2023: top trades don't reliably help the trading team (Fair −0.01, Fleece +0.10 wins, n.s.; hold-out negative); partners gain +0.3 (winner's curse)
 - [x] User picked: keep tuning until reliably good
 - [x] Tuning round 1 (oracle harness, 910k candidates): worked on 2019–21, **failed the 2022–23 hold-out** (trading team ≈ 0, partner +1.5)
-- [ ] Fresh hold-out 2024–26 (ESPN public projections + game logs, Yahoo checkpoint rosters)
-- [ ] Over-performer / projection model (user idea) -> re-run trade finder -> judge once on 2024–26
+- [x] Fresh hold-out 2024–26 (ESPN public projections + game logs, Yahoo checkpoint rosters)
+- [x] Projection correction (minutes/starts; −2–10% per-stat error) + free agent ×0.7 -> pre-registered check on 2024–26: **PASS both modes** (+0.29 wins per top trade); Fair's partner ≈ break-even, not a reliable gain
+- [ ] Daily per-game log export (MIN/GS) + wire corrected projections into LeagueStore
+- [ ] Check the Roster Optimizer with corrected projections (weekly backtest) before sharing them
+- [ ] Endpoint + Trade Hub UI (await user's UI guidance; raise Fair mode's ~5% per-player coverage)
 - [ ] Endpoint + Trade Hub UI (premium) + deploy
 
 ## Session log
@@ -1052,3 +1055,4 @@ User's goal: for any target team, find the 5 of 9 categories it's best positione
 - **2026-10-27 — Trade Recommender scoped**: user asked to scope trade recommendations on the optimizer's rating (pick a player, find trades that improve both teams; multi-player later; mid-scope added: partner may lose < 3 pts). Prototyped on live 2027 data, wrote [`trade-recommender.md`](trade-recommender.md) (Phase 7) with findings, design and questions. Prototype in `_planning/prototypes/`. Nothing built.
 - **2026-10-27 — Trade Recommender built + backtested**: user chose Fair / Fleece modes, 1-for-1 + 2-for-1, no lopsided trades, sort by own gain, auto drop + FA fill, premium in Trade Hub. Built `shared/trade_finder.py` (0.23 s/search), 18 tests incl. brute-force equivalence, `scripts/backtest_trade_finder.py`. First backtest run was inflated by a replay bug (incoming players added even after the outgoing one was already gone in reality -> extra players); fixed to one-for-one substitutions and reran. Clean result: the top trades don't reliably help the trading team (Fair −0.01, Fleece +0.10 wins rest-of-season, hold-out negative); partners gain ~+0.3 (winner's curse); beats a random value-fair trade by ~+0.5. Not in the app; options written up in [`trade-recommender.md`](trade-recommender.md).
 - **2026-10-27 — Trade Finder tuning round 1**: built an oracle harness (actual rest-of-season production; tracks frozen replay at r≈0.55). Tried caps, GP floors, value margins, calibrated ranking, and four-view robustness on 2019–21. Pre-registered the final candidate (rank by average of four views); it failed the 2022–23 hold-out (you ≈ 0, partner +1.5). Conclusion: projection error dominates. Next: fresh 2024–26 hold-out from ESPN's public endpoint + Yahoo rosters, and an over-performer projection model (user's idea).
+- **2026-10-27 — Trade Finder round 2 → passes hold-out**: built a fresh 2024–26 hold-out (ESPN public game logs/projections + Yahoo rosters by date; read-only exports). Found our stored 2020 projections cover ~13 players. Projection research: minutes/starts correction cuts per-stat error 2–10% out of sample but doesn't find over-performers better than the blend. Free agents in 2-for-1s come in 2–4 value points below projection → count them at 70%. Pre-registered (committed before running) and passed on 2024–26: +0.29 wins per top trade in both modes (CIs exclude 0). Live: Fleece covers 56% of players, Fair only 5%. Defaults updated in `shared/trade_finder.py`; 99 tests pass. Not in the app.

@@ -21,6 +21,13 @@ For a team and the player(s) it's willing to trade away:
      his team already wins). The user doesn't want those shown at all.
   4. Sort by your gain (user: the target team's benefit first).
 
+Backtested configuration (2026-10-27, _planning/trade-recommender.md): the
+defaults here plus projections corrected with shared/projection_adjust
+(minutes/starts/recent-form correction on top of blend_players). On the
+pre-registered 2024-26 hold-out the top recommendation gained the trading
+team +0.29 matchup wins over the rest of the season (95% CI +0.08 to +0.52)
+in both modes.
+
 Pure pandas/numpy, like shared/roster_optimizer.py, so the backend's light
 venv can run it.
 """
@@ -52,6 +59,12 @@ class TradeConfig:
     # healthy, signed free agents by player value, then the one best for your
     # team by the score.
     fa_shortlist: int = 15
+    # Your score counts the free agent who fills your open spot in a 2-for-1
+    # at this share of his projection. Backtest (2026-10-27): those pickups
+    # came in 2-4 value points below projection in 4 of 5 seasons -- most
+    # 2-for-1 "gains" were that phantom pickup. 0.7 passed the pre-registered
+    # 2024-26 hold-out; 1.0 = take the projection at face value.
+    fa_weight: float = 0.7
     max_results: int | None = 25
     # Override the mode's thresholds (score units; None = the mode's). Used by
     # the backtest's "any value-fair trade" control.
@@ -290,15 +303,22 @@ def find_trades(
                 drop_i = np.argmax(bsc, axis=2)                       # (P, k)
                 S1 = S0.copy()
                 S1[:, :, b] -= sb * Y[drop_i]
-                # 2) you fill the open spot with the free agent best for you
+                # 2) you fill the open spot with the free agent best for you,
+                #    counted at fa_weight of his projection for YOUR score
+                #    only; the partner is scored against your team with the
+                #    pickup at face value (what the backtest validated)
                 SF = np.repeat(S1[:, :, None], len(fas), axis=2)      # (P, k, f, n, 11)
-                SF[:, :, :, a] += sa * F[None, None]
-                sc, mw = league.score(SF, [a, b])                    # (P, k, f, 2)
+                SF[:, :, :, a] += sa * F[None, None] * config.fa_weight
+                sc, mw = league.score(SF, [a])                       # (P, k, f, 1)
                 fa_j = np.argmax(sc[..., 0], axis=2)                  # (P, k)
+                S2 = S1.copy()
+                S2[:, :, a] += sa * F[fa_j]
+                psc, pmw = league.score(S2, [b])                     # (P, k, 1)
                 for pi, pair in enumerate(pairs):
                     for k, y in enumerate(ys):
                         j = fa_j[pi, k]
-                        consider("2-for-1", B, list(pair), [y], ys[drop_i[pi, k]], fas[j], sc[pi, k, j], mw[pi, k, j])
+                        consider("2-for-1", B, list(pair), [y], ys[drop_i[pi, k]], fas[j],
+                                 (sc[pi, k, j, 0], psc[pi, k, 0]), (mw[pi, k, j, 0], pmw[pi, k, 0]))
 
     trades.sort(key=lambda t: (-t.gain, -t.partner_gain))
     # One card per (what you give, what you get): already unique by construction.
