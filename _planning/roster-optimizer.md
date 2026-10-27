@@ -146,6 +146,10 @@ Question: is there an advantage to weighting players' last week or two instead o
 - **Standings** (weekly from week 1, up to 3 swaps, 46 team-seasons): season-only +2.60 wins vs standing pat; with last-14-day form (per-category weights 0.3 PTS/FG, 0.2 most, 0.1 STL/BLK) **+2.78**. Difference **+0.18 wins/season [−0.12, +0.50]** — positive in all 5 seasons (2019 +0.06, 2020 +0.11, 2021 +0.11, 2022 +0.40, 2023 +0.20) but not statistically significant.
 - **Status:** available as `OptimizerConfig(recent_form_window="d14")` (weights in `recent_form_weight`), **off by default** pending the user's call. The live `player_stats.csv` already has the `d14_*` columns it needs.
 
+## Corrected projections (tested 2026-10-27)
+
+The Trade Finder's minutes/starts projection correction ([`shared/projection_adjust.py`](../shared/projection_adjust.py); −2–10% per-stat error out of sample) was backtested here before sharing it: weekly from week 1, up to 3 swaps, 46 team-seasons, out-of-sample coefficients. **No benefit:** −0.04 wins/season [−0.52, +0.42] vs the current blend (+2.55 vs +2.60). The optimizer stays on `blend_players`. Script: [`scripts/backtest_optimizer_projections.py`](../scripts/backtest_optimizer_projections.py).
+
 ## Ideas not yet tested
 
 - **Remaining-schedule weighting:** weight opponents by how often you still face them. Still season-long; probably the more promising variant.
