@@ -137,6 +137,41 @@ By seasons: Fleece was +0.29 [+0.10, +0.50] on 2019–21 but −0.16 [−0.41, +
 2. **Over-performer / projection model** (user idea, 2026-10-27): find early-season signals of players beating their preseason projection (minutes, shot volume, role changes, age), trained on 2019–23. Plug into both the trade finder and the optimizer.
 3. Re-run the trade finder with the new projections. Judge once on 2024–26 with criteria written down beforehand.
 
+## Tuning round 2 (2026-10-27): data, projections, final candidate
+
+**New data.**
+- [`scripts/export_espn_public_season.py`](../scripts/export_espn_public_season.py) pulls ESPN's public per-game logs (now with minutes and starts) and projections for 2018–2026.
+- [`scripts/export_yahoo_checkpoint_rosters.py`](../scripts/export_yahoo_checkpoint_rosters.py) pulls our league's Yahoo rosters on checkpoint dates for 2024–26 (read-only; run in the stat-updater container): all 4,915 roster rows matched to ESPN players.
+- ESPN's 2024–26 projections are genuine preseason projections (error vs actual matches the clean 2019/2021/2022).
+- **Our stored 2020 projections cover almost no players** (13 matched), so 2020 always ran on fallbacks. 2023's are a mid-season snapshot.
+
+**Projection research** ([`scripts/projection_research.py`](../scripts/projection_research.py), [`shared/projection_adjust.py`](../shared/projection_adjust.py)).
+- Future minutes changes explain much of the blend's error (r = 0.68), but past minute jumps partly revert. Recent (last 14 days) minutes carry some signal.
+- A per-stat ridge correction on top of the blend (season vs recent per-game, minutes and starts trends, sample size), trained on the clean seasons 2018/2019/2021/2022 and validated leave-one-season-out, cuts per-game squared error 2–10% (STL −9.9%, BLK −9.1%, TO −9.1%, PTS −7.9%, AST −5.3%, REB −2.0%). Player-value error is −2.8% (−8% at day 14).
+- It does **not** detect over-performers better than the blend: AUC 0.81 vs 0.81 for the top-10% risers vs their preseason projection. The blend already catches them through real stats; what makes players beat projections is mostly unforeseeable (injuries to teammates, trades).
+
+**Trade findings (oracle, 2019–23 dev, top pick per team-checkpoint).**
+- Pessimism about uncertainty (incoming players −k·sd, outgoing +k·sd): even k = 0.25 removes 30–60% of recommendations, and k ≥ 0.5 leaves almost none. Very few value-fair trades are confidently good for you; the edge is about the size of projection noise.
+- The free agent added in a 2-for-1 comes in 2–4 value points below projection in 4 of 5 seasons; most 2-for-1 "gains" were that phantom pickup. **Valuing the free agent at 70% of projection** fixes it.
+- 1-for-1 Fleece is the most consistent option: +1.57 [+0.90, +2.23] with corrected projections, 68% positive, positive in 4/5 seasons.
+- Results fall roughly with league size (2019: 8 teams best; 2022–23: 10 teams weakest). Our league is 10 teams.
+
+| Policy (2019–23, oracle you) | Fair | Fleece |
+|---|---|---|
+| Blend, as built | +1.42 [+0.37, +2.46] | +3.00 [+1.97, +4.01] |
+| **Corrected projections + free agent ×0.7, 1-for-1 and 2-for-1** | **+3.02 [+2.04, +3.94]**, 69% positive, partner +0.02 | **+2.69 [+1.69, +3.69]**, 69% positive, partner +0.06 |
+| Same, by season (2019 / 20 / 21 / 22 / 23) | +7.3 / +0.4 / +3.9 / −0.8 / +2.6 | +7.8 / +0.6 / +5.4 / −0.1 / +0.7 |
+
+### Pre-registered final check (written 2026-10-27, before running it)
+
+- **Candidate:** corrected projections (`projection_adjust`, coefficients fit on 2018/2019/2021/2022), free agent in a 2-for-1 valued at ×0.7, 1-for-1 + 2-for-1, value filter (partner net value ≥ 0), mode rules on the corrected estimates (Fair: you ≥ +1, partner ≥ +1; Fleece: you ≥ +1, partner ≥ −1), ranked by your corrected gain.
+- **Hold-out:** 2024, 2025, 2026 (10-team Yahoo seasons, never used in any fitting or tuning), checkpoints weeks 4–14.
+- **Pass:**
+  1. Your oracle gain is above 0 with its 95% CI excluding 0, in both modes.
+  2. Fair's partner oracle gain is ≥ 0 (mean).
+  3. Frozen-roster replay wins are > 0 (point estimate) in both modes.
+- **Reported alongside:** the blend as built, and 1-for-1 Fleece alone.
+
 ## Earlier options (superseded by the user's choice of option 1)
 
 1. **Winner's-curse guards, then re-backtest (recommended).** This is the same kind of fix that worked for the optimizer, where flattering projections were the main problem. Candidates:
