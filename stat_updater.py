@@ -48,6 +48,7 @@ from scripts.export_team_summary import main as export_team_summary  # noqa: E40
 from scripts.export_playoff_brackets import main as export_playoff_brackets  # noqa: E402
 from scripts.export_player_stats import main as export_player_stats  # noqa: E402
 from scripts.export_player_projections import main as export_player_projections  # noqa: E402
+from scripts.export_player_game_logs import main as export_player_game_logs  # noqa: E402
 from scripts.export_roster_ranks import (  # noqa: E402
     append_roster_rank_history,
     append_team_roster_history,
@@ -162,6 +163,15 @@ def run_updater() -> None:
                     export_player_projections(year)
                 except Exception as projections_exc:
                     print(f"player_projections export warning: {projections_exc}")
+
+                # Per-game logs with minutes/starts + minutes priors: the
+                # projection correction shared by the Roster Optimizer and
+                # Trade Finder (shared/projection_adjust.py). Without them
+                # the premium tools fall back to the uncorrected blend.
+                try:
+                    export_player_game_logs(year)
+                except Exception as game_logs_exc:
+                    print(f"player_game_logs export warning: {game_logs_exc}")
 
                 # Team page's Roster sub-view: current-season roster/rank
                 # snapshot.

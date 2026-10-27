@@ -269,3 +269,21 @@ def test_uncertainty_shrinks_with_games_played():
     blend = pd.DataFrame({c: [10.0, 10.0] for c in pa.COMP}, index=[1, 2])
     sd = pa.uncertainty(blend, pd.Series([0, 40], index=[1, 2]), params["uncertainty"])
     assert (sd.loc[1, ["PTS", "REB", "AST"]] > sd.loc[2, ["PTS", "REB", "AST"]]).all()
+
+
+def test_game_log_export_keeps_this_season_and_picks_the_minutes_prior():
+    from scripts.export_player_game_logs import parse
+    game = lambda season, sp, gp=1: {"seasonId": season, "statSourceId": 0, "statSplitTypeId": 5, "scoringPeriodId": sp,
+                                     "stats": {"42": gp, "0": 20.0, "40": 30.0, "41": 1.0}}
+    players = [
+        {"id": 1, "stats": [game(2027, 3), game(2026, 150), game(2027, 4, gp=None),
+                            {"seasonId": 2027, "statSourceId": 1, "statSplitTypeId": 0, "stats": {"40": 2400.0, "42": 80.0}},
+                            {"seasonId": 2026, "statSourceId": 0, "statSplitTypeId": 0, "stats": {"40": 1000.0, "42": 50.0}}]},
+        {"id": 2, "stats": [{"seasonId": 2026, "statSourceId": 0, "statSplitTypeId": 0, "stats": {"40": 1000.0, "42": 50.0}}]},
+    ]
+    games, prior = parse(players, 2027)
+    assert games[["PlayerId", "ScoringPeriod"]].values.tolist() == [[1, 3]]   # last season + DNP days dropped
+    assert games.loc[0, "MIN"] == 30.0 and games.loc[0, "GS"] == 1.0
+    p = prior.set_index("PlayerId")
+    assert p.loc[1, "prior_MPG"] == 30.0 and p.loc[1, "prior_source"] == "projection"
+    assert p.loc[2, "prior_MPG"] == 20.0 and p.loc[2, "prior_source"] == "last_season"

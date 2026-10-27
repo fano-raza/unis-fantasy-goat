@@ -148,7 +148,9 @@ Question: is there an advantage to weighting players' last week or two instead o
 
 ## Corrected projections (tested 2026-10-27)
 
-The Trade Finder's minutes/starts projection correction ([`shared/projection_adjust.py`](../shared/projection_adjust.py); −2–10% per-stat error out of sample) was backtested here before sharing it: weekly from week 1, up to 3 swaps, 46 team-seasons, out-of-sample coefficients. **No benefit:** −0.04 wins/season [−0.52, +0.42] vs the current blend (+2.55 vs +2.60). The optimizer stays on `blend_players`. Script: [`scripts/backtest_optimizer_projections.py`](../scripts/backtest_optimizer_projections.py).
+The Trade Finder's minutes/starts projection correction ([`shared/projection_adjust.py`](../shared/projection_adjust.py); −2–10% per-stat error out of sample) was backtested here before sharing it: weekly from week 1, up to 3 swaps, 46 team-seasons, out-of-sample coefficients. **No benefit, no harm:** −0.04 wins/season [−0.52, +0.42] vs the plain blend (+2.55 vs +2.60), at about one more swap a season.
+
+**Adopted anyway (user decision, 2026-10-27): one set of player projections for both premium tools.** A player's projected production is a fact about the player, not about the decision. Two tools showing different values for the same player would be confusing, and the backtest shows no cost here. Live since 2026-10-27: `LeagueStore._optimizer_inputs` applies `projection_adjust.adjusted_players` on top of `blend_players` when `Ref/player_game_logs.csv` + `Ref/player_minutes_prior.csv` exist (daily export [`scripts/export_player_game_logs.py`](../scripts/export_player_game_logs.py), ESPN's public endpoint, no login), and falls back to the plain blend otherwise. Responses report which was used (`"projections": "corrected" | "blend"`). Decision-specific safety margins stay per tool (the Trade Finder's free agent ×0.7). Script: [`scripts/backtest_optimizer_projections.py`](../scripts/backtest_optimizer_projections.py).
 
 ## Ideas not yet tested
 

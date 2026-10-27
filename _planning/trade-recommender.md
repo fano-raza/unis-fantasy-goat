@@ -203,7 +203,7 @@ By season, final (oracle you): Fair 2024 +3.1 / 2025 +1.9 / 2026 −0.6; Fleece 
 
 ### Next steps
 
-1. Daily export of this season's per-game logs (minutes, starts) → wire `adjusted_players` into `LeagueStore` (shared with `_optimizer_inputs`).
+1. ~~Daily export of this season's per-game logs (minutes, starts) → wire `adjusted_players` into `LeagueStore`~~ **Done 2026-10-27.** [`scripts/export_player_game_logs.py`](../scripts/export_player_game_logs.py) runs daily in the stat-updater. `_optimizer_inputs` now gives **both** premium tools the corrected projections (user decision: one set of player numbers; projections shared, safety margins per tool), falling back to the plain blend if the files are missing.
 2. `POST /league/trade_finder {team, password, give, mode}` + API tests.
 3. Trade Hub UI, per the user's guidance (premium). Raise Fair mode's low coverage.
 4. ~~Check the Roster Optimizer with the corrected projections~~ **Done 2026-10-27 — no benefit; the optimizer stays on the blend.** [`scripts/backtest_optimizer_projections.py`](../scripts/backtest_optimizer_projections.py), weekly from week 1, up to 3 swaps, 46 team-seasons 2019–23, out-of-sample coefficients per season. Blend +2.60 [+2.04, +3.14] wins vs standing pat (reproduces the documented figure exactly); corrected +2.55 [+1.93, +3.20]. Difference −0.04 [−0.52, +0.42]; better in 35% of team-seasons, worse in 33%. By season +0.19 / −0.83 (2020, almost no projections) / −0.11 / +0.55 / −0.05. Swaps per season 15.6 → 16.9. The trade finder keeps the correction (it passed its hold-out with it). Whether trades need it at all is unknown without re-looking at 2024–26.

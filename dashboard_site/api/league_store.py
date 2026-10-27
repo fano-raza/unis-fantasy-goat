@@ -11,6 +11,7 @@ if str(REPO_ROOT) not in sys.path:
 
 import pandas as pd  # noqa: E402
 
+from shared import projection_adjust as pa  # noqa: E402
 from shared import roster_optimizer as ro  # noqa: E402
 from shared.weighted_rank import aggregate_rating, per_week_rating  # noqa: E402
 
@@ -75,6 +76,8 @@ class LeagueStore:
         self._player_stats_df: pd.DataFrame | None = None
         self._roster_ranks_df: pd.DataFrame | None = None
         self._player_projections_df: pd.DataFrame | None = None
+        self._player_game_logs_df: pd.DataFrame | None = None
+        self._minutes_prior_df: pd.DataFrame | None = None
         self._nba_schedule_df: pd.DataFrame | None = None
         self._week_calendar_df: pd.DataFrame | None = None
         self._weekly_recaps_df: pd.DataFrame | None = None
@@ -683,6 +686,19 @@ class LeagueStore:
         self._player_projections_df = pd.read_csv(path)
         return self._player_projections_df
 
+    def _projection_correction_inputs(self) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
+        """This season's per-game logs (with minutes/starts) and minutes
+        priors from scripts/export_player_game_logs.py, or (None, None) if
+        either file is missing -- the premium tools then fall back to the
+        uncorrected blend rather than failing."""
+        if getattr(self, "_player_game_logs_df", None) is None or getattr(self, "_minutes_prior_df", None) is None:
+            logs, prior = self._ref_path("player_game_logs.csv"), self._ref_path("player_minutes_prior.csv")
+            if logs is None or prior is None or not logs.exists() or not prior.exists():
+                return None, None
+            self._player_game_logs_df = pd.read_csv(logs)
+            self._minutes_prior_df = pd.read_csv(prior)
+        return self._player_game_logs_df, self._minutes_prior_df
+
     def _season_days_elapsed(self, year: int, today: date | None = None) -> float | None:
         """Days since week 1 started (Ref/week_calendar.csv), for the
         optimizer's recent-playing-rate availability. None if unknown."""
@@ -726,15 +742,29 @@ class LeagueStore:
         free_agents = [pid for pid in stats["PlayerId"] if pid not in rostered]
 
         days_elapsed = self._season_days_elapsed(year)
-        cache_key = (year, days_elapsed, len(stats), len(projections))
+        logs, prior = self._projection_correction_inputs()
+        cache_key = (year, days_elapsed, len(stats), len(projections), -1 if logs is None else len(logs))
         cached = getattr(self, "_blended_players_cache", None)
         if cached is not None and cached[0] == cache_key:
-            players = cached[1]
+            players, self._projection_kind = cached[1], cached[2]
         else:
             # max_swaps doesn't affect the blend -- only the search.
             players = ro.blend_players(stats, projections, ro.recommended_config(), replacement_pool=pd.Index(free_agents),
                                        days_elapsed=days_elapsed)
-            self._blended_players_cache = (cache_key, players)
+            # One set of player projections for every premium tool (user
+            # decision 2026-10-27): the blend plus the minutes/starts
+            # correction (shared/projection_adjust.py) -- backtested neutral
+            # for the optimizer (+2.55 vs +2.60 wins/season, n.s.) and part
+            # of the Trade Finder configuration that passed its 2024-26
+            # hold-out. Scoring period = days since week 1 + 1 (ESPN's day 1
+            # is week 1's start); only games before today count.
+            if logs is not None and days_elapsed is not None:
+                prior_mpg = prior.drop_duplicates("PlayerId").set_index("PlayerId")["prior_MPG"]
+                players = pa.adjusted_players(players, logs, int(days_elapsed) + 1, prior_mpg)
+                self._projection_kind = "corrected"
+            else:
+                self._projection_kind = "blend"
+            self._blended_players_cache = (cache_key, players, self._projection_kind)
         return year, rosters, free_agents, players, name_to_id
 
     def roster_optimizer(self, team: str, max_swaps: int = 3) -> dict:
@@ -802,9 +832,11 @@ class LeagueStore:
             "start_score": round(result.start_objective, 4),
             "end_score": round(result.end_objective, 4),
             "swaps": swaps,
+            "projections": getattr(self, "_projection_kind", "blend"),
             "data_as_of": {
                 "player_stats": mtime("player_stats.csv"),
                 "projections": mtime("player_projections.csv"),
+                "game_logs": mtime("player_game_logs.csv"),
                 "rosters": mtime("roster_ranks.csv"),
             },
         }
