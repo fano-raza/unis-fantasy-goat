@@ -25,7 +25,9 @@ Post in Discord:
 > 2. Name: `Unis Fantasy GOAT`. URL: `https://134-209-168-108.sslip.io/mcp`. No login needed.
 > 3. In a chat, make sure the connector is switched on (the tools/"+" menu), then ask away: "who has the most rebounds ever in week 2?", "Fano vs Amil all-time head to head", "who's had the best draft score each year?"
 >
-> Custom connectors need a paid Claude plan. ChatGPT can also add it as a custom connector in Developer Mode, though which plans get this changes often and we haven't tested it yet.
+> Works on every Claude plan, including Free (Free allows one custom connector). It also works in ChatGPT (Developer Mode, paid plans), Perplexity (paid) and Mistral Le Chat (all plans). Those three haven't been tested by us yet.
+
+**Compatibility (checked 2026-10-26):** Claude (all plans; Free = 1 custom connector, per Anthropic's help center), ChatGPT (Developer Mode, Plus and up, with plan rules in flux), Perplexity (Pro/Max/Enterprise, since 2026-03), Mistral Le Chat (all plans). Not in consumer chat apps: the Gemini app (only Gemini CLI / Gemini Enterprise) and Microsoft Copilot (only via Copilot Studio agents). Developer tools such as Claude Code, Cursor, VS Code and Gemini CLI also work with the URL.
 
 ## Next steps
 
