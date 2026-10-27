@@ -188,6 +188,7 @@ Key facts:
 - Some managers deliberately unset their lineup after day 1 of a week (benching everyone) to lock in category wins in TO and usually FG%/FT%. Those weeks have tiny counting stats and look like all-time "fewest turnovers" or "best FG%" records. team_week_records flags them (lineup_unset), and you should say so when one shows up.
 - Use team_week_records for single-week records ("most rebounds in a week", "most points in week 2"). Use stats_query for career or season totals and averages, and for any slicing the other tools don't cover.
 - The league's Discord also tracks daily puzzle games (MapTap, Worldle, Flagle, WhenTaken, Travle, Krillion): use the games_* tools. Some are scored by tries (lower is better, can be failed), others by points (higher is better); games_overview says which.
+- league_info lists every capability the server currently has. If one isn't in your tool list (some apps cache an old copy), call it through run(capability, arguments); capabilities() describes their parameters.
 - If you can't fully and confidently answer a question about the league with these tools (the data isn't there, no tool covers it, a tool errored, or you'd have to guess), call report_unanswered once with the user's question and what was missing, then tell the user it's been logged for the league's maintainers. Don't use it for questions unrelated to this league.
 """
 
@@ -274,6 +275,12 @@ def league_info(year: int | None = None) -> dict:
             ),
             "unanswerable_questions": "If something about the league isn't covered by any tool, call report_unanswered.",
         },
+        "all_capabilities": _capability_names(),
+        "capabilities_note": (
+            "This is the server's current, complete list of tools. Some apps keep an old copy of a "
+            "connector's tool list, so if one of these isn't in your tool list, call it via "
+            "run(capability=<name>, arguments={...}). Call capabilities() for each one's parameters."
+        ),
     }
 
 
@@ -678,6 +685,55 @@ def report_unanswered(question: str, reason: str, tools_tried: list[str] | None 
         text = text + f"\n{marker}{entry}\n" if i == -1 else text[: i + len(marker)] + entry + "\n" + text[i + len(marker) :]
         GAPS_PATH.write_text(text)
     return {"logged": True, "note": "Logged for the league's maintainers to review."}
+
+
+# --------------------------------------------------------------------------
+# Stable entry points: capabilities() + run(). claude.ai caches a connector's tool list
+# and doesn't refresh it when the server adds tools (known bug; only a manual "Refresh tool
+# list" or re-adding the connector fixes it). These two never change, so anything added later
+# is still reachable from a stale list: league_info names it, capabilities() describes it,
+# run() calls it.
+# --------------------------------------------------------------------------
+
+_META_TOOLS = {"capabilities", "run"}
+
+
+def _capability_names() -> list[str]:
+    return [t.name for t in mcp._tool_manager.list_tools() if t.name not in _META_TOOLS]
+
+
+@mcp.tool(annotations=RO)
+@_logged
+def capabilities(name: str | None = None) -> dict:
+    """Every tool this server currently offers, with its description and parameters (JSON
+    schema). Pass `name` for just one. Use with run() to call a tool that isn't in your own
+    tool list."""
+    tools = [t for t in mcp._tool_manager.list_tools() if t.name not in _META_TOOLS]
+    if name:
+        tools = [t for t in tools if t.name == name]
+        if not tools:
+            raise ToolError(f"No capability '{name}'. Available: {', '.join(_capability_names())}.")
+    return {"capabilities": [{"name": t.name, "description": t.description, "parameters": t.parameters} for t in tools]}
+
+
+@mcp.tool()
+async def run(capability: str, arguments: dict[str, Any] | None = None) -> Any:
+    """Call any of this server's capabilities by name, with its arguments as an object, e.g.
+    run(capability="games_daily_wins", arguments={"game": "maptap"}). Use it for any capability
+    league_info lists that isn't in your own tool list. capabilities() gives each one's parameters."""
+    if capability in _META_TOOLS or mcp._tool_manager.get_tool(capability) is None:
+        raise SDKToolError(f"No capability '{capability}'. Available: {', '.join(_capability_names())}.")
+    result = await mcp.call_tool(capability, arguments or {})
+    log.info("tool=run capability=%s", capability)
+    text = "".join(getattr(c, "text", "") for c in result.content)
+    if result.is_error:
+        raise SDKToolError(text or f"{capability} failed.")
+    if result.structured_content is not None:
+        return result.structured_content
+    try:
+        return json.loads(text)
+    except ValueError:
+        return text
 
 
 # --------------------------------------------------------------------------
