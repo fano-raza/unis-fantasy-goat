@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from . import daily_games_store
 from .league_store import get_league_store, reset_league_store
 from .query_engine import StatsStore
 from .schemas import (
@@ -23,6 +24,10 @@ from .schemas import (
     QueryRequest,
     QueryResponse,
     DraftPicksRequest,
+    GamesDailyWinsRequest,
+    GamesLeaderboardRequest,
+    GamesPlaysRequest,
+    GamesTopScoresRequest,
     RecordsRequest,
     RosterCategoryOddsRequest,
     RosterOptimizerPasswordRequest,
@@ -510,6 +515,45 @@ def league_ultra_bootstrap() -> dict:
 @app.post("/league/draft_picks")
 def league_draft_picks(req: DraftPicksRequest) -> list[dict]:
     return league_store.draft_picks(years=req.years, teams=req.teams)
+
+
+# #daily-games stats (Worldle, MapTap, ...) -- same logic as StatBot's Discord
+# commands, see daily_games_store.py. Used by the MCP server's game tools.
+@app.get("/games/meta")
+def games_meta() -> dict:
+    return daily_games_store.meta()
+
+
+@app.post("/games/leaderboard")
+def games_leaderboard(req: GamesLeaderboardRequest) -> list[dict]:
+    try:
+        return daily_games_store.leaderboard(req.game, req.days_back)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/games/top_scores")
+def games_top_scores(req: GamesTopScoresRequest) -> list[dict]:
+    try:
+        return daily_games_store.top_scores(req.game, req.n, req.min_date, req.max_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/games/daily_wins")
+def games_daily_wins(req: GamesDailyWinsRequest) -> list[dict]:
+    try:
+        return daily_games_store.daily_wins(req.game, req.rank)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/games/plays")
+def games_plays(req: GamesPlaysRequest) -> list[dict]:
+    try:
+        return daily_games_store.plays(req.game, req.player, req.min_date, req.max_date, req.limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 web_dir = (Path(__file__).resolve().parents[1] / "web").resolve()

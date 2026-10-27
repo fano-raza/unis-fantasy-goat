@@ -186,6 +186,7 @@ Key facts:
 - TO (turnovers) is lower-is-better. FG% and FT% are percentages: never sum them across weeks.
 - Some managers deliberately unset their lineup after day 1 of a week (benching everyone) to lock in category wins in TO and usually FG%/FT%. Those weeks have tiny counting stats and look like all-time "fewest turnovers" or "best FG%" records. team_week_records flags them (lineup_unset), and you should say so when one shows up.
 - Use team_week_records for single-week records ("most rebounds in a week", "most points in week 2"). Use stats_query for career or season totals and averages, and for any slicing the other tools don't cover.
+- The league's Discord also tracks daily puzzle games (MapTap, Worldle, Flagle, WhenTaken, Travle, Krillion): use the games_* tools. Some are scored by tries (lower is better, can be failed), others by points (higher is better); games_overview says which.
 - If you can't fully and confidently answer a question about the league with these tools (the data isn't there, no tool covers it, a tool errored, or you'd have to guess), call report_unanswered once with the user's question and what was missing, then tell the user it's been logged for the league's maintainers. Don't use it for questions unrelated to this league.
 """
 
@@ -552,6 +553,74 @@ def nba_schedule(start_date: str, end_date: str) -> dict:
         "games_per_team": dict(sorted(per_team.items(), key=lambda kv: (-kv[1], kv[0]))),
         "games": [{"date_utc": g["Date"], "home": g["HomeTeam"], "away": g["AwayTeam"]} for g in games],
     }
+
+
+GameName = Literal["maptap", "worldle", "flagle", "whentaken", "travle", "krillion"]
+GAMES_NOTE = (
+    "Players are listed by fantasy team name, or Discord display name for players without a team. "
+    "Data covers scores posted in the league Discord's #daily-games channel since each game's first_date, "
+    "and syncs from Discord periodically (see last_synced_at), so the latest day may be incomplete."
+)
+
+
+@mcp.tool(annotations=RO)
+@_logged
+def games_overview() -> dict:
+    """Daily puzzle games tracked in the league Discord: for each game, how it's scored (tries,
+    lower is better, can be failed; or points, higher is better), number of plays recorded, and
+    the date range. Read this before the other games_* tools."""
+    return {**_get("/games/meta"), "notes": GAMES_NOTE}
+
+
+@mcp.tool(annotations=RO)
+@_logged
+def games_leaderboard(game: GameName, days_back: int | None = None) -> dict:
+    """Player rankings for one daily game, all time or over the last `days_back` days: games
+    played, completed/failed, average and median score. Same ranking as the Discord bot's
+    leaderboard. For tries-based games (Worldle, Flagle, Travle), players with at least 4 games
+    are ranked by a blend of completion rate and average tries, and players under 4 games rank
+    below them."""
+    rows = _post("/games/leaderboard", {"game": game, "days_back": days_back})
+    return _rnd({"game": game, "days_back": days_back or "all time", "rows": rows, "notes": GAMES_NOTE})
+
+
+@mcp.tool(annotations=RO)
+@_logged
+def games_top_scores(game: Literal["maptap", "whentaken", "krillion"], n: int = 10, start_date: str | None = None, end_date: str | None = None) -> dict:
+    """Highest single-day scores ever (or in a date range, YYYY-MM-DD) for a points-based game:
+    MapTap, WhenTaken or Krillion. One player can appear more than once. Tries-based games have
+    no top-scores list; use games_leaderboard or games_daily_wins for those."""
+    rows = _post("/games/top_scores", {"game": game, "n": max(1, min(n, 50)), "min_date": start_date, "max_date": end_date})
+    return _rnd({"game": game, "rows": rows})
+
+
+@mcp.tool(annotations=RO)
+@_logged
+def games_daily_wins(game: Literal["maptap", "whentaken", "krillion"], rank: Literal["1", "2", "last"] = "1") -> dict:
+    """How many days each player had the best score of the day (rank "1"), the second-best
+    distinct score ("2"), or the worst ("last") in a points-based game. Ties share the day."""
+    r: int | str = rank if rank == "last" else int(rank)
+    rows = _post("/games/daily_wins", {"game": game, "rank": r})
+    return {"game": game, "rank": rank, "rows": rows}
+
+
+@mcp.tool(annotations=RO)
+@_logged
+def games_plays(
+    game: GameName | None = None,
+    player: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    limit: int = 100,
+) -> dict:
+    """Individual recorded plays, newest first, filtered by game, player (team name or display
+    name) and/or date range (YYYY-MM-DD). Use for "what did X get on Worldle today", streaks, or
+    head-to-head comparisons between players. failed=true means the puzzle wasn't solved."""
+    rows = _post(
+        "/games/plays",
+        {"game": game, "player": player, "min_date": start_date, "max_date": end_date, "limit": max(1, min(limit, 500))},
+    )
+    return {"rows": rows, "row_count": len(rows)}
 
 
 _gaps_lock = threading.Lock()

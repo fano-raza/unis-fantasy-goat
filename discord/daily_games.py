@@ -26,15 +26,18 @@ import re
 import statistics
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
-
-import disnake
+from typing import TYPE_CHECKING, Optional
 
 from shared.runtime_config import (
     daily_games_cursor_path,
     daily_games_history_path,
     daily_games_last_synced_at_path,
 )
+
+if TYPE_CHECKING:
+    # Only the Discord-sync functions need disnake (imported locally there), so
+    # dashboard_site -- no disnake installed -- can reuse the pure stats helpers.
+    import disnake
 
 CHANNEL_ID = 1142189924544696321
 DISCORD_NAMES_CSV = Path(__file__).resolve().parent / "discord_names.csv"
@@ -409,6 +412,8 @@ async def scan_and_record(channel: disnake.abc.Messageable) -> int:
     scan or a past one), only the first one recorded is kept -- later ones
     for that same (user, game, date) are dropped."""
     cursor = _read_cursor()
+    import disnake
+
     after = disnake.Object(id=cursor) if cursor else None
 
     csv_path = daily_games_history_path()

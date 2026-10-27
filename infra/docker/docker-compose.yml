@@ -64,6 +64,8 @@ services:
     container_name: unisfantasy-dashboard-api
     environment:
       FANTASY_REF_DIR: /srv/unisfantasy/data/ref
+      # daily_games_history.csv (for /games/*) lives in the data root.
+      FANTASY_DATA_ROOT: /srv/unisfantasy/data
     # ROSTER_OPTIMIZER_PASSWORD lives here, on the droplet only (see
     # env/dashboard-api.env.example). Optional: without the file the Roster
     # Optimizer endpoint just reports itself as off (503).

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -151,3 +152,29 @@ class StandingsRequest(BaseModel):
     year: int
     min_week: int
     max_week: int
+
+
+class GamesLeaderboardRequest(BaseModel):
+    game: str
+    days_back: int | None = Field(None, ge=1, description="Last N days; omit for all time")
+
+
+class GamesTopScoresRequest(BaseModel):
+    game: str
+    n: int = Field(10, ge=1, le=50)
+    min_date: date | None = None
+    max_date: date | None = None
+
+
+class GamesDailyWinsRequest(BaseModel):
+    game: str
+    rank: Literal[1, 2, "last"] = 1
+
+
+class GamesPlaysRequest(BaseModel):
+    game: str | None = None
+    player: str | None = None
+    min_date: date | None = None
+    max_date: date | None = None
+    limit: int = Field(100, ge=1, le=500)
+
