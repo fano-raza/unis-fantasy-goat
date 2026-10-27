@@ -1,6 +1,6 @@
-# Trade Recommender — scope
+# Trade Recommender
 
-**Status (2026-10-27):** scoped, with a quick prototype run on live 2027 data. Nothing has been built and nothing is in the app. Open questions for the user are at the bottom.
+**Status (2026-10-27):** algorithm built ([`shared/trade_finder.py`](../shared/trade_finder.py)), tested, and backtested on 2019–2023. **Not in the app.** The backtest does **not** show that the recommended trades help the team that makes them (see [Backtest](#backtest-2026-10-27)), so the next step is the user's call: iterate on the algorithm, or ship it as a trade-idea tool without a claimed benefit. UI guidance (it'll live in Trade Hub) is still to come from the user.
 
 Sister tool to the [Roster Optimizer](roster-optimizer.md). It uses the same player projections and the same team scoring, but searches trades with other managers instead of free-agent pickups.
 
@@ -8,7 +8,7 @@ Sister tool to the [Roster Optimizer](roster-optimizer.md). It uses the same pla
 
 ## What it does
 
-1. On the Roster page you pick the player(s) on your roster you'd trade away.
+1. You pick the player(s) on your roster you'd trade away.
 2. It tries every player (or group of players) on every other roster in return.
 3. It scores **both teams** before and after the trade, then lists the trades that help you and that the other team would plausibly accept.
 
@@ -48,85 +48,91 @@ The top 1-for-1 results under the 3-point rule are full of trades like *Hartenst
 
 ---
 
-## Proposed design
+## Decisions (user, 2026-10-27)
 
-### Acceptance rule (per candidate trade)
+- **Two modes:**
+  - **Fair:** both teams' win % improve (you ≥ +1 point, partner ≥ +1 point).
+  - **Fleece:** you ≥ +1 point, partner loses at most 1 point. Fleece includes trades where the partner also gains, so it's a superset of Fair; a win-win that's also your best trade is never hidden.
+- **Shapes:** 1-for-1 and 2-for-1 (you give 2, get 1) in both modes. Pick one player and it tries him alone (1-for-1) plus paired with each of your other players (2-for-1). Pick two and it tries exactly that pair (2-for-1).
+- **Lopsided trades:** not shown at all.
+- **Sort:** your gain first.
+- **Uneven trades:** the partner automatically drops its least-valuable player; you automatically add the best free agent. Both appear on the trade card.
+- **Premium feature, in Trade Hub.** Exact look to be specified by the user later.
+- **Backtest before shipping:** done, see below.
 
-- **You:** gain ≥ +1 point (same bar as the optimizer's minimum swap).
-- **Partner:** change ≥ −3 points (user's rule; adjustable).
-- **Perceived value:** what the partner gives is not much more than what they receive in category-neutral value (threshold TBD; see questions).
-- Each result gets a label: **Win-win** (partner ≥ +1), **Even** (−1 to +1), **Small ask** (−3 to −1).
+(The earlier "partner may lose up to 3 points" idea was replaced by the two modes.)
 
-**Default sort:** your gain. Alternatives: "fairest" (best result for the worse-off side) or "most likely accepted" (best partner change).
+## How it works ([`shared/trade_finder.py`](../shared/trade_finder.py))
 
-### Trade shapes (in build order)
+- `find_trades(team, give, players, rosters, free_agents, TradeConfig(mode=...))` returns a `TradeResult` with `Trade` cards: shape, partner, give/get, partner's drop, your free-agent add, both teams' gains and after-scores, both teams' weekly matchup win chance after the trade, and the value numbers.
+- **Scoring:** `League` holds every team's totals and rescores any set of teams against the hypothetical league. It uses exactly the optimizer's `standings` objective, including category spreads recomputed per hypothetical league. Inputs are the same as the optimizer's (`_optimizer_inputs()`: blended players, active rosters, free agents).
+- **2-for-1 balancing:** the partner first picks the drop that costs it least, among its remaining players. Then you pick, for your own score, the best of the top 15 healthy, signed free agents by player value. Same exclusions as the optimizer (OUT/IR/suspended, unsigned).
+- **Lopsided filter:** `player_value` is the standard 9-category z-score value of per-game × availability against rostered players (the same formula as the optimizer backtest's "rank swap" baseline). A trade is dropped if the partner's received value, minus its drop, is less than what it gives up (`value_tolerance = 0`).
+- **Speed:** ~0.23 s per search on live data (one picked player, both shapes, ~1,500 candidates).
+- **Tests:** [`tests/test_trade_finder.py`](../tests/test_trade_finder.py), 18 tests. Every returned trade's scores are recomputed from scratch with `ro.optimize` for both teams; on small random leagues the finder's full result set matches a brute-force enumeration exactly (including the partner's drop and your free-agent choice). Also covered: thresholds, Fair ⊆ Fleece, the lopsided filter (incl. a star-for-scrub case), sorting, injured/unsigned free agents, input validation, and the backtest helpers.
 
-| Mode | You pick | It searches | Size (per run) |
+## Backtest (2026-10-27)
+
+[`scripts/backtest_trade_finder.py`](../scripts/backtest_trade_finder.py) reuses the optimizer's replay ([`backtest_roster_optimizer.py`](../scripts/backtest_roster_optimizer.py)): same data (2019–2023 daily rosters + game logs, on the droplet at `/srv/unisfantasy/data/backtest/`), same 10-active-slot lineup simulation, same "only what was known that day" inputs.
+
+- **Setup:** checkpoints at weeks 4, 6, 8, 10, 12 and 14. For every team, the finder searched every active player, giving 276 team-checkpoints. Each team's top Fair and top Fleece trade (by its own gain) was applied on top of reality: both teams' real daily rosters from the checkpoint on, with the traded players substituted one for one. A substitution only happens on days the leaving player is really still there, so roster sizes never change. Every other team stayed real. The rest of the regular season was then replayed and compared with no trade.
+- **Controls:** *pickup only* (no trade; just swap the less valuable of your two given players for the same free agent) and *random fair* (a random trade the partner wouldn't see as lopsided, with no win-% rule).
+- **Result unit:** change in rest-of-season matchup wins per trade (95% bootstrap CI).
+
+| Scenario | You | Partner | Model predicted (you / partner, pts) |
 |---|---|---|---|
-| 1-for-1 | 1 player | each single player on the 9 other rosters | ~120 trades — instant |
-| 1-for-2 | 1 player | each pair on one other roster; you drop your least-valuable player | ~700 pairs × ~12 drops |
-| 2-for-1 | 2 players | each single player; you add the best free agent, they drop their least-valuable | ~120 × ~12 drops × top-10–20 FAs |
-| 2-for-2 | 2 players | each pair on one other roster | ~700 pairs |
-| Later: sweetener | 1 player | also tries adding one more of your players to your side | ~12× the 1-for-X search |
-| Later: reverse | a player on another team you want | what to give for him | same machinery, other direction |
+| **Fair, top trade** (always a 2-for-1) | −0.01 [−0.14, +0.14] | +0.31 [+0.14, +0.49] | +5.3 / +1.4 |
+| **Fleece, top trade** (always a 2-for-1) | +0.10 [−0.07, +0.26] | +0.26 [+0.08, +0.43] | +6.9 / −0.6 |
+| Best 1-for-1, Fleece (n = 265) | +0.08 [−0.04, +0.20] | +0.02 [−0.10, +0.14] | +1.8 / −0.5 |
+| Best 1-for-1, Fair (only n = 32 had one) | −0.06 [−0.25, +0.12] | +0.20 [−0.05, +0.44] | +1.5 / +1.4 |
+| Pickup only (Fair / Fleece free agent) | −0.01 / −0.04 | — | |
+| Random value-fair trade | −0.49 [−0.64, −0.32] | +0.17 [+0.02, +0.33] | −3.8 / +6.6 |
 
-Picking 1 or 2 players (and capping partner groups at 2, maybe 3) keeps every search to tens of thousands of candidates. That's well under a second vectorized, and it's light enough for the droplet (the prototype's slow 34 s run was a Python loop over all of Fano's possible pairs, not the per-pick search).
+By seasons: Fleece was +0.29 [+0.10, +0.50] on 2019–21 but −0.16 [−0.41, +0.08] on the 2022–23 hold-out. Fair was +0.09 then −0.13. By checkpoint, trades made in weeks 4–6 hurt the trading team (−0.3 to −0.5); weeks 8–14 were around 0 to +0.5.
 
-### Roster balancing for uneven trades
+**What it means:**
 
-- The team receiving more players drops its least-valuable player, chosen by its own score.
-- The team with an open spot adds the best healthy free agent, chosen by its own score from a top ~10–20 shortlist (same exclusions as the optimizer: injured OUT/IR/suspended, unsigned, inactive).
-- Both moves are shown as part of the trade card ("Rohil drops Mikal Bridges · you add Ace Bailey").
-- **Caveat:** part of a 2-for-1's gain is the free-agent pickup, which you might be able to make without the trade. The card should show the pickup's share separately (the optimizer can already score "pickup alone").
+- **The recommended trades don't reliably help the team making them.** The model predicts about +5–7 points (roughly +0.5 wins over the rest of a season); reality is about zero for Fair and a non-significant +0.1 for Fleece, which turns negative on the hold-out seasons.
+- **Partners consistently do better than predicted, and you do worse.** This is the winner's curse: picking the trade with the highest projected gain for you selects trades where your incoming player is over-projected or your outgoing players are under-projected. The lopsided filter uses the same projections, so "fair by value" trades tilt toward the partner in reality.
+- **The model's choice is much better than a random value-fair trade** (about +0.5 wins better). Value-fair trades lose for you on average, and the model avoids most of that loss, but it doesn't turn trades into gains.
+- **The 2-for-1 free-agent pickup contributes nothing** (pickup only ≈ 0).
+- **Win-win trades do exist in reality:** the partner side gains +0.3. That's what Fair mode promises; it just isn't coming out of your share.
 
-### Other rules carried over from the optimizer
+**Earlier run, discarded:** the first pass added incoming players even on days the outgoing one was already gone in real life, which gave teams extra players. It showed Fair +0.41 / Fleece +0.55 for you; that was the inflation, not the tool.
 
-- IR players: not tradeable in v1 (they're already out of active rosters).
-- Roster-size scaling: same `roster_scale` as the optimizer; teams in an uneven trade keep their real roster count after balancing.
-- Recent-form weighting: follows whatever the optimizer uses (currently off).
+## Options from here (user to choose)
 
-### Where it lives (proposal)
+1. **Winner's-curse guards, then re-backtest (recommended).** This is the same kind of fix that worked for the optimizer, where flattering projections were the main problem. Candidates:
+   - require a bigger predicted gain;
+   - shrink incoming players' projections toward replacement level by sample size;
+   - only trade for players with enough real games this season;
+   - add a safety margin to the value check so trades aren't tilted toward the partner.
 
-- **Roster page, premium-gated** (like the optimizer): a "Find trades" action. Tick one or two of your players, then hit Find trades.
-- Results replace the roster table (same pattern as the optimizer). Each trade is a card:
-  - you give / you get, with the partner team;
-  - your win % before → after and theirs before → after;
-  - the label;
-  - which categories move;
-  - roster-balancing moves, if any.
-- Filters: partner team, trade shape, label. Each card links to **Trade Hub** for the side-by-side stat comparison.
-- `POST /league/trade_finder {team, password, give: [names], shape?, partner_floor?}` → `LeagueStore.trade_finder`, sharing `_optimizer_inputs()` and its cache.
+   Tune on 2019–21, check once on 2022–23.
+2. **Ship as a trade-idea generator** in Trade Hub, showing win-% changes as model estimates, with no claim that it improves standings.
+3. **Narrow it:** only show trades made from week 8 on (the later checkpoints were mildly positive). Not statistically solid, though.
 
-### Validation before shipping (same standard as the optimizer)
+## Build plan
 
-We can't test whether a manager would accept a trade, but we can test whether the trades the model likes actually help both teams. Using the existing backtest data (2019–2023, daily rosters + game logs, on the droplet at `/srv/unisfantasy/data/backtest/`):
+1. ~~`shared/trade_finder.py` + tests~~ (done 2026-10-27)
+2. ~~Backtest~~ (done 2026-10-27; result above)
+3. User picks an option above; if option 1, iterate + re-backtest.
+4. `POST /league/trade_finder {team, password, give: [names], mode}` → `LeagueStore.trade_finder` (reuses `_optimizer_inputs()` and its cache), plus API tests.
+5. Trade Hub UI per the user's guidance (frontend-design skill; desktop + mobile, both themes), premium-gated.
+6. Measure on the droplet, then deploy.
 
-1. At weekly checkpoints, generate each team's top recommended trades.
-2. Apply each trade to both rosters and replay the rest of the season with the existing simulator.
-3. Compare both teams' wins with and without the trade.
-4. Compare against a "trade by projection value only" baseline.
+## Code map and how to run
 
-This matters more here than it did for the optimizer: the optimizer's backtest showed most of its value came from the projections, not from category-aware scoring. Trades that help both sides are exactly the ones that rely on category fit. Tune on 2019–2021 and hold out 2022–2023, as before.
+| File | Purpose |
+|---|---|
+| [`shared/trade_finder.py`](../shared/trade_finder.py) | The algorithm (`find_trades`, `TradeConfig`, `League`, `player_value`) |
+| [`tests/test_trade_finder.py`](../tests/test_trade_finder.py) | 18 tests incl. brute-force equivalence |
+| [`scripts/backtest_trade_finder.py`](../scripts/backtest_trade_finder.py) | Backtest (≈ 35 min locally for 5 seasons × 6 checkpoints) |
+| [`prototypes/trade_finder_proto.py`](prototypes/trade_finder_proto.py) | The original throwaway prototype |
 
----
-
-## Build plan (once the questions are answered)
-
-1. `shared/trade_finder.py`: league-wide scoring, candidate generation per shape, roster balancing, acceptance rule, perceived-value check. Tests: brute-force checks against `optimize(max_swaps=0)` rescoring both rosters, as `tests/test_roster_optimizer.py` does.
-2. Backtest script (`scripts/backtest_trade_finder.py`) on the existing data; write up results here.
-3. Endpoint + `LeagueStore.trade_finder` + API tests.
-4. Roster-page UI (frontend-design skill; desktop + mobile, both themes), premium-gated, Trade Hub link.
-5. Measure on the droplet, then deploy.
-
-## Questions for the user
-
-1. **Perceived-value check:** hide lopsided trades, or show them with a warning? And how lopsided is too lopsided (e.g. the partner gives more than ~15–25% extra projection value)?
-2. **Default sort:** your gain, or fairest/most-likely-accepted first?
-3. **Uneven trades:** OK to auto-fill the open spot with the best free agent and auto-drop for the team that's over, shown on the card?
-4. **Premium-gated** like the optimizer, and on the Roster page? Or its own spot (e.g. inside Trade Hub)?
-5. **Backtest first** (recommended, ~1 session), or ship v1 1-for-1 behind premium and backtest after?
-6. **Shapes for v1:** 1-for-1 + 2-for-1 + 1-for-2 first (2-for-2 next), with sweetener/reverse later?
-
-## Prototype scripts
-
-[`prototypes/trade_finder_proto.py`](prototypes/trade_finder_proto.py) — throwaway. Its core (the all-teams `scores()` function and the 1-for-1 / 2-for-1 loops) is the starting point for `shared/trade_finder.py`.
+```sh
+.venv-dashboard/bin/python -m pytest tests/test_trade_finder.py -q
+# data: scp 'root@134.209.168.108:/srv/unisfantasy/data/backtest/*' <dir>; CompStats from /srv/unisfantasy/data/ref
+.venv-dashboard/bin/python -m scripts.backtest_trade_finder --data <dir> --ref <ref dir> --out trades.csv
+.venv-dashboard/bin/python -m scripts.backtest_trade_finder --data <dir> --ref <ref dir> --out trades.csv --summary-only
+```

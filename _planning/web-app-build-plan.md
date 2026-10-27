@@ -681,15 +681,16 @@ User's goal: for any target team, find the 5 of 9 categories it's best positione
   - **Proposed next iteration (pending user)**: replace the min-max objective with expected weekly category wins vs each opponent (normal approximation with week-to-week variance — margins count, with diminishing returns), plus a winner's-curse guard (shrink FA projections / require a projected edge larger than noise); re-run the same backtest.
 - **Superseded open issues from round 1** (kept for history): (1) the 10% injured weight makes it drop injured stars (LeBron, Curry, Flagg, Banchero, Kyrie, Duren are all OUT) — wrong for a season-long tool if the injury is short; (2) uneven roster sizes (4 teams at 14, 6 at 13) inflate 14-man teams' counting totals; (3) noise-level swaps (+0.000–0.01) need a minimum-gain cutoff; (4) every team is pointed at the same few best FAs (expected per-team, but only one team can claim each).
 
-### Phase 7 — Trade Recommender — SCOPED (2026-10-27), not built
+### Phase 7 — Trade Recommender — BUILT + BACKTESTED (2026-10-27), not in the app
 
 **Scope, prototype findings and open questions live in [`trade-recommender.md`](trade-recommender.md).** Pick 1–2 of your players → search other rosters for trades that help you (≥ +1 pt) while the partner loses < 3 pts (user's rule), using the optimizer's standings scoring with both teams rescored. Prototype on live data: strict win-win 1-for-1 trades are nearly nonexistent (6 of 14,744); the 3-point rule gives 125/128 players options; 2-for-1 (with FA fill) produces real win-wins. Needs a perceived-value check (model loves e.g. Hartenstein → LaMelo). Awaiting user answers before building.
 
 - [x] Scope + prototype (2026-10-27)
-- [ ] User answers the questions in the doc
-- [ ] `shared/trade_finder.py` + tests
-- [ ] Backtest on 2019–2023 data
-- [ ] Endpoint + Roster-page UI (premium) + deploy
+- [x] User answers the questions in the doc (two modes: Fair = both +1, Fleece = you +1 / partner ≥ −1; no lopsided trades; your gain first; auto drop/FA add OK; premium in Trade Hub, UI guidance to come)
+- [x] `shared/trade_finder.py` + 18 tests (brute-force equivalence)
+- [x] Backtest on 2019–2023: top trades don't reliably help the trading team (Fair −0.01, Fleece +0.10 wins, n.s.; hold-out negative); partners gain +0.3 (winner's curse)
+- [ ] User picks next step (winner's-curse guards + re-backtest, or ship as an idea generator)
+- [ ] Endpoint + Trade Hub UI (premium) + deploy
 
 ## Session log
 
@@ -1046,3 +1047,4 @@ User's goal: for any target team, find the 5 of 9 categories it's best positione
 - **2026-10-26 — MCP: gaps log + daily games**: `report_unanswered` tool logs questions the AI couldn't answer to `data/mcp/mcp_gaps.md`, and the Discord daily games (MapTap/Worldle/Flagle/WhenTaken/Travle/Krillion) are exposed via new `/games/*` API endpoints + 5 MCP tools. Details in `mcp-server.md`.
 - **2026-10-26 — MCP: stale tool lists**: claude.ai never re-fetched tools/list after the games tools were added (known claude.ai bug; restart, new chat and version bump don't help). Added permanent `capabilities` + `run(capability, arguments)` tools, and `league_info` now lists all capabilities live, so future tools are reachable without members refreshing. Details in `mcp-server.md`.
 - **2026-10-27 — Trade Recommender scoped**: user asked to scope trade recommendations on the optimizer's rating (pick a player, find trades that improve both teams; multi-player later; mid-scope added: partner may lose < 3 pts). Prototyped on live 2027 data, wrote [`trade-recommender.md`](trade-recommender.md) (Phase 7) with findings, design and questions. Prototype in `_planning/prototypes/`. Nothing built.
+- **2026-10-27 — Trade Recommender built + backtested**: user chose Fair / Fleece modes, 1-for-1 + 2-for-1, no lopsided trades, sort by own gain, auto drop + FA fill, premium in Trade Hub. Built `shared/trade_finder.py` (0.23 s/search), 18 tests incl. brute-force equivalence, `scripts/backtest_trade_finder.py`. First backtest run was inflated by a replay bug (incoming players added even after the outgoing one was already gone in reality -> extra players); fixed to one-for-one substitutions and reran. Clean result: the top trades don't reliably help the trading team (Fair −0.01, Fleece +0.10 wins rest-of-season, hold-out negative); partners gain ~+0.3 (winner's curse); beats a random value-fair trade by ~+0.5. Not in the app; options written up in [`trade-recommender.md`](trade-recommender.md).
