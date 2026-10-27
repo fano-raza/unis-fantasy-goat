@@ -223,7 +223,9 @@ def _logged(fn):
 def league_info(year: int | None = None) -> dict:
     """League overview: members, seasons, current season/week, categories, each season's
     scoring format, playoff sizes, and the matchup calendar (week -> dates) for `year`
-    (defaults to the current season). Read this first."""
+    (defaults to the current season). Also lists what else is tracked for the league,
+    including the daily puzzle games (MapTap, Worldle, Flagle, WhenTaken, Travle, Krillion)
+    the league members play in their Discord. Read this first."""
     meta = _meta()
     y = _year(year)
     cal = _calendar(y)
@@ -260,6 +262,15 @@ def league_info(year: int | None = None) -> dict:
             "tiny counting stats (e.g. 18 PTS) and are real results, not data errors."
         ),
         f"calendar_{y}": weeks,
+        "also_tracked": {
+            "daily_games": (
+                "League members also compete in daily puzzle games posted in the league Discord: "
+                "MapTap, Worldle, Flagle, WhenTaken, Travle and Krillion. Use games_overview, "
+                "games_leaderboard, games_top_scores, games_daily_wins (who won/lost the most days) "
+                "and games_plays for any question about them."
+            ),
+            "unanswerable_questions": "If something about the league isn't covered by any tool, call report_unanswered.",
+        },
     }
 
 
@@ -566,7 +577,8 @@ GAMES_NOTE = (
 @mcp.tool(annotations=RO)
 @_logged
 def games_overview() -> dict:
-    """Daily puzzle games tracked in the league Discord: for each game, how it's scored (tries,
+    """The fantasy league's daily puzzle games (MapTap, Worldle, Flagle, WhenTaken, Travle,
+    Krillion), played by league members and tracked in the league Discord: for each game, how it's scored (tries,
     lower is better, can be failed; or points, higher is better), number of plays recorded, and
     the date range. Read this before the other games_* tools."""
     return {**_get("/games/meta"), "notes": GAMES_NOTE}
@@ -575,7 +587,7 @@ def games_overview() -> dict:
 @mcp.tool(annotations=RO)
 @_logged
 def games_leaderboard(game: GameName, days_back: int | None = None) -> dict:
-    """Player rankings for one daily game, all time or over the last `days_back` days: games
+    """Fantasy league daily games: player rankings for one daily game, all time or over the last `days_back` days: games
     played, completed/failed, average and median score. Same ranking as the Discord bot's
     leaderboard. For tries-based games (Worldle, Flagle, Travle), players with at least 4 games
     are ranked by a blend of completion rate and average tries, and players under 4 games rank
@@ -597,7 +609,7 @@ def games_top_scores(game: Literal["maptap", "whentaken", "krillion"], n: int = 
 @mcp.tool(annotations=RO)
 @_logged
 def games_daily_wins(game: Literal["maptap", "whentaken", "krillion"], rank: Literal["1", "2", "last"] = "1") -> dict:
-    """How many days each player had the best score of the day (rank "1"), the second-best
+    """Fantasy league daily games: how many days each league member had the best score of the day (rank "1"), the second-best
     distinct score ("2"), or the worst ("last") in a points-based game. Ties share the day."""
     r: int | str = rank if rank == "last" else int(rank)
     rows = _post("/games/daily_wins", {"game": game, "rank": r})
@@ -687,6 +699,15 @@ class RateLimit(BaseHTTPMiddleware):
         if len(q) >= self.per_min:
             return JSONResponse({"error": "rate limited, try again in a minute"}, status_code=429)
         q.append(now)
+        if request.method == "POST" and request.url.path == "/mcp":
+            # Log the JSON-RPC method (initialize, tools/list, tools/call, ...) so we can tell
+            # whether a client has re-fetched the tool list after a deploy.
+            try:
+                body = json.loads(await request.body())
+                methods = [m.get("method") for m in (body if isinstance(body, list) else [body])]
+                log.info("rpc ip=%s methods=%s ua=%s", ip, methods, request.headers.get("user-agent", "")[:60])
+            except Exception:
+                pass
         if len(self.hits) > 5000:  # keep memory bounded
             self.hits = defaultdict(deque, {k: v for k, v in self.hits.items() if v and now - v[-1] < 60})
         return await call_next(request)
