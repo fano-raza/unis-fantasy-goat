@@ -16,6 +16,11 @@ Let league members query the league's data from their own AI chat accounts (Clau
 - The server `instructions` + tool docstrings carry the league quirks: TO lower-is-better, never sum FG%/FT%, RS vs PO, multi-week matchups (All-Star break; the 2019 playoffs were 14-day rounds, which is why the all-time single-"week" REB record is 812), and the partial current week.
 - **Bug fixed along the way (`dashboard_site/api/query_engine.py`):** `/query` counted 2027's pre-seeded placeholder weeks and the not-yet-started current week as 0-0-9 tied matchups (17 phantom draws per team) and as 0-stat weeks (they won "fewest turnovers"). The new `_drop_unplayed` filters rows with no PTS/FGA, on the `/query`/`/timeseries` path only. The website's `/query` consumers (Profile/Comparison wins/losses) were unaffected, since phantom ties add no W/L.
 
+## Added 2026-10-26 (later)
+
+- **Unanswered-questions log:** `report_unanswered(question, reason, tools_tried)` tool. The server instructions tell the AI to call it whenever it can't fully answer a league question. Entries are appended to `/srv/unisfantasy/data/mcp/mcp_gaps.md` (Open/Done/Ignored checklist, same shape as `feature_requests.md`). The container mounts only `data/mcp` read-write. Guards: 500/300-char caps, newlines and HTML comments stripped, identical questions de-duplicated, 2 MB file cap, plus the per-IP rate limit. Read it with `ssh root@134.209.168.108 cat /srv/unisfantasy/data/mcp/mcp_gaps.md`; it's checked at the start of each session (memory note).
+- **Daily Discord games:** new `/games/{meta,leaderboard,top_scores,daily_wins,plays}` API endpoints (`dashboard_site/api/daily_games_store.py`) reuse StatBot's own `discord/daily_games.py` logic. It's loaded by file path to skip the `discord` package `__init__`, and its `disnake` import is now local to the Discord-sync functions. dashboard-api got `FANTASY_DATA_ROOT`. MCP tools: `games_overview`, `games_leaderboard`, `games_top_scores`, `games_daily_wins`, `games_plays`. Data freshness follows the CSV, which syncs from Discord when the bot scans.
+
 ## How to connect (for the league)
 
 Post in Discord:
