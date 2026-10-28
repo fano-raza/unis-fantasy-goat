@@ -57,6 +57,72 @@ function computeDisplayRanks(rows: WeekRow[]): Map<string, number> {
   return ranks;
 }
 
+// Pickups land once per day, guaranteed after 4 AM ET -- confirmed with the
+// user (2026-10-28) -- so a team's roster is guaranteed unchanged from one
+// day's 4 AM ET through the next's. The Games column's roster+schedule
+// fetch is cached in localStorage keyed by this day, so repeat page loads
+// within that same window reuse it instead of re-hitting the backend; a
+// day boundary (or the current week rolling over) naturally invalidates it.
+// Distinct from roster-view.tsx's leagueTodayKey() (2 AM ET, for week
+// boundaries) -- same shape, different real-world cutoff.
+const GAMES_CACHE_EASTERN_TZ = "America/New_York";
+const GAMES_CACHE_CUTOFF = "04:00";
+
+function gamesCacheDayKey(): string {
+  const hourMinute = new Date().toLocaleTimeString("en-GB", {
+    timeZone: GAMES_CACHE_EASTERN_TZ,
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const beforeCutoff = hourMinute < GAMES_CACHE_CUTOFF;
+  return new Date(Date.now() - (beforeCutoff ? 24 * 60 * 60 * 1000 : 0)).toLocaleDateString("en-CA", {
+    timeZone: GAMES_CACHE_EASTERN_TZ,
+  });
+}
+
+// Bumped if the cached shape ever changes -- a stale entry from an old
+// version is just a cache miss, not a crash.
+const GAMES_CACHE_VERSION = 1;
+
+interface GamesCacheEntry {
+  version: number;
+  dayKey: string;
+  year: number;
+  week: number;
+  roster: RosterRankRow[];
+  games: NBAScheduleGame[];
+}
+
+function gamesCacheStorageKey(year: number): string {
+  return `weeklyStatsGamesCache:${year}`;
+}
+
+function readGamesCache(year: number, week: number, dayKey: string): GamesCacheEntry | null {
+  try {
+    const raw = localStorage.getItem(gamesCacheStorageKey(year));
+    if (!raw) return null;
+    const entry = JSON.parse(raw) as GamesCacheEntry;
+    if (entry.version !== GAMES_CACHE_VERSION || entry.dayKey !== dayKey || entry.year !== year || entry.week !== week) {
+      return null;
+    }
+    return entry;
+  } catch {
+    // Corrupt JSON, private-browsing storage block, etc. -- just a cache
+    // miss, caching is an optimization here, not a correctness requirement.
+    return null;
+  }
+}
+
+function writeGamesCache(entry: GamesCacheEntry) {
+  try {
+    localStorage.setItem(gamesCacheStorageKey(entry.year), JSON.stringify(entry));
+  } catch {
+    // Quota exceeded / storage blocked -- fine to drop, next load just
+    // re-fetches.
+  }
+}
+
 interface WeeklyStatsViewProps {
   // Fetched server-side (see app/page.tsx) so the bootstrap round-trip to
   // the backend happens during SSR/ISR instead of after the client
@@ -166,24 +232,38 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
   // is a same-day snapshot, not tracked historically) with a schedule it
   // didn't necessarily apply to back then, same reasoning as the Team
   // page's Roster sub-view (roster-view.tsx::weekOptions).
+  //
+  // Cached in localStorage per gamesCacheDayKey() (4 AM ET -- pickups land
+  // once per day, guaranteed after that cutoff, confirmed with the user) so
+  // a page reload within the same day reuses it instead of re-fetching.
   useEffect(() => {
     if (!meta) return;
+    const year = meta.current_year;
+    const week = meta.current_week;
+    const dayKey = gamesCacheDayKey();
+
+    const cached = readGamesCache(year, week, dayKey);
+    if (cached) {
+      setGamesRoster(cached.roster);
+      setGamesSchedule(cached.games);
+      setGamesDataLoading(false);
+      return;
+    }
+
     let cancelled = false;
     setGamesDataLoading(true);
     (async () => {
       try {
-        const [roster, weeks] = await Promise.all([
-          getRosterRanks({ year: meta.current_year }),
-          getWeekCalendar({ year: meta.current_year }),
-        ]);
+        const [roster, weeks] = await Promise.all([getRosterRanks({ year }), getWeekCalendar({ year })]);
         if (cancelled) return;
-        const currentWeekRow = weeks.find((w) => w.Week === meta.current_week);
+        const currentWeekRow = weeks.find((w) => w.Week === week);
         const games = currentWeekRow
           ? await getNBASchedule({ start_date: currentWeekRow.StartDate, end_date: currentWeekRow.EndDate })
           : [];
         if (cancelled) return;
         setGamesRoster(roster);
         setGamesSchedule(games);
+        writeGamesCache({ version: GAMES_CACHE_VERSION, dayKey, year, week, roster, games });
       } catch {
         if (!cancelled) {
           setGamesRoster([]);
