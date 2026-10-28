@@ -18,16 +18,22 @@ import { SteppableSelect } from "@/components/steppable-select";
 import { useSelectedTeam } from "@/lib/use-selected-team";
 import {
   API_BASE_URL,
+  getNBASchedule,
+  getRosterRanks,
+  getWeekCalendar,
   getWeeklyLeaderboard,
   getWeeklyLeaderboardSeason,
   getWeeklyRecap,
   getWeeklyStatsBootstrap,
   type LeagueMeta,
+  type NBAScheduleGame,
+  type RosterRankRow,
   type SeasonWeeks,
   type WeekRow,
   type WeeklyRecap,
   type WeeklyStatsBootstrap,
 } from "@/lib/api";
+import type { GamesProgress } from "@/components/stat-table";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { LoadingOverlay } from "@/components/loading-overlay";
 import { cn } from "@/lib/utils";
@@ -83,6 +89,13 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
   const [rowsLoading, setRowsLoading] = useState(true);
   const [recap, setRecap] = useState<WeeklyRecap | null>(null);
   const [recapLoading, setRecapLoading] = useState(true);
+  // Current-week "games played / scheduled" per team (see gamesProgress
+  // memo below) -- fetched once per current-week rollover, not per
+  // year/week navigation, since it's always anchored to meta.current_week
+  // regardless of which week the user is browsing.
+  const [gamesRoster, setGamesRoster] = useState<RosterRankRow[]>([]);
+  const [gamesSchedule, setGamesSchedule] = useState<NBAScheduleGame[]>([]);
+  const [gamesDataLoading, setGamesDataLoading] = useState(true);
   // Bootstrap fetches meta + the current week's rows in one round-trip; this
   // flags that the next [year, week] effect run is that same initial pair,
   // so it doesn't re-fetch what bootstrap already delivered.
@@ -144,6 +157,47 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
       .catch(() => setRecap(null))
       .finally(() => setRecapLoading(false));
   }, [year, week]);
+
+  // Current-week "Games" column data: every team's live roster (for the
+  // games-by-NBA-team join below) plus the real NBA schedule for the
+  // current fantasy week's exact date range. Anchored to meta's current
+  // year/week, not the year/week state the user is browsing -- showing
+  // this against a past week would pair today's roster (roster_ranks.csv
+  // is a same-day snapshot, not tracked historically) with a schedule it
+  // didn't necessarily apply to back then, same reasoning as the Team
+  // page's Roster sub-view (roster-view.tsx::weekOptions).
+  useEffect(() => {
+    if (!meta) return;
+    let cancelled = false;
+    setGamesDataLoading(true);
+    (async () => {
+      try {
+        const [roster, weeks] = await Promise.all([
+          getRosterRanks({ year: meta.current_year }),
+          getWeekCalendar({ year: meta.current_year }),
+        ]);
+        if (cancelled) return;
+        const currentWeekRow = weeks.find((w) => w.Week === meta.current_week);
+        const games = currentWeekRow
+          ? await getNBASchedule({ start_date: currentWeekRow.StartDate, end_date: currentWeekRow.EndDate })
+          : [];
+        if (cancelled) return;
+        setGamesRoster(roster);
+        setGamesSchedule(games);
+      } catch {
+        if (!cancelled) {
+          setGamesRoster([]);
+          setGamesSchedule([]);
+        }
+      } finally {
+        if (!cancelled) setGamesDataLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meta?.current_year, meta?.current_week]);
 
   useEffect(() => {
     if (year == null || week == null) return;
@@ -233,6 +287,34 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
     () => rows.map((r) => ({ ...r, rank: displayRanks.get(r.team) ?? null })),
     [rows, displayRanks],
   );
+
+  // Per fantasy team: how many of this week's scheduled games (across every
+  // active, non-IR rostered player's real NBA team) have already tipped off.
+  // A player on an NBA team playing twice this week counts twice -- this is
+  // "total possible games across the roster," the same convention already
+  // used per-player on the Team page's Roster sub-view (roster-view.tsx's
+  // gamesLeftLabel), not a starting-lineup-capped count.
+  const gamesProgress = useMemo(() => {
+    const gamesByNBATeam = new Map<string, NBAScheduleGame[]>();
+    for (const game of gamesSchedule) {
+      for (const abbr of [game.HomeTeam, game.AwayTeam]) {
+        if (!gamesByNBATeam.has(abbr)) gamesByNBATeam.set(abbr, []);
+        gamesByNBATeam.get(abbr)!.push(game);
+      }
+    }
+    const now = Date.now();
+    const progress: Record<string, GamesProgress> = {};
+    for (const row of gamesRoster) {
+      if (!row.FantasyTeam || row.LineupSlot === "IR") continue;
+      const games = gamesByNBATeam.get(row.NBATeam) ?? [];
+      const entry = progress[row.FantasyTeam] ?? { played: 0, total: 0 };
+      entry.total += games.length;
+      entry.played += games.filter((g) => new Date(g.Date).getTime() <= now).length;
+      progress[row.FantasyTeam] = entry;
+    }
+    return progress;
+  }, [gamesRoster, gamesSchedule]);
+  const isCurrentWeek = meta != null && year === meta.current_year && week === meta.current_week;
 
   // Default (and re-default, if the current focus team disappears from a
   // new week's table) to whichever team displays as #1. Left alone once the
@@ -336,6 +418,8 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
                 mode={mode}
                 focusTeam={focusTeam === NO_FOCUS_TEAM ? undefined : focusTeam}
                 showFocusScore
+                gamesProgress={isCurrentWeek ? gamesProgress : undefined}
+                gamesLoading={isCurrentWeek && gamesDataLoading}
               />
             )}
           </LoadingOverlay>

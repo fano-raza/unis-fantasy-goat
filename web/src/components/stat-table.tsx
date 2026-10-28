@@ -16,6 +16,11 @@ import { categoryScore, compareCell, comparisonClass, scoreClass } from "@/lib/h
 import { cn } from "@/lib/utils";
 import { ArrowDown, ArrowUp } from "lucide-react";
 
+export interface GamesProgress {
+  played: number;
+  total: number;
+}
+
 export interface StatTableRow {
   team: string;
   stats: CategoryStats;
@@ -57,6 +62,15 @@ interface StatTableProps {
   // of) the existing green/red comparison background. Off by default,
   // unaffected elsewhere.
   highlightClose?: boolean;
+  // Weekly Stats only -- current-week "games played / games scheduled this
+  // week" per team, derived from each team's live roster (excluding IR)
+  // against the real NBA schedule. Keyed by team name; undefined hides the
+  // column entirely -- used for every week except the current one, since
+  // roster_ranks.csv is a same-day snapshot, not tracked historically, so
+  // pairing it with a past week's schedule would misrepresent that week's
+  // actual roster.
+  gamesProgress?: Record<string, GamesProgress>;
+  gamesLoading?: boolean;
 }
 
 // Within 10% of that category's RANGE across every row currently shown in
@@ -113,7 +127,7 @@ function formatValue(value: number | null | undefined, cat: Category, mode: Stat
 // constant.
 const TEAM_COL_WIDTH = "w-24";
 
-type SortKey = "team" | "score" | "rank" | "rating" | Category;
+type SortKey = "team" | "score" | "rank" | "games" | "rating" | Category;
 type SortDir = "desc" | "asc";
 interface SortState {
   key: SortKey;
@@ -126,6 +140,7 @@ function SortableHead({
   onToggle,
   className,
   style,
+  title,
   children,
 }: {
   sortKey: SortKey;
@@ -133,11 +148,12 @@ function SortableHead({
   onToggle: (key: SortKey) => void;
   className?: string;
   style?: CSSProperties;
+  title?: string;
   children: ReactNode;
 }) {
   const active = sort?.key === sortKey;
   return (
-    <TableHead className={className} style={style}>
+    <TableHead className={className} style={style} title={title}>
       <button
         type="button"
         onClick={() => onToggle(sortKey)}
@@ -166,6 +182,8 @@ export function StatTable({
   pinFocusRow,
   stickyHeaderOffset,
   highlightClose,
+  gamesProgress,
+  gamesLoading,
 }: StatTableProps) {
   const headerSticky = stickyHeaderOffset !== undefined;
   const headerStickyClass = headerSticky ? "sticky z-20 bg-card" : undefined;
@@ -255,6 +273,7 @@ export function StatTable({
       if (key === "team") return row.team;
       if (key === "rank") return row.rank ?? undefined;
       if (key === "rating") return row.rating ?? undefined;
+      if (key === "games") return gamesProgress?.[row.team]?.played ?? undefined;
       if (key === "score") {
         if (!baseline || row.team === baseline.team) return undefined;
         const score = categoryScore(baseline.stats, row.stats);
@@ -276,7 +295,7 @@ export function StatTable({
       }
       return dir === "asc" ? av - bv : bv - av;
     });
-  }, [rows, sort, mode, baseline]);
+  }, [rows, sort, mode, baseline, gamesProgress]);
 
   // Ultra's pinned focus row: pulled to index 0 after the normal sort runs,
   // rather than baked into sortValue -- keeps the sort itself (and every
@@ -318,6 +337,18 @@ export function StatTable({
           <SortableHead sortKey="rank" sort={sort} onToggle={toggleSort} className={headerStickyClass} style={headerStickyStyle}>
             Rank
           </SortableHead>
+          {gamesProgress && (
+            <SortableHead
+              sortKey="games"
+              sort={sort}
+              onToggle={toggleSort}
+              className={cn("text-right", headerStickyClass)}
+              style={headerStickyStyle}
+              title="Games played this week out of the team's total scheduled, based on its current roster"
+            >
+              Games
+            </SortableHead>
+          )}
           {MAIN_CATS.map((cat) => (
             <SortableHead
               key={cat}
@@ -400,6 +431,15 @@ export function StatTable({
                     ))}
                 </span>
               </TableCell>
+              {gamesProgress && (
+                <TableCell className="text-right text-muted-foreground">
+                  {(() => {
+                    const g = gamesProgress[row.team];
+                    if (!g) return gamesLoading ? "…" : "—";
+                    return `${g.played}/${g.total}`;
+                  })()}
+                </TableCell>
+              )}
               {MAIN_CATS.map((cat) => {
                 const value = source[cat];
                 const comparison =
