@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeftRight, Check, Crown, Plus, RotateCcw, TriangleAlert, Undo2, X } from "lucide-react";
+import { ArrowLeftRight, Crown, Plus, RotateCcw, TriangleAlert, Undo2, X } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -28,10 +28,7 @@ import { TRADE_SEARCH_PHRASES } from "@/lib/loading-phrases";
 import { useSelectedTeam } from "@/lib/use-selected-team";
 import { cn } from "@/lib/utils";
 
-// Players each side can send (same cap the Trade Hub always had).
-const TRADE_SIDE_CAP = 5;
-// Select value for "no team" -- the side is then just a hand-picked group
-// of players, like the old Team A / Team B comparison.
+// Select value for "no team" -- the side is then just the players added to it.
 const NO_TEAM = "__none__";
 
 type Side = "a" | "b";
@@ -42,6 +39,16 @@ interface Owner {
   ir: boolean;
 }
 
+/**
+ * Trade Hub "Build a trade" (layout per the user, 2026-10-28): each side
+ * shows its team's roster AFTER the trade. Clicking one of a team's players
+ * trades him: crossed out on his side, added (highlighted) to the top of the
+ * other side. "Add player" at the bottom of a roster adds any player to THAT
+ * roster (a pickup, or a player from a third team). Drop releases a player.
+ * Everything not crossed out and not on IR counts for that team's win
+ * probability; a team left with too many players gets its least-missed
+ * player auto-dropped (undoable), else a warning.
+ */
 export function TradeHub({
   initialPlayers,
   meta,
@@ -59,16 +66,19 @@ export function TradeHub({
     () => [...new Set(rosterRows.map((r) => r.FantasyTeam).filter((t): t is string => !!t))].sort(),
     [rosterRows],
   );
+  const format: SeasonFormat = meta ? (meta.season_format[String(meta.current_year)] ?? "wl") : "wl";
 
   const [remembered, setRemembered, hydrated] = useSelectedTeam(meta?.members[0] ?? "");
   const [teamA, setTeamA] = useState<string>(NO_TEAM);
   const [teamB, setTeamB] = useState<string>(NO_TEAM);
-  // Each side's list = the players the OTHER team receives (own roster
-  // players ticked, plus any player added with "Add any player").
-  const [sendA, setSendA] = useState<string[]>([]);
-  const [sendB, setSendB] = useState<string[]>([]);
-  // Players each team releases ("Drop"): they leave that team's win
-  // probability and nobody receives them.
+  // A team's own players it trades to the other side.
+  const [tradeA, setTradeA] = useState<string[]>([]);
+  const [tradeB, setTradeB] = useState<string[]>([]);
+  // Players added to a team's roster with "Add player" (free agents or
+  // players from a third team).
+  const [addA, setAddA] = useState<string[]>([]);
+  const [addB, setAddB] = useState<string[]>([]);
+  // Players a team releases ("Drop"): off its roster, nobody gets them.
   const [dropA, setDropA] = useState<string[]>([]);
   const [dropB, setDropB] = useState<string[]>([]);
   // The subset of those drops made automatically because the team ended up
@@ -119,7 +129,13 @@ export function TradeHub({
     return m;
   }, [rosterRows]);
   const rosterOf = (team: string) =>
-    rosterRows.filter((r) => r.FantasyTeam === team).sort((x, y) => x.Rank - y.Rank);
+    team === NO_TEAM ? [] : rosterRows.filter((r) => r.FantasyTeam === team).sort((x, y) => x.Rank - y.Rank);
+
+  const S = {
+    a: { team: teamA, trade: tradeA, setTrade: setTradeA, add: addA, setAdd: setAddA, drop: dropA, setDrop: setDropA, auto: autoA, setAuto: setAutoA, setDeclined: setDeclinedA },
+    b: { team: teamB, trade: tradeB, setTrade: setTradeB, add: addB, setAdd: setAddB, drop: dropB, setDrop: setDropB, auto: autoB, setAuto: setAutoB, setDeclined: setDeclinedB },
+  };
+  const other = (side: Side): Side => (side === "a" ? "b" : "a");
 
   function edited() {
     setRec(null);
@@ -138,69 +154,82 @@ export function TradeHub({
     setDeclinedB(false);
   }
 
+  function clearSide(side: Side) {
+    S[side].setTrade([]);
+    S[side].setAdd([]);
+    S[side].setDrop([]);
+    S[side].setAuto([]);
+    S[side].setDeclined(false);
+  }
+
   function setTeam(side: Side, team: string) {
     edited();
     resetAutoDrops();
     if (side === "a") {
       setTeamA(team);
-      setSendA([]);
-      setDropA([]);
       if (team !== NO_TEAM) setRemembered(team);
-      if (team === teamB) {
-        setTeamB(NO_TEAM);
-        setSendB([]);
-        setDropB([]);
-      }
-    } else {
-      setTeamB(team);
-      setSendB([]);
-      setDropB([]);
-      if (team === teamA) {
-        setTeamA(NO_TEAM);
-        setSendA([]);
-        setDropA([]);
-      }
+    } else setTeamB(team);
+    clearSide(side);
+    if (team === S[other(side)].team) {
+      (side === "a" ? setTeamB : setTeamA)(NO_TEAM);
+      clearSide(other(side));
     }
   }
 
-  function toggle(side: Side, name: string) {
+  // Click one of a team's own players: trade him to the other side (or bring
+  // him back). A traded player isn't also dropped.
+  function toggleTrade(side: Side, name: string) {
     edited();
     resetAutoDrops();
-    const [list, set, other, setOther] = side === "a" ? [sendA, setSendA, sendB, setSendB] : [sendB, setSendB, sendA, setSendA];
-    if (list.includes(name)) set(list.filter((n) => n !== name));
-    else if (list.length < TRADE_SIDE_CAP) {
-      set([...list, name]);
-      // A player can only go one way, and a traded player isn't also dropped.
-      if (other.includes(name)) setOther(other.filter((n) => n !== name));
-      const [drops, setDrops] = side === "a" ? [dropA, setDropA] : [dropB, setDropB];
-      if (drops.includes(name)) setDrops(drops.filter((n) => n !== name));
+    const s = S[side];
+    if (s.trade.includes(name)) s.setTrade(s.trade.filter((n) => n !== name));
+    else {
+      s.setTrade([...s.trade, name]);
+      if (s.drop.includes(name)) s.setDrop(s.drop.filter((n) => n !== name));
     }
+  }
+
+  // "Add player" on a side: the player joins THIS roster. A player from the
+  // other side's roster is just a trade from that side.
+  function addPlayer(side: Side, name: string) {
+    edited();
+    resetAutoDrops();
+    const o = S[other(side)];
+    if (o.team !== NO_TEAM && owners.get(name)?.team === o.team) {
+      if (!o.trade.includes(name)) o.setTrade([...o.trade, name]);
+      if (o.drop.includes(name)) o.setDrop(o.drop.filter((n) => n !== name));
+      return;
+    }
+    const s = S[side];
+    if (!s.add.includes(name)) s.setAdd([...s.add, name]);
+    if (o.add.includes(name)) o.setAdd(o.add.filter((n) => n !== name));
+  }
+
+  function removeAdded(side: Side, name: string) {
+    edited();
+    resetAutoDrops();
+    S[side].setAdd(S[side].add.filter((n) => n !== name));
   }
 
   function toggleDrop(side: Side, name: string) {
     edited();
-    const [drops, setDrops, list, set] = side === "a" ? [dropA, setDropA, sendA, setSendA] : [dropB, setDropB, sendB, setSendB];
-    const [autos, setAutos, setDeclined] = side === "a" ? [autoA, setAutoA, setDeclinedA] : [autoB, setAutoB, setDeclinedB];
-    if (drops.includes(name)) {
-      setDrops(drops.filter((n) => n !== name));
-      if (autos.includes(name)) {
-        setAutos(autos.filter((n) => n !== name));
-        setDeclined(true);
+    const s = S[side];
+    if (s.drop.includes(name)) {
+      s.setDrop(s.drop.filter((n) => n !== name));
+      if (s.auto.includes(name)) {
+        s.setAuto(s.auto.filter((n) => n !== name));
+        s.setDeclined(true);
       }
-    } else {
-      setDrops([...drops, name]);
-      if (list.includes(name)) set(list.filter((n) => n !== name));
-    }
+    } else s.setDrop([...s.drop, name]);
   }
 
   async function recommend(forTeam: string) {
     if (!premium.password) return;
     setRecommending(true);
     setRecError(null);
-    // Use the side-A players already picked from team A's own roster
-    // (1 or 2) as the players to trade away; none -> search the roster.
-    const own = new Set(rosterOf(forTeam).map((r) => r.Player));
-    const picked = forTeam === teamA ? sendA.filter((n) => own.has(n)) : [];
+    // Use the players already traded from team A (1 or 2) as the players to
+    // trade away; none -> search the whole roster.
+    const picked = forTeam === teamA ? tradeA : [];
     if (picked.length > 2) {
       setRecommending(false);
       setRecError("Pick 1 or 2 players to trade away, or none to search the whole roster.");
@@ -220,11 +249,12 @@ export function TradeHub({
         setTeamA(forTeam);
         setRemembered(forTeam);
         setTeamB(res.trade.partner);
-        setSendA(res.trade.give);
-        // Side B's list is what team A receives -- including the free agent
-        // who fills team A's open spot in a 2-for-1 (shown as an added row).
-        setSendB([...res.trade.get, ...(res.trade.fa_add ? [res.trade.fa_add] : [])]);
-        // The partner's release to make room shows as a dropped row.
+        setTradeA(res.trade.give);
+        setTradeB(res.trade.get);
+        // The free agent who fills team A's open spot in a 2-for-1.
+        setAddA(res.trade.fa_add ? [res.trade.fa_add] : []);
+        setAddB([]);
+        // The partner's release to make room shows as an auto-dropped row.
         setDropA([]);
         setDropB(res.trade.partner_drop ? [res.trade.partner_drop] : []);
         setAutoA([]);
@@ -243,19 +273,20 @@ export function TradeHub({
   }
 
   // Back to how the page opens: side A on the remembered team, side B
-  // empty, nothing picked, no recommendation.
+  // empty, nothing changed, no recommendation.
   const startTeamA = teams.includes(remembered) ? remembered : NO_TEAM;
   const isClear =
-    teamA === startTeamA && teamB === NO_TEAM && sendA.length + sendB.length + dropA.length + dropB.length === 0 && !rec && !recError;
+    teamA === startTeamA &&
+    teamB === NO_TEAM &&
+    tradeA.length + tradeB.length + addA.length + addB.length + dropA.length + dropB.length === 0 &&
+    !rec &&
+    !recError;
   function clearAll() {
     edited();
-    resetAutoDrops();
     setTeamA(startTeamA);
     setTeamB(NO_TEAM);
-    setSendA([]);
-    setSendB([]);
-    setDropA([]);
-    setDropB([]);
+    clearSide("a");
+    clearSide("b");
   }
 
   function onRecommendClick() {
@@ -265,22 +296,28 @@ export function TradeHub({
     });
   }
 
+  // What each team gets: the other team's traded players + whoever was
+  // added to its own roster. (In API terms, a_sends = everything going to
+  // team B.)
+  const toB = [...tradeA, ...addB];
+  const toA = [...tradeB, ...addA];
+
   // How many players over its starting active roster each team ends up --
   // the same count the server uses: active (non-IR) players with stats this
-  // season, minus who it sends and drops, plus who it receives (players on
+  // season, minus who it trades away and drops, plus who it gets (players on
   // someone's IR or without stats don't count).
   const statNames = useMemo(() => new Set(players.map((p) => p.Player)), [players]);
-  function overBy(team: string, sends: string[], drops: string[], receives: string[]): number {
+  function overBy(team: string, leaves: string[], arrives: string[]): number {
     if (team === NO_TEAM) return 0;
     const active = new Set(
       rosterRows.filter((r) => r.FantasyTeam === team && r.LineupSlot !== "IR" && statNames.has(r.Player)).map((r) => r.Player),
     );
-    const leaving = new Set([...sends, ...drops].filter((n) => active.has(n)));
-    const arriving = receives.filter((n) => statNames.has(n) && !active.has(n) && !owners.get(n)?.ir);
+    const leaving = new Set(leaves.filter((n) => active.has(n)));
+    const arriving = arrives.filter((n) => statNames.has(n) && !active.has(n) && !owners.get(n)?.ir);
     return Math.max(0, arriving.length - leaving.size);
   }
-  const overA = overBy(teamA, sendA, dropA, sendB);
-  const overB = overBy(teamB, sendB, dropB, sendA);
+  const overA = overBy(teamA, [...tradeA, ...dropA], toA);
+  const overB = overBy(teamB, [...tradeB, ...dropB], toB);
 
   // The win-probability panel found a team over its limit: drop the
   // player(s) the server suggests, visibly -- unless the user undid that.
@@ -294,11 +331,41 @@ export function TradeHub({
     }
   }
 
-  const playersA = players.filter((p) => sendA.includes(p.Player));
-  const playersB = players.filter((p) => sendB.includes(p.Player));
+  const playersToB = players.filter((p) => toB.includes(p.Player));
+  const playersToA = players.filter((p) => toA.includes(p.Player));
   const labelA = teamA !== NO_TEAM ? teamA : "Side A";
   const labelB = teamB !== NO_TEAM ? teamB : "Side B";
   const bothTeams = teamA !== NO_TEAM && teamB !== NO_TEAM;
+
+  const sideProps = (side: Side) => {
+    const s = S[side];
+    const o = S[other(side)];
+    return {
+      label: side === "a" ? "Side A" : "Side B",
+      team: s.team,
+      teams,
+      otherTeam: o.team,
+      roster: rosterOf(s.team),
+      traded: s.trade,
+      incoming: o.trade.map((n) => ({ name: n, from: o.team })),
+      added: s.add,
+      dropped: s.drop,
+      autoDropped: s.auto,
+      overBy: side === "a" ? overA : overB,
+      // Unlocked premium resolves an over-size team with an auto-drop in a
+      // moment; only warn when that won't happen.
+      warn: (side === "a" ? overA : overB) > 0 && ((side === "a" ? declinedA : declinedB) || !premium.unlocked),
+      players,
+      owners,
+      rosterRow: (name: string) => rosterRows.find((r) => r.Player === name),
+      onTeam: (t: string) => setTeam(side, t),
+      onTrade: (n: string) => toggleTrade(side, n),
+      onUntradeIncoming: (n: string) => toggleTrade(other(side), n),
+      onAdd: (n: string) => addPlayer(side, n),
+      onRemoveAdded: (n: string) => removeAdded(side, n),
+      onDrop: (n: string) => toggleDrop(side, n),
+    };
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -307,7 +374,7 @@ export function TradeHub({
           <div className="flex flex-col gap-1">
             <CardTitle>Build a trade</CardTitle>
             <CardDescription>
-              Pick each team and tick the players it gives up. Add any player to a side to have the other team pick him up.
+              Pick each team, then tap players to trade them. Each side shows its roster after the trade.
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -328,12 +395,9 @@ export function TradeHub({
           </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          {(rec || recError) && <RecommendationNote
-              rec={rec}
-              error={recError}
-              picked={rec?.kind === "none" ? recPicked : []}
-              format={meta ? (meta.season_format[String(meta.current_year)] ?? "wl") : "wl"}
-            />}
+          {(rec || recError) && (
+            <RecommendationNote rec={rec} error={recError} picked={rec?.kind === "none" ? recPicked : []} format={format} />
+          )}
           <LoadingOverlay
             active={playersLoading || recommending}
             hasContent={players.length > 0}
@@ -342,68 +406,32 @@ export function TradeHub({
             intervalMs={recommending ? 1800 : undefined}
           >
             <div className="grid gap-4 md:grid-cols-[1fr_auto_1fr]">
-              <TradeSide
-                label="Side A"
-                team={teamA}
-                teams={teams}
-                otherTeam={teamB}
-                receiver={labelB}
-                roster={teamA !== NO_TEAM ? rosterOf(teamA) : []}
-                sending={sendA}
-                dropped={dropA}
-                autoDropped={autoA}
-                overBy={overA}
-                // Unlocked premium resolves an over-size team with an
-                // auto-drop in a moment; only warn when that won't happen.
-                warn={overA > 0 && (declinedA || !premium.unlocked)}
-                players={players}
-                owners={owners}
-                onTeam={(t) => setTeam("a", t)}
-                onToggle={(n) => toggle("a", n)}
-                onDrop={(n) => toggleDrop("a", n)}
-              />
+              <TradeSide {...sideProps("a")} />
               <div className="hidden items-center justify-center md:flex" aria-hidden>
                 <ArrowLeftRight className="size-5 text-muted-foreground" />
               </div>
-              <TradeSide
-                label="Side B"
-                team={teamB}
-                teams={teams}
-                otherTeam={teamA}
-                receiver={labelA}
-                roster={teamB !== NO_TEAM ? rosterOf(teamB) : []}
-                sending={sendB}
-                dropped={dropB}
-                autoDropped={autoB}
-                overBy={overB}
-                warn={overB > 0 && (declinedB || !premium.unlocked)}
-                players={players}
-                owners={owners}
-                onTeam={(t) => setTeam("b", t)}
-                onToggle={(n) => toggle("b", n)}
-                onDrop={(n) => toggleDrop("b", n)}
-              />
+              <TradeSide {...sideProps("b")} />
             </div>
           </LoadingOverlay>
         </CardContent>
       </Card>
 
-      {(playersA.length > 0 || playersB.length > 0) && (
-        <TradeStatsComparison playersA={playersA} playersB={playersB} labelA={`${labelB} receives`} labelB={`${labelA} receives`} />
+      {(playersToB.length > 0 || playersToA.length > 0) && (
+        <TradeStatsComparison playersA={playersToB} playersB={playersToA} labelA={`To ${labelB}`} labelB={`To ${labelA}`} />
       )}
 
       <TradeWinChance
         teamA={bothTeams ? teamA : null}
         teamB={bothTeams ? teamB : null}
-        aSends={sendA}
-        bSends={sendB}
+        aSends={toB}
+        bSends={toA}
         drops={bothTeams ? { [teamA]: dropA, [teamB]: dropB } : null}
         overLimit={[
           ...(overA > 0 && declinedA ? [{ team: teamA, overBy: overA }] : []),
           ...(overB > 0 && declinedB ? [{ team: teamB, overBy: overB }] : []),
         ]}
         onSuggestedDrops={applySuggestedDrops}
-        format={meta ? (meta.season_format[String(meta.current_year)] ?? "wl") : "wl"}
+        format={format}
       />
 
       <Dialog open={pickTeamOpen} onOpenChange={setPickTeamOpen}>
@@ -514,44 +542,59 @@ function TradeSide({
   team,
   teams,
   otherTeam,
-  receiver,
   roster,
-  sending,
+  traded,
+  incoming,
+  added,
   dropped,
   autoDropped,
   overBy,
   warn,
   players,
   owners,
+  rosterRow,
   onTeam,
-  onToggle,
+  onTrade,
+  onUntradeIncoming,
+  onAdd,
+  onRemoveAdded,
   onDrop,
 }: {
   label: string;
   team: string;
   teams: string[];
   otherTeam: string;
-  // Who receives this side's ticked players (the other side's team).
-  receiver: string;
+  // This team's current roster.
   roster: RosterRankRow[];
-  sending: string[];
+  // Its own players traded away (crossed out here, shown on the other side
+  // in green at the top).
+  traded: string[];
+  // The other team's players traded to this team.
+  incoming: { name: string; from: string }[];
+  // Players added to this roster with "Add player".
+  added: string[];
   dropped: string[];
   autoDropped: string[];
   overBy: number;
   warn: boolean;
   players: PlayerStat[];
   owners: Map<string, Owner>;
+  rosterRow: (name: string) => RosterRankRow | undefined;
   onTeam: (team: string) => void;
-  onToggle: (name: string) => void;
+  onTrade: (name: string) => void;
+  onUntradeIncoming: (name: string) => void;
+  onAdd: (name: string) => void;
+  onRemoveAdded: (name: string) => void;
   onDrop: (name: string) => void;
 }) {
-  const full = sending.length >= TRADE_SIDE_CAP;
   const options = [{ value: NO_TEAM, label: "No team (any players)" }, ...teams.filter((t) => t !== otherTeam).map((t) => ({ value: t, label: t }))];
-  const ownNames = new Set(roster.map((r) => r.Player));
-  // Players added with "Add any player" (free agents, other teams' players):
-  // extra rows under the roster, ticked and greyed -- they don't count for
-  // this team, they're who the other team picks up.
-  const extras = sending.filter((n) => !ownNames.has(n));
+  const onRoster = new Set([...roster.map((r) => r.Player), ...incoming.map((i) => i.name), ...added]);
+  const nbaTeamOf = (name: string) => {
+    const r = rosterRow(name);
+    if (r) return r.NBATeam;
+    const p = players.find((x) => x.Player === name);
+    return typeof p?.Team === "string" ? p.Team : "";
+  };
 
   return (
     <section className="flex min-w-0 flex-col gap-3" aria-label={label}>
@@ -569,153 +612,148 @@ function TradeSide({
             ))}
           </SelectContent>
         </Select>
-      </div>
-
-      <div className="flex items-baseline justify-between gap-2 text-sm">
-        <span className="flex items-baseline gap-2 font-medium">
-          <span>
-            {receiver} receives{" "}
-            <span className="tabular-nums text-muted-foreground">
-              {sending.length}/{TRADE_SIDE_CAP}
-            </span>
+        {warn && (
+          <span
+            className="flex shrink-0 items-center gap-1 text-xs font-semibold text-gold"
+            title={`${team} has ${overBy} too many player${overBy === 1 ? "" : "s"}: drop ${overBy === 1 ? "one" : overBy} to calculate the win probability`}
+            role="img"
+            aria-label={`${team} is ${overBy} over its roster limit`}
+          >
+            <TriangleAlert className="size-3.5" aria-hidden />
+            {overBy} too many
           </span>
-          {warn && (
-            <span
-              className="flex items-center gap-1 self-center text-xs font-semibold text-gold"
-              title={`${team} has ${overBy} too many player${overBy === 1 ? "" : "s"}: drop ${overBy === 1 ? "one" : overBy} to calculate the win probability`}
-              role="img"
-              aria-label={`${team} is ${overBy} over its roster limit`}
-            >
-              <TriangleAlert className="size-3.5" aria-hidden />
-              {overBy} too many
-            </span>
-          )}
-        </span>
-        <AnyPlayerPicker players={players} owners={owners} exclude={[...sending, ...ownNames]} disabled={full} onPick={onToggle} />
+        )}
       </div>
 
-      {roster.length > 0 || extras.length > 0 ? (
-        <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
-          {roster.map((r) => {
-            const ir = r.LineupSlot === "IR";
-            return (
-              <PlayerRow
-                key={r.Player}
-                name={r.Player}
-                nbaTeam={r.NBATeam}
-                rank={r.Rank}
-                tag={ir ? "IR" : null}
-                checked={sending.includes(r.Player)}
-                dropped={dropped.includes(r.Player)}
-                autoDropped={autoDropped.includes(r.Player)}
-                disabled={!sending.includes(r.Player) && full}
-                onToggle={() => onToggle(r.Player)}
-                onDrop={() => onDrop(r.Player)}
-              />
-            );
-          })}
-          {extras.map((n) => {
-            const o = owners.get(n);
-            const p = players.find((x) => x.Player === n);
-            return (
-              <PlayerRow
-                key={n}
-                name={n}
-                nbaTeam={typeof p?.Team === "string" ? p.Team : ""}
-                rank={null}
-                tag={!o || !o.team ? "FA" : o.team}
-                added
-                checked
-                onToggle={() => onToggle(n)}
-              />
-            );
-          })}
-        </ul>
-      ) : team !== NO_TEAM ? (
-        <p className="text-sm text-muted-foreground">Loading {team}&apos;s roster…</p>
-      ) : (
-        <p className="rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
-          Choose a team to pick from its roster, or add any player.
-        </p>
-      )}
+      <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
+        {incoming.map(({ name, from }) => {
+          const r = rosterRow(name);
+          return (
+            <PlayerRow
+              key={`in-${name}`}
+              name={name}
+              nbaTeam={nbaTeamOf(name)}
+              rank={r?.Rank ?? null}
+              tag={from !== NO_TEAM ? `From ${from}` : null}
+              state="incoming"
+              actionLabel={`Send ${name} back`}
+              onClick={() => onUntradeIncoming(name)}
+            />
+          );
+        })}
+        {added.map((name) => {
+          const o = owners.get(name);
+          const r = rosterRow(name);
+          return (
+            <PlayerRow
+              key={`add-${name}`}
+              name={name}
+              nbaTeam={nbaTeamOf(name)}
+              rank={r?.Rank ?? null}
+              tag={!o || !o.team ? "FA" : o.ir ? `${o.team} · IR` : `From ${o.team}`}
+              state="incoming"
+              actionLabel={`Remove ${name}`}
+              onClick={() => onRemoveAdded(name)}
+            />
+          );
+        })}
+        {roster.map((r) => {
+          const isTraded = traded.includes(r.Player);
+          const isDropped = dropped.includes(r.Player);
+          return (
+            <PlayerRow
+              key={r.Player}
+              name={r.Player}
+              nbaTeam={r.NBATeam}
+              rank={r.Rank}
+              tag={r.LineupSlot === "IR" ? "IR" : null}
+              state={isTraded ? "traded" : isDropped ? (autoDropped.includes(r.Player) ? "autoDropped" : "dropped") : "kept"}
+              actionLabel={isTraded ? `Keep ${r.Player}` : `Trade ${r.Player}`}
+              onClick={() => onTrade(r.Player)}
+              onDrop={isTraded ? undefined : () => onDrop(r.Player)}
+            />
+          );
+        })}
+        <li>
+          <AddPlayerRow players={players} owners={owners} exclude={onRoster} onPick={onAdd} />
+        </li>
+      </ul>
     </section>
   );
 }
+
+type RowState = "kept" | "traded" | "dropped" | "autoDropped" | "incoming";
 
 function PlayerRow({
   name,
   nbaTeam,
   rank,
   tag,
-  checked,
-  dropped = false,
-  autoDropped = false,
-  added = false,
-  disabled = false,
-  onToggle,
+  state,
+  actionLabel,
+  onClick,
   onDrop,
 }: {
   name: string;
   nbaTeam: string;
   rank: number | null;
   tag: string | null;
-  checked: boolean;
-  dropped?: boolean;
-  // Dropped automatically (the team had too many players).
-  autoDropped?: boolean;
-  // Added with "Add any player": not on this roster, greyed.
-  added?: boolean;
-  disabled?: boolean;
-  onToggle: () => void;
-  // Omitted for added players (they aren't this team's to drop).
+  state: RowState;
+  actionLabel: string;
+  onClick: () => void;
+  // Omitted -> no drop button (traded or incoming players).
   onDrop?: () => void;
 }) {
+  const out = state === "traded" || state === "dropped" || state === "autoDropped";
+  const dropped = state === "dropped" || state === "autoDropped";
   return (
-    <li className={cn("flex items-center", checked && !added && "bg-primary/10", dropped && "bg-loss/5")}>
+    <li
+      className={cn(
+        "flex items-center",
+        state === "incoming" && "bg-win/5",
+        dropped && "bg-loss/5",
+      )}
+    >
       <button
         type="button"
-        role="checkbox"
-        aria-checked={checked}
-        disabled={disabled}
-        onClick={onToggle}
-        title={added ? `Not on this roster: ticked means the other team picks up ${name}. Untick to remove.` : undefined}
+        onClick={onClick}
+        aria-label={actionLabel}
+        title={actionLabel}
         className={cn(
-          "flex min-w-0 flex-1 items-center gap-3 py-2 pl-3 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring disabled:opacity-50",
-          !checked && !dropped && "hover:bg-muted/60",
+          "flex min-w-0 flex-1 items-center gap-3 py-2 pl-3 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring",
+          state === "kept" && "hover:bg-muted/60",
+          state === "incoming" && "hover:bg-win/10",
         )}
       >
         <span
           className={cn(
-            "flex size-4 shrink-0 items-center justify-center rounded-[4px] border",
-            checked
-              ? added
-                ? "border-muted-foreground/60 bg-muted-foreground/60 text-background"
-                : "border-primary bg-primary text-primary-foreground"
-              : "border-muted-foreground/50",
-          )}
-          aria-hidden
-        >
-          {checked && <Check className="size-3" strokeWidth={3} />}
-        </span>
-        <span
-          className={cn(
             "min-w-0 flex-1 truncate",
-            checked && !added && "font-semibold",
-            (added || tag === "IR") && "text-muted-foreground",
-            dropped && "text-muted-foreground line-through",
+            state === "incoming" && "font-semibold",
+            (out || tag === "IR") && "text-muted-foreground",
+            out && "line-through",
           )}
         >
           {name}
         </span>
+        {state === "traded" && <span className="rounded-sm bg-muted px-1.5 text-[11px] font-semibold text-muted-foreground">Traded</span>}
         {dropped && (
           <span
             className="rounded-sm bg-loss/15 px-1.5 text-[11px] font-semibold text-loss"
-            title={autoDropped ? "Dropped to make room: the player this team would miss least. Undo to keep him." : undefined}
+            title={state === "autoDropped" ? "Dropped to make room: the player this team would miss least. Undo to keep him." : undefined}
           >
-            {autoDropped ? "Auto-dropped" : "Dropped"}
+            {state === "autoDropped" ? "Auto-dropped" : "Dropped"}
           </span>
         )}
-        {tag && <span className="rounded-sm bg-muted px-1.5 text-[11px] font-semibold text-muted-foreground">{tag}</span>}
+        {tag && (
+          <span
+            className={cn(
+              "rounded-sm px-1.5 text-[11px] font-semibold",
+              state === "incoming" ? "bg-win/15 text-win" : "bg-muted text-muted-foreground",
+            )}
+          >
+            {tag}
+          </span>
+        )}
         <span className="w-9 text-xs text-muted-foreground">{nbaTeam}</span>
         <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">{rank != null ? `#${rank}` : ""}</span>
       </button>
@@ -723,7 +761,7 @@ function PlayerRow({
         <button
           type="button"
           onClick={onDrop}
-          aria-label={dropped ? `Keep ${name}` : `Drop ${name}`}
+          aria-label={dropped ? `Undo drop ${name}` : `Drop ${name}`}
           title={dropped ? "Undo drop" : "Drop"}
           className="mx-1 flex size-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
         >
@@ -736,33 +774,26 @@ function PlayerRow({
   );
 }
 
-function ownerLabel(o: Owner | undefined): string {
-  if (!o || !o.team) return "Free agent";
-  return o.ir ? `${o.team} · IR` : o.team;
-}
-
-function AnyPlayerPicker({
+function AddPlayerRow({
   players,
   owners,
   exclude,
-  disabled,
   onPick,
 }: {
   players: PlayerStat[];
   owners: Map<string, Owner>;
-  exclude: string[];
-  disabled: boolean;
+  exclude: Set<string>;
   onPick: (name: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const remaining = useMemo(() => players.filter((p) => !exclude.includes(p.Player)), [players, exclude]);
+  const remaining = useMemo(() => players.filter((p) => !exclude.has(p.Player)), [players, exclude]);
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger className={buttonVariants({ variant: "outline", size: "sm" })} disabled={disabled}>
-        <Plus className="size-3.5" aria-hidden />
-        Add any player
+      <PopoverTrigger className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring">
+        <Plus className="size-4" aria-hidden />
+        Add player
       </PopoverTrigger>
-      <PopoverContent className="w-72 p-0" align="end">
+      <PopoverContent className="w-72 p-0" align="start">
         <Command>
           <CommandInput placeholder="Search any NBA player…" />
           <CommandList>
@@ -788,3 +819,9 @@ function AnyPlayerPicker({
     </Popover>
   );
 }
+
+function ownerLabel(o: Owner | undefined): string {
+  if (!o || !o.team) return "Free agent";
+  return o.ir ? `${o.team} · IR` : o.team;
+}
+
