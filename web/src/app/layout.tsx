@@ -91,13 +91,18 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               </div>
               <PageArrowNav />
             </div>
-            {/* Mobile-only full-width strip at the bottom of the frozen
-                header, in the page background color (same fill as the
-                current-page tab), so the tab opens into a band of page
-                color and scrolled content passes under it instead of
-                butting right up against the tab (user request,
-                2026-10-29). h-4 = main's mobile px-4 side padding. */}
-            <div aria-hidden="true" className="h-4 bg-background sm:hidden" />
+            {/* Mobile-only full-width fade hanging just below the frozen
+                header (user request, 2026-10-29): page background color
+                (same fill as the current-page tab) fully opaque at the top,
+                fading to transparent at the bottom, so scrolled content
+                fades out as it passes under the tab. Positioned below the
+                header (top-full) rather than inside it, so the transparent
+                end reveals the page content, not the header's own card
+                fill. h-6 = 1.5x main's mobile px-4 side padding. */}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 top-full h-6 bg-linear-to-b from-background to-transparent sm:hidden"
+            />
           </header>
           {/* No visible trigger left in the header -- FloatingMenuButton
               (feature request, 2026-10-06) and PageArrowNav's page-name tab
