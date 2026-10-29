@@ -406,6 +406,16 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
     return weekCalendar.filter((w) => w.Week >= latest).map((w) => w.Week);
   }, [weekCalendar]);
   const atLatestWeek = week != null && week === latestWeek(weekCalendar);
+  const avgRankValue = (
+    <span className="font-mono font-extrabold tabular-nums text-primary">
+      {displayedAvgRank !== null ? displayedAvgRank.toFixed(1) : "—"}
+      {teamPlacement !== null && (
+        <span className="ml-1 font-sans text-xs font-bold text-muted-foreground">
+          ({ordinal(teamPlacement)})
+        </span>
+      )}
+    </span>
+  );
   const colSpan = showFullWeek ? Math.max(weekDays.length, 1) : 1;
 
   return (
@@ -507,7 +517,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                 <TableRow>
                   <TableHead className="sticky left-0 z-10 bg-card">Player</TableHead>
                   <TableHead className={cn(!showFullWeek && "max-sm:hidden")}>NBA Team</TableHead>
-                  <TableHead className="text-right">Rank</TableHead>
+                  {!showFullWeek && <TableHead className="text-right">Rank</TableHead>}
                   {showFullWeek
                     ? weekDays.map((d) => {
                         const count = playersPerDay.get(d) ?? 0;
@@ -531,16 +541,14 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                 <TableRow className="bg-focus-row">
                   <TableCell className="sticky left-0 z-10 bg-focus-row team-name text-primary">
                     Average Rank
+                    {showFullWeek && <span className="ml-2">{avgRankValue}</span>}
                   </TableCell>
                   <TableCell className={cn(!showFullWeek && "max-sm:hidden")} />
-                  <TableCell className="text-right font-mono font-extrabold tabular-nums text-primary">
-                    {displayedAvgRank !== null ? displayedAvgRank.toFixed(1) : "—"}
-                    {teamPlacement !== null && (
-                      <span className="ml-1 font-sans text-xs font-bold text-muted-foreground">
-                        ({ordinal(teamPlacement)})
-                      </span>
-                    )}
-                  </TableCell>
+                  {!showFullWeek && (
+                    <TableCell className="text-right font-mono font-extrabold tabular-nums text-primary">
+                      {avgRankValue}
+                    </TableCell>
+                  )}
                   <TableCell colSpan={colSpan} />
                 </TableRow>
                 {sortedSlots.map((slot) => {
@@ -672,7 +680,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                         </div>
                       </TableCell>
                       <TableCell className={cn("text-muted-foreground", !showFullWeek && "max-sm:hidden")}>{row.NBATeam}</TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">{row.Rank}</TableCell>
+                      {!showFullWeek && <TableCell className="text-right font-mono tabular-nums">{row.Rank}</TableCell>}
                       {scheduleLoading ? (
                         <TableCell colSpan={colSpan} className="text-center text-muted-foreground">
                           <LoadingBasketballs />
@@ -681,7 +689,14 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                         weekDays.map((day) => (
                           <TableCell key={day} className="text-center">
                             {gameDaysThisWeek.has(day) ? (
-                              <span className={cn("text-win", day < today && "opacity-40")}>●</span>
+                              // Upcoming games are solid; already-played ones hollow grey.
+                              <span
+                                className={cn(
+                                  "inline-block size-3.5 rounded-full align-middle",
+                                  day < today ? "border-2 border-muted-foreground/50" : "bg-win",
+                                )}
+                                aria-label={day < today ? "Played" : "Game"}
+                              />
                             ) : (
                               <span className="text-muted-foreground/30">—</span>
                             )}
