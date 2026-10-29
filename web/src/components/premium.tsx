@@ -20,6 +20,8 @@ const LEGACY_PASSWORD_KEY = "roster-optimizer-password";
 export const PREMIUM_FEATURES = [
   "Roster optimizer: the best free-agent swaps for your team",
   "Win chance by category for manual roster swaps",
+  "Trade Hub: each team's win chance before and after a trade",
+  "Trade Hub: recommend a trade for your team",
 ];
 
 function readStored(): string | null {

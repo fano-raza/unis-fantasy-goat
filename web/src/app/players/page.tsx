@@ -1,4 +1,4 @@
-import { getPlayerStats, type PlayerStat } from "@/lib/api";
+import { getLeagueMeta, getPlayerStats, type LeagueMeta, type PlayerStat } from "@/lib/api";
 import { RoutedViewSwitcher } from "@/components/routed-view-switcher";
 import { TradeHub } from "@/components/trade-hub";
 import { TEAM_PLAYERS_VIEW_OPTIONS, TEAM_PLAYERS_VIEW_PATHS } from "@/lib/team-players-nav";
@@ -8,6 +8,13 @@ export const revalidate = 30;
 
 export default async function PlayersPage() {
   let initialPlayers: PlayerStat[] | null = null;
+  let meta: LeagueMeta | null = null;
+  try {
+    // Teams + current season for the trade sides' team pickers.
+    meta = await getLeagueMeta({ next: { revalidate: 30 } });
+  } catch {
+    // Backend unreachable at render time -- the team pickers stay empty.
+  }
   try {
     // Deliberately no `next: { revalidate }` here unlike the other SSR
     // fetches on this page's siblings -- this payload is ~2.9MB, always
@@ -27,7 +34,7 @@ export default async function PlayersPage() {
       <div className="sticky top-0 z-30 -mx-4 flex items-center gap-3 border-b border-border bg-background/95 px-4 py-2.5 backdrop-blur sm:mx-0 sm:px-0">
         <RoutedViewSwitcher options={TEAM_PLAYERS_VIEW_OPTIONS} current="trade" paths={TEAM_PLAYERS_VIEW_PATHS} />
       </div>
-      <TradeHub initialPlayers={initialPlayers} />
+      <TradeHub initialPlayers={initialPlayers} meta={meta} />
     </div>
   );
 }

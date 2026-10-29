@@ -9,10 +9,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from shared import projection_adjust as pa  # noqa: E402
 from shared import roster_optimizer as ro  # noqa: E402
+from shared import trade_finder as tf  # noqa: E402
 from shared.weighted_rank import aggregate_rating, per_week_rating  # noqa: E402
 
 from .query_engine import StatsStore
@@ -892,6 +894,180 @@ class LeagueStore:
             "current_active_count": active,
             "unknown": unknown,
         }
+
+    # ------------------------------------------------------------------
+    # Trade Hub, premium (see _planning/trade-recommender.md)
+    # ------------------------------------------------------------------
+
+    def trade_odds(
+        self,
+        team_a: str,
+        team_b: str,
+        a_sends: list[str],
+        b_sends: list[str],
+        drops: dict[str, list[str]] | None = None,
+    ) -> dict:
+        """Premium: both teams' weekly win chances before and after a trade
+        built on the Trade Hub. `a_sends` go to team B, `b_sends` to team A.
+        A name may be anyone: a player on either roster, on a third team
+        (who then loses him) or a free agent (a pickup, e.g. the open spot
+        in a 2-for-1). A team that ends up with more active players than it
+        started with releases the one it misses least (by its own score --
+        the trade finder's rule) unless `drops` names who. Players on IR,
+        or with no stats this season, don't count (listed in `uncounted` /
+        `unknown`). Same scoring as the optimizer, with both teams rescored
+        against the league as it would be after the trade."""
+        year, rosters, free_agents, players, name_to_id = self._optimizer_inputs()
+        for team in (team_a, team_b):
+            if team not in rosters:
+                raise KeyError(f"no {year} roster found for team {team!r}")
+        if team_a == team_b:
+            raise ValueError("pick two different teams")
+        league = tf.League(players, rosters, ro.recommended_config())
+        cats = [c for c in ro.MAIN_CATS if c not in league.config.ignored_cats]
+        cat_idx = [ro.MAIN_CATS.index(c) for c in cats]
+        active_owner = {pid: t for t, ids in rosters.items() for pid in ids}
+        free = set(free_agents)
+        unknown: list[str] = []
+        uncounted: list[str] = []
+
+        def to_ids(names: list[str]) -> list:
+            out = []
+            for name in dict.fromkeys(names):
+                pid = name_to_id.get(name)
+                if pid is None:
+                    unknown.append(name)
+                elif pid not in active_owner and pid not in free:
+                    uncounted.append(name)  # rostered but on IR
+                else:
+                    out.append(pid)
+            return out
+
+        a_out, b_out = to_ids(a_sends), to_ids(b_sends)
+        if set(a_out) & set(b_out):
+            raise ValueError("a player can't be sent both ways")
+        new = {t: list(ids) for t, ids in rosters.items()}
+        for pid, dest in [(p, team_b) for p in a_out] + [(p, team_a) for p in b_out]:
+            src = active_owner.get(pid)
+            if src is not None:
+                new[src].remove(pid)
+            new[dest].append(pid)
+
+        def sums(rost: dict[str, list]) -> np.ndarray:
+            S = league.sums.copy()
+            for t, ids in rost.items():
+                if ids != rosters[t]:
+                    i = league.idx[t]
+                    S[i] = league.comps.loc[ids].to_numpy().sum(axis=0) * league.scale[i] if ids else 0.0
+            return S
+
+        dropped: dict[str, list] = {team_a: [], team_b: []}
+        auto: dict[str, bool] = {team_a: False, team_b: False}
+        for team in (team_a, team_b):
+            extra = len(new[team]) - len(rosters[team])
+            if extra <= 0:
+                continue
+            chosen = [name_to_id[n] for n in (drops or {}).get(team, []) if name_to_id.get(n) in new[team]]
+            for pid in chosen[:extra]:
+                new[team].remove(pid)
+                dropped[team].append(pid)
+            i = league.idx[team]
+            while len(new[team]) > len(rosters[team]):
+                # Only players the team already had -- never the ones it just received.
+                options = [p for p in new[team] if p in rosters[team]]
+                if not options:
+                    break
+                best = max(options, key=lambda d: float(league.score(sums({**new, team: [p for p in new[team] if p != d]})[None], [i])[0][0, 0]))
+                new[team].remove(best)
+                dropped[team].append(best)
+                auto[team] = True
+
+        before_S, after_S = league.sums, sums(new)
+        name = lambda pid: str(players.at[pid, "Player"])  # noqa: E731
+        sent = {team_a: a_out, team_b: b_out}
+        got = {team_a: b_out, team_b: a_out}
+
+        def side(team: str) -> dict:
+            i = league.idx[team]
+            sc0, mw0 = league.score(before_S[None], [i])
+            sc1, mw1 = league.score(after_S[None], [i])
+            p0, p1 = league.category_probs(before_S, i), league.category_probs(after_S, i)
+            return {
+                "team": team,
+                "sends": [name(p) for p in sent[team]],
+                "receives": [name(p) for p in got[team]],
+                "drops": [name(p) for p in dropped[team]],
+                "auto_drop": auto[team],
+                "start_matchup_win": round(float(mw0[0, 0]), 4),
+                "matchup_win": round(float(mw1[0, 0]), 4),
+                "start_score": round(float(sc0[0, 0]), 4),
+                "score": round(float(sc1[0, 0]), 4),
+                "start": {c: round(float(p0[k]), 4) for c, k in zip(cats, cat_idx)},
+                "after": {c: round(float(p1[k]), 4) for c, k in zip(cats, cat_idx)},
+                "active_before": len(rosters[team]),
+                "active_after": len(new[team]),
+            }
+
+        return {"year": year, "categories": cats, "teams": [side(team_a), side(team_b)],
+                "uncounted": uncounted, "unknown": unknown}
+
+    def trade_recommend(self, team_a: str, team_b: str | None = None, give: list[str] | None = None) -> dict:
+        """Premium "Recommend trade": the trade finder (shared/trade_finder.py,
+        backtested configuration) for team A -- with team B only, or across
+        every other team. Gives up `give` (1-2 of team A's players) if set,
+        otherwise any of its active players; 1-for-1 and 2-for-1.
+        Picks, in order (user spec, 2026-10-28):
+          "fair"            the best trade for team A that also helps team B
+                            (both >= +1 point), or
+          "least_lopsided"  if none: the trade that still helps team A
+                            (>= +1 point) and costs team B the least.
+        Lopsided-by-value trades are never considered. "none" if nothing
+        helps team A. `odds` = trade_odds() for the pick (both teams' win
+        chances), with the partner's drop as the finder chose it."""
+        year, rosters, free_agents, players, name_to_id = self._optimizer_inputs()
+        if team_a not in rosters:
+            raise KeyError(f"no {year} roster found for team {team_a!r}")
+        if team_b is not None and (team_b not in rosters or team_b == team_a):
+            raise KeyError(f"no {year} roster found for team {team_b!r}") if team_b not in rosters else ValueError("pick two different teams")
+        give_ids = []
+        for n in dict.fromkeys(give or []):
+            pid = name_to_id.get(n)
+            if pid is None or pid not in rosters[team_a]:
+                raise ValueError(f"{n} isn't on {team_a}'s active roster")
+            give_ids.append(pid)
+        if len(give_ids) > 2:
+            raise ValueError("pick at most 2 players to trade away")
+
+        config = tf.TradeConfig(mode="fleece", partner_min_gain=-1.0, max_results=None,
+                                partners=(team_b,) if team_b else None)
+        searches = [give_ids] if give_ids else [[p] for p in rosters[team_a]]
+        seen: dict = {}
+        for g in searches:
+            for t in tf.find_trades(team_a, g, players, rosters, free_agents, config).trades:
+                seen.setdefault((t.shape, t.partner, frozenset(t.give), t.get[0]), t)
+        cands = list(seen.values())
+        fair = [t for t in cands if t.partner_gain >= tf.MODES["fair"][1]]
+        if fair:
+            kind, pick = "fair", max(fair, key=lambda t: (t.gain, t.partner_gain))
+        elif cands:
+            kind, pick = "least_lopsided", max(cands, key=lambda t: (t.partner_gain, t.gain))
+        else:
+            return {"kind": "none", "team_a": team_a, "team_b": team_b, "year": year, "trade": None, "odds": None}
+
+        name = lambda pid: str(players.at[pid, "Player"])  # noqa: E731
+        trade = {
+            "shape": pick.shape,
+            "partner": pick.partner,
+            "give": [name(p) for p in pick.give],
+            "get": [name(p) for p in pick.get],
+            "partner_drop": name(pick.partner_drop) if pick.partner_drop is not None else None,
+            "fa_add": name(pick.fa_add) if pick.fa_add is not None else None,
+        }
+        odds = self.trade_odds(
+            team_a, pick.partner, trade["give"], trade["get"] + ([trade["fa_add"]] if trade["fa_add"] else []),
+            drops={pick.partner: [trade["partner_drop"]]} if trade["partner_drop"] else None,
+        )
+        return {"kind": kind, "team_a": team_a, "team_b": team_b, "year": year, "trade": trade, "odds": odds}
 
     def weekly_recap(self, year: int, week: int) -> dict | None:
         """The Monday "Week N Recap" post's content for the Weekly Stats page

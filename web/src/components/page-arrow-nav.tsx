@@ -142,7 +142,13 @@ export function PageArrowNav() {
           with the page background, flush with the header's bottom edge, so
           it reads as a tab opening into the page -- same as desktop's Nav.
           items-end keeps the arrows level with the tab's lower half. */}
-      <div className="flex items-end sm:hidden">
+      {/* overflow-x-clip: the invisible prev/next shadow tabs rest off to
+          the sides until a swipe slides them in, and on narrow phones the
+          longer labels ("Champions Lounge") stuck out past the screen edge
+          and gave the whole page a sideways scroll (found 2026-10-28:
+          Players/Draft Hub 429px wide on a 390px screen). Clipping the row
+          at the screen edge hides nothing that was visible. */}
+      <div className="flex items-end overflow-x-clip sm:hidden">
         <div className="flex flex-1 items-center pb-1">
           <Link
             href={NAV_LINKS[prevIndex].href}

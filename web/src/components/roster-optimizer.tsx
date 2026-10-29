@@ -450,9 +450,11 @@ export function CategoryOddsBars({
           );
         })}
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">
-        Blue categories are this team&apos;s current strengths.
-      </p>
+      {strongest.length > 0 && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Blue categories are this team&apos;s current strengths.
+        </p>
+      )}
     </div>
   );
 }

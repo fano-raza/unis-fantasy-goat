@@ -30,6 +30,8 @@ from .schemas import (
     GamesTopScoresRequest,
     RecordsRequest,
     RosterCategoryOddsRequest,
+    TradeOddsRequest,
+    TradeRecommendRequest,
     RosterOptimizerPasswordRequest,
     RosterOptimizerRequest,
     RosterRanksRequest,
@@ -445,6 +447,32 @@ def league_roster_category_odds(req: RosterCategoryOddsRequest) -> dict:
     _check_roster_optimizer_password(req.password)
     try:
         return league_store.roster_category_odds(req.team, req.roster)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc.args[0])) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/league/trade_odds")
+def league_trade_odds(req: TradeOddsRequest) -> dict:
+    """Premium: both teams' weekly win chances before and after a Trade Hub
+    trade."""
+    _check_roster_optimizer_password(req.password)
+    try:
+        return league_store.trade_odds(req.team_a, req.team_b, req.a_sends, req.b_sends, req.drops)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc.args[0])) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/league/trade_recommend")
+def league_trade_recommend(req: TradeRecommendRequest) -> dict:
+    """Premium: the Trade Finder's recommendation for team A (fair first,
+    else the least lopsided trade that still helps team A)."""
+    _check_roster_optimizer_password(req.password)
+    try:
+        return league_store.trade_recommend(req.team_a, req.team_b, req.give)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc.args[0])) from exc
     except ValueError as exc:

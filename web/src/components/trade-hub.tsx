@@ -1,283 +1,76 @@
 "use client";
 
-import { formatNumber } from "@/lib/format-number";
-import { useEffect, useState } from "react";
-import { X } from "lucide-react";
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowLeftRight, Check, Crown, Plus, X } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LoadingOverlay } from "@/components/loading-overlay";
-import { getPlayerStats, MAIN_CATS, type Category, type PlayerStat, type StatWindow } from "@/lib/api";
-import { compareCell, type Comparison } from "@/lib/highlight";
+import { usePremium } from "@/components/premium";
+import { TradeStatsComparison } from "@/components/trade-stats-table";
+import { TradeWinChance } from "@/components/trade-win-chance";
+import {
+  ApiError,
+  getPlayerStats,
+  getRosterRanks,
+  getTradeRecommendation,
+  type LeagueMeta,
+  type PlayerStat,
+  type RosterRankRow,
+  type TradeRecommendation,
+} from "@/lib/api";
+import { useSelectedTeam } from "@/lib/use-selected-team";
 import { cn } from "@/lib/utils";
 
-const TRADE_TEAM_CAP = 5;
+// Players each side can send (same cap the Trade Hub always had).
+const TRADE_SIDE_CAP = 5;
+// Select value for "no team" -- the side is then just a hand-picked group
+// of players, like the old Team A / Team B comparison.
+const NO_TEAM = "__none__";
 
-const WINDOW_OPTIONS: { value: StatWindow; label: string }[] = [
-  { value: "season", label: "Season" },
-  { value: "d7", label: "7d" },
-  { value: "d14", label: "14d" },
-  { value: "d30", label: "30d" },
-  { value: "d90", label: "90d" },
-];
+type Side = "a" | "b";
 
-// Builds the {window}_{cat}_{total|avg} (or {window}_{cat} for FG%/FT%,
-// which have no total/avg split -- see export_player_stats.py) key into a
-// PlayerStat row. Returns null when that player has no games in the
-// selected window (real during the NBA off-season, not a bug -- see the
-// plan doc).
-function getPlayerCatValue(player: PlayerStat, statWindow: StatWindow, cat: Category, mode: "totals" | "averages"): number | null {
-  const key = cat === "FG%" || cat === "FT%" ? `${statWindow}_${cat}` : `${statWindow}_${cat}_${mode === "totals" ? "total" : "avg"}`;
-  const value = player[key];
-  return typeof value === "number" ? value : null;
-}
-
-function getPctComponents(player: PlayerStat, statWindow: StatWindow, cat: "FG%" | "FT%"): { made: number; att: number } | null {
-  const made = player[`${statWindow}_${cat}_made`];
-  const att = player[`${statWindow}_${cat}_att`];
-  return typeof made === "number" && typeof att === "number" ? { made, att } : null;
-}
-
-// Aggregates a group of up to 5 players for one stat category. Counting
-// categories sum or average normally; FG%/FT% use the real weighted ratio
-// (sum of makes / sum of attempts across the group) rather than a naive
-// average of each player's individual percentage, which would misweight
-// players with very different attempt volumes -- same reasoning as
-// StatTable's Score column elsewhere in this app.
-function aggregate(players: PlayerStat[], statWindow: StatWindow, mode: "totals" | "averages"): Record<Category, number | null> {
-  const result = {} as Record<Category, number | null>;
-  for (const cat of MAIN_CATS) {
-    if (cat === "FG%" || cat === "FT%") {
-      const components = players.map((p) => getPctComponents(p, statWindow, cat)).filter((c): c is { made: number; att: number } => c !== null);
-      const totalAtt = components.reduce((a, c) => a + c.att, 0);
-      result[cat] = totalAtt > 0 ? components.reduce((a, c) => a + c.made, 0) / totalAtt : null;
-      continue;
-    }
-    const values = players.map((p) => getPlayerCatValue(p, statWindow, cat, mode)).filter((v): v is number => v !== null);
-    if (values.length === 0) {
-      result[cat] = null;
-      continue;
-    }
-    const sum = values.reduce((a, b) => a + b, 0);
-    result[cat] = mode === "totals" ? sum : sum / values.length;
-  }
-  return result;
-}
-
-function formatStat(cat: Category, value: number | null): string {
-  if (value === null) return "—";
-  if (cat === "FG%" || cat === "FT%") return value.toFixed(3);
-  return formatNumber(value, 1);
-}
-
-// Direct (not inverted) coloring: `comparison` is Team A's own value
-// relative to Team B, so Team A being "better" should read green here.
-// `highlight.ts`'s `comparisonClass` is deliberately inverted for
-// StatTable's different use case (a row colored relative to a separate
-// focus-team baseline, not the row's own comparison) -- reusing it here
-// was backwards, per the user's report. Applied directly to the Team A/
-// Team B value cells (there's no separate Net column anymore).
-const highlightClass: Record<Comparison, string> = {
-  better: "bg-win/15 text-win",
-  worse: "bg-loss/15 text-loss",
-  neutral: "",
-};
-
-// Team B's cell colors from Team A's flipped perspective -- Team A "better"
-// means Team B is "worse" in the same category, and vice versa.
-function flip(comparison: Comparison): Comparison {
-  if (comparison === "better") return "worse";
-  if (comparison === "worse") return "better";
-  return "neutral";
-}
-
-function formatSignedStat(cat: Category, value: number | null): string {
-  if (value === null) return "—";
-  const formatted = formatStat(cat, value);
-  return value >= 0 ? `+${formatted}` : formatted;
-}
-
-// FGM/FGA and FTM/FTA -- informational volume rows (made/attempted for the
-// group). Rendered directly after their matching percentage row (FG% / FT%),
-// not grouped separately. They do get a Net value (the made/attempted diff,
-// same "X/Y" shape as the value cells), just never colored red/green --
-// a made/attempted pair isn't a single win/loss comparison the way a plain
-// stat total is, so there's no "better" direction to highlight.
-const MADE_ATTEMPTED_BY_CAT: Partial<Record<Category, { label: string }>> = {
-  "FG%": { label: "FGM/FGA" },
-  "FT%": { label: "FTM/FTA" },
-};
-
-interface MadeAttempted {
-  made: number;
-  att: number;
-}
-
-// Totals: real summed made/attempted across the group. Averages: each
-// player's own per-game made/attempted, averaged across the group -- same
-// "average of each player's own rate" convention the rest of this table's
-// Averages mode already uses for the 7 counting categories (see aggregate()
-// above), kept consistent rather than switching to a team-wide made/games
-// rate just for these two rows.
-function madeAttemptedValue(
-  players: PlayerStat[],
-  statWindow: StatWindow,
-  cat: "FG%" | "FT%",
-  mode: "totals" | "averages",
-): MadeAttempted | null {
-  if (mode === "totals") {
-    let made = 0;
-    let att = 0;
-    let any = false;
-    for (const p of players) {
-      const m = p[`${statWindow}_${cat}_made`];
-      const a = p[`${statWindow}_${cat}_att`];
-      if (typeof m === "number" && typeof a === "number") {
-        made += m;
-        att += a;
-        any = true;
-      }
-    }
-    return any ? { made, att } : null;
-  }
-
-  const madeRates: number[] = [];
-  const attRates: number[] = [];
-  for (const p of players) {
-    const m = p[`${statWindow}_${cat}_made`];
-    const a = p[`${statWindow}_${cat}_att`];
-    const gp = p[`${statWindow}_GP`];
-    if (typeof m === "number" && typeof a === "number" && typeof gp === "number" && gp > 0) {
-      madeRates.push(m / gp);
-      attRates.push(a / gp);
-    }
-  }
-  if (madeRates.length === 0) return null;
-  return {
-    made: madeRates.reduce((sum, v) => sum + v, 0) / madeRates.length,
-    att: attRates.reduce((sum, v) => sum + v, 0) / attRates.length,
-  };
-}
-
-function formatMadeAttempted(value: MadeAttempted | null, mode: "totals" | "averages"): string {
-  if (!value) return "—";
-  const fmt = (n: number) => (mode === "totals" ? String(n) : n.toFixed(1));
-  return `${fmt(value.made)}/${fmt(value.att)}`;
-}
-
-function formatMadeAttemptedNet(a: MadeAttempted | null, b: MadeAttempted | null, mode: "totals" | "averages"): string {
-  if (!a || !b) return "—";
-  const fmt = (n: number) => {
-    const s = mode === "totals" ? String(n) : n.toFixed(1);
-    return n >= 0 ? `+${s}` : s;
-  };
-  return `${fmt(a.made - b.made)}/${fmt(a.att - b.att)}`;
-}
-
-function PlayerPicker({
-  label,
-  selected,
-  onChange,
-  available,
-}: {
-  label: string;
-  selected: string[];
-  onChange: (next: string[]) => void;
-  available: PlayerStat[];
-}) {
-  const [open, setOpen] = useState(false);
-  const remaining = available.filter((p) => !selected.includes(p.Player));
-  return (
-    <div className="flex flex-1 flex-col gap-2">
-      <span className="label">{label}</span>
-      <div className="flex flex-wrap items-center gap-2">
-        {selected.map((name) => (
-          <span
-            key={name}
-            className="flex items-center gap-1.5 rounded-sm bg-secondary px-3 py-1 text-xs font-bold tracking-wide text-secondary-foreground"
-          >
-            {name}
-            <button
-              type="button"
-              onClick={() => onChange(selected.filter((n) => n !== name))}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <X className="size-3.5" />
-            </button>
-          </span>
-        ))}
-        {selected.length < TRADE_TEAM_CAP && (
-          <Popover open={open} onOpenChange={setOpen}>
-            <PopoverTrigger className={buttonVariants({ variant: "outline", size: "sm" })}>
-              + Add player
-            </PopoverTrigger>
-            <PopoverContent className="w-56 p-0">
-              <Command>
-                <CommandInput placeholder="Search players..." />
-                <CommandList>
-                  <CommandEmpty>No players found.</CommandEmpty>
-                  <CommandGroup>
-                    {remaining.map((p) => (
-                      <CommandItem
-                        key={p.PlayerId}
-                        onSelect={() => {
-                          onChange([...selected, p.Player]);
-                          setOpen(false);
-                        }}
-                      >
-                        {p.Player} <span className="ml-1 text-muted-foreground">({p.Team})</span>
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
-        )}
-      </div>
-    </div>
-  );
+/** Where a player is right now, for labels: "Rohil", "Free agent", "Rohil · IR". */
+interface Owner {
+  team: string | null;
+  ir: boolean;
 }
 
 export function TradeHub({
   initialPlayers,
+  meta,
 }: {
-  // Fetched server-side (see app/players/page.tsx) -- skips this
-  // component's own fetch on first render when present. undefined (an
-  // older caller) behaves like before; null (server fetch failed) also
-  // falls back to the client fetch.
+  // Fetched server-side (see app/players/page.tsx); null -> client fetch.
   initialPlayers?: PlayerStat[] | null;
-} = {}) {
+  meta: LeagueMeta | null;
+}) {
+  const premium = usePremium();
   const [players, setPlayers] = useState<PlayerStat[]>(initialPlayers ?? []);
   const [playersLoading, setPlayersLoading] = useState(!initialPlayers);
-  const [teamA, setTeamA] = useState<string[]>([]);
-  const [teamB, setTeamB] = useState<string[]>([]);
-  // Defaults to "season" -- during the NBA off-season the rolling windows
-  // have no data at all (verified against the real export), so a rolling
-  // statWindow default would open on an empty table.
-  const [statWindow, setWindow] = useState<StatWindow>("season");
-  const [mode, setMode] = useState<"totals" | "averages">("averages");
-  const [view, setView] = useState<"stats" | "net">("stats");
+  const [rosterRows, setRosterRows] = useState<RosterRankRow[]>([]);
+  // This season's teams (meta.members also lists past managers).
+  const teams = useMemo(
+    () => [...new Set(rosterRows.map((r) => r.FantasyTeam).filter((t): t is string => !!t))].sort(),
+    [rosterRows],
+  );
+
+  const [remembered, setRemembered, hydrated] = useSelectedTeam(meta?.members[0] ?? "");
+  const [teamA, setTeamA] = useState<string>(NO_TEAM);
+  const [teamB, setTeamB] = useState<string>(NO_TEAM);
+  const [sendA, setSendA] = useState<string[]>([]);
+  const [sendB, setSendB] = useState<string[]>([]);
+
+  // The last recommendation and the partner release it chose -- cleared as
+  // soon as the user edits the trade (it no longer describes what's on screen).
+  const [rec, setRec] = useState<TradeRecommendation | null>(null);
+  const [recDrops, setRecDrops] = useState<Record<string, string[]> | null>(null);
+  const [recommending, setRecommending] = useState(false);
+  const [recError, setRecError] = useState<string | null>(null);
+  const [recPicked, setRecPicked] = useState<string[]>([]);
+  const [pickTeamOpen, setPickTeamOpen] = useState(false);
 
   useEffect(() => {
     if (initialPlayers) return;
@@ -287,113 +80,440 @@ export function TradeHub({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const playersA = players.filter((p) => teamA.includes(p.Player));
-  const playersB = players.filter((p) => teamB.includes(p.Player));
-  const aggA = aggregate(playersA, statWindow, mode);
-  const aggB = aggregate(playersB, statWindow, mode);
+  useEffect(() => {
+    if (!meta) return;
+    getRosterRanks({ year: meta.current_year }).then(setRosterRows).catch(() => setRosterRows([]));
+  }, [meta]);
+
+  // Side A opens on the team you last looked at elsewhere in the app
+  // (remembered in localStorage, so only known after mount, and only valid
+  // once this season's rosters are in).
+  const rostersReady = teams.length > 0;
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (hydrated && rostersReady && teams.includes(remembered)) setTeamA((t) => (t === NO_TEAM ? remembered : t));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, rostersReady]);
+
+  const owners = useMemo(() => {
+    const m = new Map<string, Owner>();
+    for (const r of rosterRows) m.set(r.Player, { team: r.FantasyTeam || null, ir: r.LineupSlot === "IR" });
+    return m;
+  }, [rosterRows]);
+  const rosterOf = (team: string) =>
+    rosterRows.filter((r) => r.FantasyTeam === team).sort((x, y) => x.Rank - y.Rank);
+
+  function edited() {
+    setRec(null);
+    setRecDrops(null);
+    setRecError(null);
+  }
+
+  function setTeam(side: Side, team: string) {
+    edited();
+    if (side === "a") {
+      setTeamA(team);
+      setSendA([]);
+      if (team !== NO_TEAM) setRemembered(team);
+      if (team === teamB) {
+        setTeamB(NO_TEAM);
+        setSendB([]);
+      }
+    } else {
+      setTeamB(team);
+      setSendB([]);
+      if (team === teamA) {
+        setTeamA(NO_TEAM);
+        setSendA([]);
+      }
+    }
+  }
+
+  function toggle(side: Side, name: string) {
+    edited();
+    const [list, set, other, setOther] = side === "a" ? [sendA, setSendA, sendB, setSendB] : [sendB, setSendB, sendA, setSendA];
+    if (list.includes(name)) set(list.filter((n) => n !== name));
+    else if (list.length < TRADE_SIDE_CAP) {
+      set([...list, name]);
+      // A player can only go one way.
+      if (other.includes(name)) setOther(other.filter((n) => n !== name));
+    }
+  }
+
+  async function recommend(forTeam: string) {
+    if (!premium.password) return;
+    setRecommending(true);
+    setRecError(null);
+    // Use the side-A players already picked from team A's own roster
+    // (1 or 2) as the players to trade away; none -> search the roster.
+    const own = new Set(rosterOf(forTeam).map((r) => r.Player));
+    const picked = forTeam === teamA ? sendA.filter((n) => own.has(n)) : [];
+    if (picked.length > 2) {
+      setRecommending(false);
+      setRecError("Pick 1 or 2 players to trade away, or none to search the whole roster.");
+      return;
+    }
+    setRecPicked(picked);
+    const partner = teamB !== NO_TEAM && teamB !== forTeam ? teamB : undefined;
+    try {
+      const res = await getTradeRecommendation({
+        password: premium.password,
+        team_a: forTeam,
+        ...(partner ? { team_b: partner } : {}),
+        ...(picked.length ? { give: picked } : {}),
+      });
+      setRec(res);
+      if (res.trade) {
+        setTeamA(forTeam);
+        setRemembered(forTeam);
+        setTeamB(res.trade.partner);
+        setSendA(res.trade.give);
+        // Side B's list is what team A receives -- including the free agent
+        // who fills team A's open spot in a 2-for-1.
+        setSendB([...res.trade.get, ...(res.trade.fa_add ? [res.trade.fa_add] : [])]);
+        setRecDrops(res.trade.partner_drop ? { [res.trade.partner]: [res.trade.partner_drop] } : null);
+      } else {
+        setTeamA(forTeam);
+      }
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) premium.lock();
+      else setRecError("Couldn't get a recommendation. Try again in a moment.");
+    } finally {
+      setRecommending(false);
+    }
+  }
+
+  function onRecommendClick() {
+    premium.requireUnlock(() => {
+      if (teamA === NO_TEAM) setPickTeamOpen(true);
+      else void recommend(teamA);
+    });
+  }
+
+  const playersA = players.filter((p) => sendA.includes(p.Player));
+  const playersB = players.filter((p) => sendB.includes(p.Player));
+  const labelA = teamA !== NO_TEAM ? teamA : "Side A";
+  const labelB = teamB !== NO_TEAM ? teamB : "Side B";
+  const bothTeams = teamA !== NO_TEAM && teamB !== NO_TEAM;
 
   return (
     <div className="flex flex-col gap-4">
-      <Card variant="plain">
+      <Card>
+        <CardHeader className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <CardTitle>Build a trade</CardTitle>
+            <CardDescription>Pick each team, then tap players to send them to the other side.</CardDescription>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onRecommendClick}
+            disabled={recommending || teams.length === 0}
+            className="border-gold/60 text-gold hover:bg-gold/10 hover:text-gold"
+          >
+            <Crown className={premium.unlocked ? "size-4 fill-current" : "size-4"} aria-hidden />
+            {recommending ? "Finding a trade…" : "Recommend trade"}
+          </Button>
+        </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <LoadingOverlay active={playersLoading} hasContent={players.length > 0} label="Loading players">
-            <div className="flex flex-wrap gap-6">
-              <PlayerPicker label="Team A (up to 5)" selected={teamA} onChange={setTeamA} available={players} />
-              <PlayerPicker label="Team B (up to 5)" selected={teamB} onChange={setTeamB} available={players} />
+          {(rec || recError) && <RecommendationNote rec={rec} error={recError} picked={rec?.kind === "none" ? recPicked : []} />}
+          <LoadingOverlay active={playersLoading || recommending} hasContent={players.length > 0} label={recommending ? "Finding a trade" : "Loading players"}>
+            <div className="grid gap-4 md:grid-cols-[1fr_auto_1fr]">
+              <TradeSide
+                label="Side A"
+                team={teamA}
+                teams={teams}
+                otherTeam={teamB}
+                roster={teamA !== NO_TEAM ? rosterOf(teamA) : []}
+                sending={sendA}
+                players={players}
+                owners={owners}
+                onTeam={(t) => setTeam("a", t)}
+                onToggle={(n) => toggle("a", n)}
+              />
+              <div className="hidden items-center justify-center md:flex" aria-hidden>
+                <ArrowLeftRight className="size-5 text-muted-foreground" />
+              </div>
+              <TradeSide
+                label="Side B"
+                team={teamB}
+                teams={teams}
+                otherTeam={teamA}
+                roster={teamB !== NO_TEAM ? rosterOf(teamB) : []}
+                sending={sendB}
+                players={players}
+                owners={owners}
+                onTeam={(t) => setTeam("b", t)}
+                onToggle={(n) => toggle("b", n)}
+              />
             </div>
           </LoadingOverlay>
-          <div className="flex flex-wrap items-center gap-6">
-            <div className="flex items-center gap-2 label text-foreground">
-              <span className="text-muted-foreground">Window</span>
-              {WINDOW_OPTIONS.map((opt) => (
-                <Button
-                  key={opt.value}
-                  variant={statWindow === opt.value ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setWindow(opt.value)}
-                >
-                  {opt.label}
-                </Button>
-              ))}
-            </div>
-            <label className="flex items-center gap-2 label text-foreground">
-              <span className="text-muted-foreground">Totals</span>
-              <Switch checked={mode === "averages"} onCheckedChange={(c) => setMode(c ? "averages" : "totals")} />
-              <span className="text-muted-foreground">Averages</span>
-            </label>
-            <label className="flex items-center gap-2 label text-foreground">
-              <span className="text-muted-foreground">Stats</span>
-              <Switch checked={view === "net"} onCheckedChange={(c) => setView(c ? "net" : "stats")} />
-              <span className="text-muted-foreground">Net</span>
-            </label>
-          </div>
         </CardContent>
       </Card>
 
       {(playersA.length > 0 || playersB.length > 0) && (
-        <Card>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Category</TableHead>
-                  <TableHead className="text-right">Team A</TableHead>
-                  <TableHead className="text-right">Team B</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {MAIN_CATS.flatMap((cat) => {
-                  const a = aggA[cat];
-                  const b = aggB[cat];
-                  const comparison = a !== null && b !== null ? compareCell(a, b, cat) : "neutral";
-                  const valueA = view === "stats" ? formatStat(cat, a) : formatSignedStat(cat, a !== null && b !== null ? a - b : null);
-                  const valueB = view === "stats" ? formatStat(cat, b) : formatSignedStat(cat, a !== null && b !== null ? b - a : null);
-                  const rows = [
-                    <TableRow key={cat}>
-                      <TableCell className="font-sans font-medium text-muted-foreground">{cat}</TableCell>
-                      <TableCell
-                        className={cn("text-right font-mono font-extrabold tabular-nums", highlightClass[comparison])}
-                      >
-                        {valueA}
-                      </TableCell>
-                      <TableCell
-                        className={cn("text-right font-mono font-extrabold tabular-nums", highlightClass[flip(comparison)])}
-                      >
-                        {valueB}
-                      </TableCell>
-                    </TableRow>,
-                  ];
-                  // FGM/FGA directly after FG%, FTM/FTA directly after FT%
-                  // -- not grouped separately at the end.
-                  const madeAttRow = MADE_ATTEMPTED_BY_CAT[cat];
-                  if (madeAttRow) {
-                    const maCat = cat as "FG%" | "FT%";
-                    const aVal = madeAttemptedValue(playersA, statWindow, maCat, mode);
-                    const bVal = madeAttemptedValue(playersB, statWindow, maCat, mode);
-                    rows.push(
-                      <TableRow key={madeAttRow.label}>
-                        <TableCell className="font-sans font-medium text-muted-foreground">
-                          {madeAttRow.label}
-                        </TableCell>
-                        {/* No red/green here (unlike the other rows) -- a
-                            made/attempted pair has no single "better"
-                            direction to highlight. */}
-                        <TableCell className="text-right font-mono tabular-nums">
-                          {view === "stats" ? formatMadeAttempted(aVal, mode) : formatMadeAttemptedNet(aVal, bVal, mode)}
-                        </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">
-                          {view === "stats" ? formatMadeAttempted(bVal, mode) : formatMadeAttemptedNet(bVal, aVal, mode)}
-                        </TableCell>
-                      </TableRow>,
-                    );
-                  }
-                  return rows;
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+        <TradeStatsComparison playersA={playersA} playersB={playersB} labelA={`${labelA} sends`} labelB={`${labelB} sends`} />
       )}
+
+      <TradeWinChance
+        teamA={bothTeams ? teamA : null}
+        teamB={bothTeams ? teamB : null}
+        aSends={sendA}
+        bSends={sendB}
+        drops={recDrops}
+      />
+
+      <Dialog open={pickTeamOpen} onOpenChange={setPickTeamOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Recommend a trade for…</DialogTitle>
+            <DialogDescription>
+              {teamB !== NO_TEAM ? `Searches trades with ${teamB}.` : "Searches trades with every team in the league."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-2">
+            {teams
+              .filter((t) => t !== teamB)
+              .map((t) => (
+                <Button
+                  key={t}
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setPickTeamOpen(false);
+                    setTeam("a", t);
+                    void recommend(t);
+                  }}
+                >
+                  {t}
+                </Button>
+              ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+function RecommendationNote({
+  rec,
+  error,
+  picked,
+}: {
+  rec: TradeRecommendation | null;
+  error: string | null;
+  // Players the search was limited to (team A's picks), if any.
+  picked: string[];
+}) {
+  if (error) return <p className="rounded-md border border-loss/40 bg-loss/10 px-3 py-2 text-sm text-loss">{error}</p>;
+  if (!rec) return null;
+  const where = rec.team_b ? ` with ${rec.team_b}` : "";
+  let text: string;
+  if (rec.kind === "none" || !rec.trade) {
+    const sending = picked.length ? ` that sends ${picked.join(" and ")}` : "";
+    text = `No trade${where}${sending} helps ${rec.team_a} by at least 1 percentage point right now.${
+      picked.length ? " Clear your picks to search the whole roster." : ""
+    }`;
+  } else if (rec.kind === "fair") {
+    text = `Fair trade: ${rec.team_a} and ${rec.trade.partner} both come out ahead.`;
+  } else {
+    text = rec.team_b
+      ? `No trade with ${rec.team_b} helps both teams. This one still helps ${rec.team_a} and costs ${rec.team_b} the least.`
+      : `No trade in the league helps both teams. This one still helps ${rec.team_a} and costs ${rec.trade.partner} the least.`;
+  }
+  const extra =
+    rec.trade?.fa_add || rec.trade?.partner_drop
+      ? [
+          rec.trade.fa_add && `${rec.team_a} picks up free agent ${rec.trade.fa_add} for the open spot`,
+          rec.trade.partner_drop && `${rec.trade.partner} releases ${rec.trade.partner_drop} to make room`,
+        ]
+          .filter(Boolean)
+          .join("; ") + "."
+      : null;
+  return (
+    <div
+      className={cn(
+        "rounded-md border px-3 py-2 text-sm",
+        rec.kind === "fair" ? "border-win/40 bg-win/10" : rec.kind === "none" ? "border-border bg-muted/40" : "border-gold/40 bg-gold/10",
+      )}
+      role="status"
+    >
+      <p className="font-medium">{text}</p>
+      {extra && <p className="mt-0.5 text-muted-foreground">{extra}</p>}
+    </div>
+  );
+}
+
+function TradeSide({
+  label,
+  team,
+  teams,
+  otherTeam,
+  roster,
+  sending,
+  players,
+  owners,
+  onTeam,
+  onToggle,
+}: {
+  label: string;
+  team: string;
+  teams: string[];
+  otherTeam: string;
+  roster: RosterRankRow[];
+  sending: string[];
+  players: PlayerStat[];
+  owners: Map<string, Owner>;
+  onTeam: (team: string) => void;
+  onToggle: (name: string) => void;
+}) {
+  const full = sending.length >= TRADE_SIDE_CAP;
+  const options = [{ value: NO_TEAM, label: "No team (any players)" }, ...teams.filter((t) => t !== otherTeam).map((t) => ({ value: t, label: t }))];
+  const ownNames = new Set(roster.map((r) => r.Player));
+  // Picked players who aren't on this side's own roster (free agents, other
+  // teams' players): listed as chips above the roster.
+  const extras = sending.filter((n) => !ownNames.has(n));
+
+  return (
+    <section className="flex min-w-0 flex-col gap-3" aria-label={label}>
+      <div className="flex items-center gap-2">
+        <span className="label w-14 shrink-0">{label}</span>
+        <Select value={team} onValueChange={(v) => v !== null && onTeam(v)}>
+          <SelectTrigger size="sm" className="min-w-0 flex-1">
+            <SelectValue>{(v: string) => options.find((o) => o.value === v)?.label ?? v}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="flex items-baseline justify-between gap-2 text-sm">
+        <span className="font-medium">
+          {team !== NO_TEAM ? `${team} sends` : "Sends"}{" "}
+          <span className="tabular-nums text-muted-foreground">
+            {sending.length}/{TRADE_SIDE_CAP}
+          </span>
+        </span>
+        <AnyPlayerPicker players={players} owners={owners} exclude={sending} disabled={full} onPick={onToggle} />
+      </div>
+
+      {extras.length > 0 && (
+        <ul className="flex flex-wrap gap-1.5">
+          {extras.map((n) => (
+            <li key={n} className="flex items-center gap-1.5 rounded-sm bg-secondary py-1 pr-1.5 pl-2.5 text-xs font-semibold text-secondary-foreground">
+              {n}
+              <span className="font-normal text-muted-foreground">{ownerLabel(owners.get(n))}</span>
+              <button type="button" onClick={() => onToggle(n)} className="text-muted-foreground hover:text-foreground" aria-label={`Remove ${n}`}>
+                <X className="size-3.5" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {team !== NO_TEAM ? (
+        roster.length > 0 ? (
+          <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
+            {roster.map((r) => {
+              const on = sending.includes(r.Player);
+              const ir = r.LineupSlot === "IR";
+              return (
+                <li key={r.Player}>
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={on}
+                    disabled={!on && full}
+                    onClick={() => onToggle(r.Player)}
+                    className={cn(
+                      "flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring disabled:opacity-50",
+                      on ? "bg-primary/10" : "hover:bg-muted/60",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "flex size-4 shrink-0 items-center justify-center rounded-[4px] border",
+                        on ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/50",
+                      )}
+                      aria-hidden
+                    >
+                      {on && <Check className="size-3" strokeWidth={3} />}
+                    </span>
+                    <span className={cn("min-w-0 flex-1 truncate", on && "font-semibold", ir && "text-muted-foreground")}>{r.Player}</span>
+                    {ir && <span className="rounded-sm bg-muted px-1.5 text-[11px] font-semibold text-muted-foreground">IR</span>}
+                    <span className="w-9 text-xs text-muted-foreground">{r.NBATeam}</span>
+                    <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">#{r.Rank}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">Loading {team}&apos;s roster…</p>
+        )
+      ) : (
+        <p className="rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
+          Choose a team to pick from its roster, or add any player.
+        </p>
+      )}
+    </section>
+  );
+}
+
+function ownerLabel(o: Owner | undefined): string {
+  if (!o || !o.team) return "Free agent";
+  return o.ir ? `${o.team} · IR` : o.team;
+}
+
+function AnyPlayerPicker({
+  players,
+  owners,
+  exclude,
+  disabled,
+  onPick,
+}: {
+  players: PlayerStat[];
+  owners: Map<string, Owner>;
+  exclude: string[];
+  disabled: boolean;
+  onPick: (name: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const remaining = useMemo(() => players.filter((p) => !exclude.includes(p.Player)), [players, exclude]);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger className={buttonVariants({ variant: "outline", size: "sm" })} disabled={disabled}>
+        <Plus className="size-3.5" aria-hidden />
+        Add any player
+      </PopoverTrigger>
+      <PopoverContent className="w-72 p-0" align="end">
+        <Command>
+          <CommandInput placeholder="Search any NBA player…" />
+          <CommandList>
+            <CommandEmpty>No players found.</CommandEmpty>
+            <CommandGroup>
+              {remaining.map((p) => (
+                <CommandItem
+                  key={p.PlayerId}
+                  value={p.Player}
+                  onSelect={() => {
+                    onPick(p.Player);
+                    setOpen(false);
+                  }}
+                >
+                  <span className="flex-1 truncate">{p.Player}</span>
+                  <span className="ml-2 text-xs text-muted-foreground">{ownerLabel(owners.get(p.Player))}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }

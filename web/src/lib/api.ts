@@ -454,6 +454,68 @@ export interface RosterCategoryOdds {
 export const getRosterCategoryOdds = (req: { team: string; password: string; roster?: string[] }) =>
   post<RosterCategoryOdds>("/league/roster_category_odds", req);
 
+// Trade Hub (premium): both teams' weekly win chances before and after a
+// trade. See dashboard_site/api/league_store.py::trade_odds.
+export interface TradeOddsSide {
+  team: string;
+  sends: string[];
+  receives: string[];
+  // Released to make room when the team ends up with more active players
+  // than it started with (auto_drop: chosen by the server -- the player it
+  // misses least).
+  drops: string[];
+  auto_drop: boolean;
+  start_matchup_win: number;
+  matchup_win: number;
+  start_score: number;
+  score: number;
+  start: Record<OptimizerCategory, number>;
+  after: Record<OptimizerCategory, number>;
+  active_before: number;
+  active_after: number;
+}
+
+export interface TradeOdds {
+  year: number;
+  categories: OptimizerCategory[];
+  teams: [TradeOddsSide, TradeOddsSide];
+  // Picked players on IR (they count for neither team) / with no stats.
+  uncounted: string[];
+  unknown: string[];
+}
+
+// `a_sends` go to team B, `b_sends` to team A -- any NBA player (a free
+// agent in a list is a pickup for the team receiving that list).
+export const getTradeOdds = (req: {
+  password: string;
+  team_a: string;
+  team_b: string;
+  a_sends: string[];
+  b_sends: string[];
+  drops?: Record<string, string[]>;
+}) => post<TradeOdds>("/league/trade_odds", req);
+
+export interface TradeRecommendation {
+  // fair: helps both teams; least_lopsided: no fair trade, this one still
+  // helps team A and costs team B the least; none: nothing helps team A.
+  kind: "fair" | "least_lopsided" | "none";
+  team_a: string;
+  team_b: string | null;
+  year: number;
+  trade: {
+    shape: "1-for-1" | "2-for-1";
+    partner: string;
+    give: string[];
+    get: string[];
+    partner_drop: string | null;
+    fa_add: string | null;
+  } | null;
+  odds: TradeOdds | null;
+}
+
+export const getTradeRecommendation = (req: { password: string; team_a: string; team_b?: string; give?: string[] }) =>
+  post<TradeRecommendation>("/league/trade_recommend", req);
+
 // Every week of a season, keyed by week number as a string (JSON object
 // keys are always strings, even though the backend's dict is int-keyed --
 // see dashboard_site/api/league_store.py::weekly_leaderboard_season).

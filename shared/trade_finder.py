@@ -70,6 +70,8 @@ class TradeConfig:
     # the backtest's "any value-fair trade" control.
     min_gain: float | None = None
     partner_min_gain: float | None = None
+    # Only search trades with these teams (None = every other team).
+    partners: tuple[str, ...] | None = None
     optimizer: ro.OptimizerConfig = field(default_factory=ro.recommended_config)
 
     @property
@@ -190,6 +192,19 @@ class League:
             matchups.append(m)
         return np.stack(scores, axis=-1), np.stack(matchups, axis=-1)
 
+    def category_probs(self, S: np.ndarray, row: int) -> np.ndarray:
+        """(..., 9) the team at `row`'s chance of winning each category in a
+        typical week, averaged over every other team (ignored categories:
+        0.5) -- the per-category numbers the app shows."""
+        V = ro.category_values(S)
+        sigma = np.where(self.is_pct, self.pct_sd, self.cv * V.mean(axis=-2))[..., None, :]
+        others = [j for j in range(V.shape[-2]) if j != row]
+        diff = (V[..., row:row + 1, :] - V[..., others, :]) * self.sign
+        with np.errstate(invalid="ignore", divide="ignore"):
+            p = ro.normal_cdf(diff / (sigma * np.sqrt(2.0)))
+        p = np.where(sigma > 0, p, np.where(diff > 0, 1.0, np.where(diff < 0, 0.0, 0.5)))
+        return np.where(self.ignored, 0.5, p).mean(axis=-2)
+
 
 # ---------------------------------------------------------------------------
 # Search
@@ -261,7 +276,7 @@ def find_trades(
                             float(mw[0]), float(mw[1]), v_give, v_get, net))
 
     sa = league.scale[a]
-    partners = [t for t in league.teams if t != team]
+    partners = [t for t in league.teams if t != team and (config.partners is None or t in config.partners)]
 
     if "1-for-1" in config.shapes and len(give) == 1:
         x = league.line(give)

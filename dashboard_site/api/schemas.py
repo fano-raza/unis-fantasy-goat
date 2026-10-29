@@ -120,6 +120,27 @@ class RosterOptimizerPasswordRequest(BaseModel):
     password: str
 
 
+class TradeOddsRequest(BaseModel):
+    password: str
+    team_a: str
+    team_b: str
+    # Players going to the other team (any NBA player: a free agent here is
+    # a pickup for the receiving team).
+    a_sends: list[str] = Field(default_factory=list, max_length=10)
+    b_sends: list[str] = Field(default_factory=list, max_length=10)
+    # Who a team releases if it ends up over its roster size; omitted ->
+    # the player it misses least.
+    drops: dict[str, list[str]] | None = None
+
+
+class TradeRecommendRequest(BaseModel):
+    password: str
+    team_a: str
+    team_b: str | None = None
+    # 1-2 of team A's players to trade away; omitted -> any.
+    give: list[str] | None = Field(None, max_length=2)
+
+
 class RosterCategoryOddsRequest(BaseModel):
     team: str
     password: str
