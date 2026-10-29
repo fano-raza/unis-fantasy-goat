@@ -26,7 +26,7 @@ import {
 import { expectedCategories, type SeasonFormat } from "@/components/headline-odds";
 import { TRADE_SEARCH_PHRASES } from "@/lib/loading-phrases";
 import { useSelectedTeam } from "@/lib/use-selected-team";
-import { cn } from "@/lib/utils";
+import { cn, shortName } from "@/lib/utils";
 
 // Select value for "no team" -- the side is then just the players added to it.
 const NO_TEAM = "__none__";
@@ -685,13 +685,6 @@ function TradeSide({
 }
 
 type RowState = "kept" | "traded" | "dropped" | "autoDropped" | "incoming";
-
-// "LeBron James" -> "L. James", "Jaren Jackson Jr." -> "J. Jackson Jr." --
-// the compact phone layout.
-function shortName(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  return parts.length < 2 ? name : `${parts[0][0]}. ${parts.slice(1).join(" ")}`;
-}
 
 function PlayerRow({
   name,

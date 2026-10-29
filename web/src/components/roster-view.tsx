@@ -35,7 +35,7 @@ import { LoadingOverlay } from "@/components/loading-overlay";
 import { OPTIMIZER_PHRASE_MS, OptimizerResults, RosterOptimizerButton } from "@/components/roster-optimizer";
 import { OPTIMIZER_PHRASES } from "@/lib/loading-phrases";
 import { RosterCategoryOddsCard } from "@/components/roster-category-odds";
-import { cn } from "@/lib/utils";
+import { cn, shortName } from "@/lib/utils";
 import {
   getNBASchedule,
   getRosterRanks,
@@ -506,7 +506,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
               <TableHeader>
                 <TableRow>
                   <TableHead className="sticky left-0 z-10 bg-card">Player</TableHead>
-                  <TableHead>NBA Team</TableHead>
+                  <TableHead className={cn(!showFullWeek && "max-sm:hidden")}>NBA Team</TableHead>
                   <TableHead className="text-right">Rank</TableHead>
                   {showFullWeek
                     ? weekDays.map((d) => {
@@ -532,7 +532,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                   <TableCell className="sticky left-0 z-10 bg-focus-row team-name text-primary">
                     Average Rank
                   </TableCell>
-                  <TableCell />
+                  <TableCell className={cn(!showFullWeek && "max-sm:hidden")} />
                   <TableCell className="text-right font-mono font-extrabold tabular-nums text-primary">
                     {displayedAvgRank !== null ? displayedAvgRank.toFixed(1) : "—"}
                     {teamPlacement !== null && (
@@ -610,7 +610,10 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                             </PopoverContent>
                           </Popover>
                           )}
-                          <span className={cn(isSwappedIn && "text-yellow-500", slot.removed && "line-through")}>{row.Player}</span>
+                          <span className={cn(isSwappedIn && "text-yellow-500", slot.removed && "line-through")}>
+                            <span className="max-sm:hidden">{row.Player}</span>
+                            <span className="sm:hidden">{shortName(row.Player)}</span>
+                          </span>
                           {slot.onIR && (
                             <span className="rounded-sm bg-muted px-1 font-sans text-[0.6875rem] font-bold text-muted-foreground" title="On injured reserve: not counted in win probabilities">
                               IR
@@ -668,7 +671,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                           )}
                         </div>
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{row.NBATeam}</TableCell>
+                      <TableCell className={cn("text-muted-foreground", !showFullWeek && "max-sm:hidden")}>{row.NBATeam}</TableCell>
                       <TableCell className="text-right font-mono tabular-nums">{row.Rank}</TableCell>
                       {scheduleLoading ? (
                         <TableCell colSpan={colSpan} className="text-center text-muted-foreground">
