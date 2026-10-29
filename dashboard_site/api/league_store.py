@@ -1040,12 +1040,9 @@ class LeagueStore:
 
         config = tf.TradeConfig(mode="fleece", partner_min_gain=-1.0, max_results=None,
                                 partners=(team_b,) if team_b else None)
-        searches = [give_ids] if give_ids else [[p] for p in rosters[team_a]]
-        seen: dict = {}
-        for g in searches:
-            for t in tf.find_trades(team_a, g, players, rosters, free_agents, config).trades:
-                seen.setdefault((t.shape, t.partner, frozenset(t.give), t.get[0]), t)
-        cands = list(seen.values())
+        # One pass: give_ids empty -> any of team A's players (every 1-for-1
+        # and 2-for-1 pair).
+        cands = tf.find_trades(team_a, give_ids, players, rosters, free_agents, config).trades
         fair = [t for t in cands if t.partner_gain >= tf.MODES["fair"][1]]
         if fair:
             kind, pick = "fair", max(fair, key=lambda t: (t.gain, t.partner_gain))

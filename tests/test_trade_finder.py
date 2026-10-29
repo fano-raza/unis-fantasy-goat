@@ -287,3 +287,15 @@ def test_game_log_export_keeps_this_season_and_picks_the_minutes_prior():
     p = prior.set_index("PlayerId")
     assert p.loc[1, "prior_MPG"] == 30.0 and p.loc[1, "prior_source"] == "projection"
     assert p.loc[2, "prior_MPG"] == 20.0 and p.loc[2, "prior_source"] == "last_season"
+
+
+@pytest.mark.parametrize("seed", [3, 11])
+def test_any_player_search_equals_searching_each_player(seed):
+    players, rosters, fas = random_league(np.random.default_rng(seed), teams=4, per_team=6, free_agents=8)
+    cfg = tf.TradeConfig(mode="fleece", max_results=None, fa_shortlist=50, partner_min_gain=-1.0)
+    key = lambda t: (t.shape, t.partner, frozenset(t.give), t.get[0], t.partner_drop, t.fa_add, round(t.gain, 12))  # noqa: E731
+    one_pass = {key(t) for t in tf.find_trades("t0", [], players, rosters, fas, cfg).trades}
+    each = set()
+    for x in rosters["t0"]:
+        each |= {key(t) for t in tf.find_trades("t0", [x], players, rosters, fas, cfg).trades}
+    assert one_pass and one_pass == each

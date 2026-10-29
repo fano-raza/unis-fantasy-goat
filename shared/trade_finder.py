@@ -33,6 +33,7 @@ venv can run it.
 """
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -236,15 +237,17 @@ def find_trades(
     """Trades for `team` that send away `give` (1 or 2 of its PlayerIds).
     One player picked -> 1-for-1 trades for him, plus 2-for-1s pairing him
     with each of your other players. Two picked -> 2-for-1s for exactly
-    that pair. players = ro.blend_players() output; rosters = ACTIVE rosters
+    that pair. None picked (empty list) -> any of your players: every
+    1-for-1 and every 2-for-1 pair, in one pass (the Trade Hub's
+    "recommend" without picks). players = ro.blend_players() output; rosters = ACTIVE rosters
     (PlayerIds) for every team; free_agents = PlayerIds on no roster."""
     config = config or TradeConfig()
     min_you, min_partner = config.thresholds
     give = list(give)
     if team not in rosters:
         raise KeyError(f"unknown team {team!r}")
-    if not 1 <= len(give) <= 2 or any(p not in rosters[team] for p in give):
-        raise ValueError("give must be 1 or 2 players on the team's active roster")
+    if len(give) > 2 or any(p not in rosters[team] for p in give):
+        raise ValueError("give must be 0-2 players on the team's active roster")
 
     league = League(players, rosters, config.optimizer)
     a = league.idx[team]
@@ -278,62 +281,72 @@ def find_trades(
     sa = league.scale[a]
     partners = [t for t in league.teams if t != team and (config.partners is None or t in config.partners)]
 
-    if "1-for-1" in config.shapes and len(give) == 1:
-        x = league.line(give)
-        for B in partners:
-            b, sb = league.idx[B], league.scale[league.idx[B]]
-            ys = league.rosters[B]
-            Y = league.comps.loc[ys].to_numpy()                     # (k, 11)
-            S = np.repeat(league.sums[None], len(ys), axis=0)
-            S[:, a] += sa * (Y - x)
-            S[:, b] += sb * (x - Y)
-            sc, mw = league.score(S, [a, b])
-            for k, y in enumerate(ys):
-                consider("1-for-1", B, give, [y], None, None, sc[k], mw[k])
+    singles = list(give) if len(give) == 1 else list(league.rosters[team]) if not give else []
+    if "1-for-1" in config.shapes:
+        for xid in singles:
+            x = league.line([xid])
+            for B in partners:
+                b, sb = league.idx[B], league.scale[league.idx[B]]
+                ys = league.rosters[B]
+                Y = league.comps.loc[ys].to_numpy()                     # (k, 11)
+                S = np.repeat(league.sums[None], len(ys), axis=0)
+                S[:, a] += sa * (Y - x)
+                S[:, b] += sb * (x - Y)
+                sc, mw = league.score(S, [a, b])
+                for k, y in enumerate(ys):
+                    consider("1-for-1", B, [xid], [y], None, None, sc[k], mw[k])
 
     if "2-for-1" in config.shapes:
         if len(give) == 2:
             pairs = [tuple(give)]
-        else:
+        elif len(give) == 1:
             pairs = [(give[0], t) for t in league.rosters[team] if t != give[0]]
+        else:
+            pairs = list(itertools.combinations(league.rosters[team], 2))
         fas = _fa_shortlist(league, free_agents, values, config.fa_shortlist)
         if fas and pairs:
             F = league.comps.loc[fas].to_numpy()                     # (f, 11)
-            X = np.stack([league.line(pair) for pair in pairs])      # (P, 11)
-            for B in partners:
-                b, sb = league.idx[B], league.scale[league.idx[B]]
-                ys = league.rosters[B]
-                Y = league.comps.loc[ys].to_numpy()                  # (k, 11)
-                # S0[p, k]: league after pair p goes to B for B's player k
-                S0 = np.broadcast_to(league.sums, (len(pairs), len(ys)) + league.sums.shape).copy()
-                S0[:, :, a] += sa * (Y[None] - X[:, None])
-                S0[:, :, b] += sb * (X[:, None] - Y[None])
-                # 1) the partner releases whoever costs it least (any of its
-                #    remaining players; drop d == k is "dropping" the traded one -> masked)
-                SD = np.repeat(S0[:, :, None], len(ys), axis=2)       # (P, k, d, n, 11)
-                SD[:, :, :, b] -= sb * Y[None, None]
-                bsc, _ = league.score(SD, [b])
-                bsc = bsc[..., 0]
-                bsc[:, np.arange(len(ys)), np.arange(len(ys))] = -np.inf
-                drop_i = np.argmax(bsc, axis=2)                       # (P, k)
-                S1 = S0.copy()
-                S1[:, :, b] -= sb * Y[drop_i]
-                # 2) you fill the open spot with the free agent best for you,
-                #    counted at fa_weight of his projection for YOUR score
-                #    only; the partner is scored against your team with the
-                #    pickup at face value (what the backtest validated)
-                SF = np.repeat(S1[:, :, None], len(fas), axis=2)      # (P, k, f, n, 11)
-                SF[:, :, :, a] += sa * F[None, None] * config.fa_weight
-                sc, mw = league.score(SF, [a])                       # (P, k, f, 1)
-                fa_j = np.argmax(sc[..., 0], axis=2)                  # (P, k)
-                S2 = S1.copy()
-                S2[:, :, a] += sa * F[fa_j]
-                psc, pmw = league.score(S2, [b])                     # (P, k, 1)
-                for pi, pair in enumerate(pairs):
-                    for k, y in enumerate(ys):
-                        j = fa_j[pi, k]
-                        consider("2-for-1", B, list(pair), [y], ys[drop_i[pi, k]], fas[j],
-                                 (sc[pi, k, j, 0], psc[pi, k, 0]), (mw[pi, k, j, 0], pmw[pi, k, 0]))
+            # Chunks of pairs keep the (pairs x partner players x drops x
+            # teams x stats) arrays small -- "any player" searches all ~78
+            # pairs of a 13-man roster on a memory-tight server.
+            all_pairs = pairs
+            for c0 in range(0, len(all_pairs), 16):
+                pairs = all_pairs[c0:c0 + 16]
+                X = np.stack([league.line(pair) for pair in pairs])      # (P, 11)
+                for B in partners:
+                    b, sb = league.idx[B], league.scale[league.idx[B]]
+                    ys = league.rosters[B]
+                    Y = league.comps.loc[ys].to_numpy()                  # (k, 11)
+                    # S0[p, k]: league after pair p goes to B for B's player k
+                    S0 = np.broadcast_to(league.sums, (len(pairs), len(ys)) + league.sums.shape).copy()
+                    S0[:, :, a] += sa * (Y[None] - X[:, None])
+                    S0[:, :, b] += sb * (X[:, None] - Y[None])
+                    # 1) the partner releases whoever costs it least (any of its
+                    #    remaining players; drop d == k is "dropping" the traded one -> masked)
+                    SD = np.repeat(S0[:, :, None], len(ys), axis=2)       # (P, k, d, n, 11)
+                    SD[:, :, :, b] -= sb * Y[None, None]
+                    bsc, _ = league.score(SD, [b])
+                    bsc = bsc[..., 0]
+                    bsc[:, np.arange(len(ys)), np.arange(len(ys))] = -np.inf
+                    drop_i = np.argmax(bsc, axis=2)                       # (P, k)
+                    S1 = S0.copy()
+                    S1[:, :, b] -= sb * Y[drop_i]
+                    # 2) you fill the open spot with the free agent best for you,
+                    #    counted at fa_weight of his projection for YOUR score
+                    #    only; the partner is scored against your team with the
+                    #    pickup at face value (what the backtest validated)
+                    SF = np.repeat(S1[:, :, None], len(fas), axis=2)      # (P, k, f, n, 11)
+                    SF[:, :, :, a] += sa * F[None, None] * config.fa_weight
+                    sc, mw = league.score(SF, [a])                       # (P, k, f, 1)
+                    fa_j = np.argmax(sc[..., 0], axis=2)                  # (P, k)
+                    S2 = S1.copy()
+                    S2[:, :, a] += sa * F[fa_j]
+                    psc, pmw = league.score(S2, [b])                     # (P, k, 1)
+                    for pi, pair in enumerate(pairs):
+                        for k, y in enumerate(ys):
+                            j = fa_j[pi, k]
+                            consider("2-for-1", B, list(pair), [y], ys[drop_i[pi, k]], fas[j],
+                                     (sc[pi, k, j, 0], psc[pi, k, 0]), (mw[pi, k, j, 0], pmw[pi, k, 0]))
 
     trades.sort(key=lambda t: (-t.gain, -t.partner_gain))
     # One card per (what you give, what you get): already unique by construction.
