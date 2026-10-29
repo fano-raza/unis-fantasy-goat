@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import copy
 import json
+import threading
+import time as _time
 import sys
 from datetime import date, time
 from pathlib import Path
@@ -1011,6 +1014,32 @@ class LeagueStore:
         return {"year": year, "categories": cats, "teams": [side(team_a), side(team_b)],
                 "uncounted": uncounted, "unknown": unknown}
 
+    def _trade_data_key(self, rosters: dict[str, list]) -> tuple:
+        """Identity of the data a recommendation depends on: the blended
+        players' inputs (season day + export sizes, from _optimizer_inputs)
+        and every team's active roster -- any roster move or daily refresh
+        makes a new key, so cached answers can't go stale."""
+        blend_key = getattr(self, "_blended_players_cache", (None,))[0]
+        return (blend_key, tuple(sorted((t, tuple(ids)) for t, ids in rosters.items())))
+
+    def warm_trade_recommendations(self, pause_seconds: float = 3.0) -> int:
+        """Precompute every team's league-wide recommendation (no picks, no
+        team B) for the current data -- the slow case (~15-20 s each on the
+        droplet), so a click on "Recommend trade" is usually instant. One
+        team at a time with a pause between, to leave the CPU to requests.
+        Returns how many were computed."""
+        _, rosters, *_ = self._optimizer_inputs()
+        done = 0
+        for team in sorted(rosters):
+            key = (self._trade_data_key(rosters), team, None, ())
+            with _TRADE_REC_LOCK:
+                cached = key in _TRADE_REC_CACHE
+            if not cached:
+                self.trade_recommend(team)
+                done += 1
+                _time.sleep(pause_seconds)
+        return done
+
     def trade_recommend(self, team_a: str, team_b: str | None = None, give: list[str] | None = None) -> dict:
         """Premium "Recommend trade": the trade finder (shared/trade_finder.py,
         backtested configuration) for team A -- with team B only, or across
@@ -1038,6 +1067,11 @@ class LeagueStore:
         if len(give_ids) > 2:
             raise ValueError("pick at most 2 players to trade away")
 
+        cache_key = (self._trade_data_key(rosters), team_a, team_b, tuple(give_ids))
+        with _TRADE_REC_LOCK:
+            if cache_key in _TRADE_REC_CACHE:
+                return copy.deepcopy(_TRADE_REC_CACHE[cache_key])
+
         config = tf.TradeConfig(mode="fleece", partner_min_gain=-1.0, max_results=None,
                                 partners=(team_b,) if team_b else None)
         # One pass: give_ids empty -> any of team A's players (every 1-for-1
@@ -1049,7 +1083,9 @@ class LeagueStore:
         elif cands:
             kind, pick = "least_lopsided", max(cands, key=lambda t: (t.partner_gain, t.gain))
         else:
-            return {"kind": "none", "team_a": team_a, "team_b": team_b, "year": year, "trade": None, "odds": None}
+            result = {"kind": "none", "team_a": team_a, "team_b": team_b, "year": year, "trade": None, "odds": None}
+            _cache_trade_recommendation(cache_key, result)
+            return copy.deepcopy(result)
 
         name = lambda pid: str(players.at[pid, "Player"])  # noqa: E731
         trade = {
@@ -1064,7 +1100,9 @@ class LeagueStore:
             team_a, pick.partner, trade["give"], trade["get"] + ([trade["fa_add"]] if trade["fa_add"] else []),
             drops={pick.partner: [trade["partner_drop"]]} if trade["partner_drop"] else None,
         )
-        return {"kind": kind, "team_a": team_a, "team_b": team_b, "year": year, "trade": trade, "odds": odds}
+        result = {"kind": kind, "team_a": team_a, "team_b": team_b, "year": year, "trade": trade, "odds": odds}
+        _cache_trade_recommendation(cache_key, result)
+        return copy.deepcopy(result)
 
     def weekly_recap(self, year: int, week: int) -> dict | None:
         """The Monday "Week N Recap" post's content for the Weekly Stats page
@@ -1852,6 +1890,22 @@ def reset_league_store() -> None:
     call would otherwise keep returning the stale pre-reload instance."""
     global _league_store
     _league_store = None
+
+
+# Trade Hub recommendations, cached across LeagueStore instances (app.py
+# rebuilds the store every 90 s) and keyed on the data they depend on (see
+# LeagueStore._trade_data_key). A league-wide search takes ~15-20 s on the
+# droplet; answers stay valid until a roster move or the daily refresh.
+_TRADE_REC_CACHE: dict = {}
+_TRADE_REC_LOCK = threading.Lock()
+_TRADE_REC_MAX = 128
+
+
+def _cache_trade_recommendation(key: tuple, result: dict) -> None:
+    with _TRADE_REC_LOCK:
+        _TRADE_REC_CACHE[key] = result
+        while len(_TRADE_REC_CACHE) > _TRADE_REC_MAX:
+            _TRADE_REC_CACHE.pop(next(iter(_TRADE_REC_CACHE)))
 
 
 def get_league_store(store: StatsStore | None = None) -> LeagueStore:

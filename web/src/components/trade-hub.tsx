@@ -22,6 +22,7 @@ import {
   type RosterRankRow,
   type TradeRecommendation,
 } from "@/lib/api";
+import { TRADE_SEARCH_PHRASES } from "@/lib/loading-phrases";
 import { useSelectedTeam } from "@/lib/use-selected-team";
 import { cn } from "@/lib/utils";
 
@@ -217,7 +218,13 @@ export function TradeHub({
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {(rec || recError) && <RecommendationNote rec={rec} error={recError} picked={rec?.kind === "none" ? recPicked : []} />}
-          <LoadingOverlay active={playersLoading || recommending} hasContent={players.length > 0} label={recommending ? "Finding a trade" : "Loading players"}>
+          <LoadingOverlay
+            active={playersLoading || recommending}
+            hasContent={players.length > 0}
+            label={recommending ? "Finding a trade" : "Loading players"}
+            phrases={recommending ? TRADE_SEARCH_PHRASES : undefined}
+            intervalMs={recommending ? 1800 : undefined}
+          >
             <div className="grid gap-4 md:grid-cols-[1fr_auto_1fr]">
               <TradeSide
                 label="Side A"
@@ -268,7 +275,9 @@ export function TradeHub({
           <DialogHeader>
             <DialogTitle>Recommend a trade for…</DialogTitle>
             <DialogDescription>
-              {teamB !== NO_TEAM ? `Searches trades with ${teamB}.` : "Searches trades with every team in the league."}
+              {teamB !== NO_TEAM
+                ? `Searches trades with ${teamB}.`
+                : "Searches trades with every team in the league. This can take up to 20 seconds the first time today."}
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-2">

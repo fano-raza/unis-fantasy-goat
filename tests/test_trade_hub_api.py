@@ -166,3 +166,30 @@ def test_route_errors_map_to_status_codes(monkeypatch):
     assert client.post("/league/trade_odds", json={"password": "secret", "team_a": "A", "team_b": "Z"}).status_code == 404
     monkeypatch.setattr(app_module.league_store, "trade_recommend", bad)
     assert client.post("/league/trade_recommend", json={"password": "secret", "team_a": "A"}).status_code == 422
+
+
+# --- recommendation cache + warm-up ----------------------------------------
+
+def test_recommendations_are_cached_until_the_data_changes(store, monkeypatch):  # noqa: F811
+    from dashboard_site.api import league_store as ls_module
+    ls_module._TRADE_REC_CACHE.clear()
+    calls = []
+    real = tf.find_trades
+    monkeypatch.setattr(tf, "find_trades", lambda *a, **k: calls.append(1) or real(*a, **k))
+    first = store.trade_recommend("A")
+    again = store.trade_recommend("A")
+    assert again == first and len(calls) == 1          # served from the cache
+    again["kind"] = "tampered"                          # callers get copies
+    assert store.trade_recommend("A")["kind"] == first["kind"]
+    # A roster move changes the key -> searched again.
+    _, rosters, *_ = store._optimizer_inputs()
+    rosters_moved = {t: list(ids) for t, ids in rosters.items()}
+    rosters_moved["A"] = rosters_moved["A"][::-1][:3]
+    assert store._trade_data_key(rosters_moved) != store._trade_data_key(rosters)
+
+
+def test_warm_up_fills_every_team_once(store):  # noqa: F811
+    from dashboard_site.api import league_store as ls_module
+    ls_module._TRADE_REC_CACHE.clear()
+    assert store.warm_trade_recommendations(pause_seconds=0) == 4
+    assert store.warm_trade_recommendations(pause_seconds=0) == 0   # nothing left to do

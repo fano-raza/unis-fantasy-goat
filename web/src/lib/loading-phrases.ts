@@ -79,3 +79,16 @@ export const OPTIMIZER_PHRASES: string[] = [
   "Tuning hyperparameters",
   "Maximizing expected box-score utility",
 ];
+
+// Trade Hub's "Recommend trade" search (a league-wide search can take
+// ~15-20 s on the server when it isn't already cached).
+export const TRADE_SEARCH_PHRASES: string[] = [
+  "Calling every front office",
+  "Working the trade wire",
+  "Checking every roster",
+  "Weighing two-for-ones",
+  "Scouting the waiver wire",
+  "Balancing the categories",
+  "Asking what they need",
+  "Running the numbers on both sides",
+];

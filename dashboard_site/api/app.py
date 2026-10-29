@@ -161,6 +161,29 @@ loaded_sources: dict[str, str | None] = _iso_sources(_scan_source_mtimes(store.r
 threading.Thread(target=_refresh_loop, daemon=True).start()
 
 
+def _trade_warm_loop() -> None:
+    """Keeps every team's league-wide trade recommendation precomputed for
+    the current data (premium Trade Hub), so "Recommend trade" is usually
+    instant instead of a 15-20 s search on this small server. Only when
+    premium is configured; already-cached teams are skipped, so after the
+    first pass this only does work when rosters or the daily data change."""
+    time.sleep(60)  # let the first data load and requests settle
+    while True:
+        if os.environ.get("ROSTER_OPTIMIZER_PASSWORD"):
+            try:
+                with _state_lock:
+                    current = league_store
+                done = current.warm_trade_recommendations()
+                if done:
+                    print(f"trade recommendations precomputed for {done} teams")
+            except Exception as exc:
+                print(f"trade recommendation warm-up failed: {exc}")
+        time.sleep(600)
+
+
+threading.Thread(target=_trade_warm_loop, daemon=True).start()
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     # Used to be a dumb static check -- "the process is up" -- which is

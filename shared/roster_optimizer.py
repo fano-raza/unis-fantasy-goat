@@ -411,12 +411,16 @@ def normal_cdf(z: np.ndarray) -> np.ndarray:
 def at_least_k(p: np.ndarray, k: int) -> np.ndarray:
     """P(at least k successes) for independent categories with win
     probabilities p (..., n_cats) -- Poisson-binomial DP."""
-    dist = np.zeros(p.shape[:-1] + (p.shape[-1] + 1,))
+    # In place, and after c categories only counts 0..c can be non-zero --
+    # same recurrence as before, without a fresh array per step (this was
+    # half of a league-wide Trade Hub recommendation's run time).
+    n = p.shape[-1]
+    dist = np.zeros(p.shape[:-1] + (n + 1,))
     dist[..., 0] = 1.0
-    for c in range(p.shape[-1]):
+    for c in range(n):
         pc = p[..., c:c + 1]
-        shifted = np.concatenate([np.zeros_like(dist[..., :1]), dist[..., :-1]], axis=-1)
-        dist = dist * (1 - pc) + shifted * pc
+        dist[..., 1:c + 2] = dist[..., 1:c + 2] * (1 - pc) + dist[..., 0:c + 1] * pc
+        dist[..., 0:1] *= 1 - pc
     return dist[..., k:].sum(axis=-1)
 
 
