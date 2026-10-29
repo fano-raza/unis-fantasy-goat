@@ -473,6 +473,10 @@ export interface TradeOddsSide {
   after: Record<OptimizerCategory, number>;
   active_before: number;
   active_after: number;
+  // auto_release=false only: how many players over its starting active
+  // roster size this team ends up, and who it would release.
+  over_by: number;
+  suggested_drops: string[];
 }
 
 export interface TradeOdds {
@@ -482,6 +486,9 @@ export interface TradeOdds {
   // Picked players on IR (they count for neither team) / with no stats.
   uncounted: string[];
   unknown: string[];
+  // False while a team is over its roster size (auto_release=false) -- the
+  // after-numbers aren't meaningful until it drops someone.
+  complete: boolean;
 }
 
 // `a_sends` go to team B, `b_sends` to team A -- any NBA player (a free
@@ -493,6 +500,8 @@ export const getTradeOdds = (req: {
   a_sends: string[];
   b_sends: string[];
   drops?: Record<string, string[]>;
+  // false: never release anyone server-side; flag over-size teams instead.
+  auto_release?: boolean;
 }) => post<TradeOdds>("/league/trade_odds", req);
 
 export interface TradeRecommendation {

@@ -482,7 +482,7 @@ def league_trade_odds(req: TradeOddsRequest) -> dict:
     trade."""
     _check_roster_optimizer_password(req.password)
     try:
-        return league_store.trade_odds(req.team_a, req.team_b, req.a_sends, req.b_sends, req.drops)
+        return league_store.trade_odds(req.team_a, req.team_b, req.a_sends, req.b_sends, req.drops, req.auto_release)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc.args[0])) from exc
     except ValueError as exc:

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeftRight, Check, Crown, Plus, RotateCcw, Undo2, X } from "lucide-react";
+import { ArrowLeftRight, Check, Crown, Plus, RotateCcw, TriangleAlert, Undo2, X } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -69,6 +69,16 @@ export function TradeHub({
   // probability and nobody receives them.
   const [dropA, setDropA] = useState<string[]>([]);
   const [dropB, setDropB] = useState<string[]>([]);
+  // The subset of those drops made automatically because the team ended up
+  // with too many players (the player it would miss least, suggested by the
+  // server) -- shown as "Auto-dropped", undoable.
+  const [autoA, setAutoA] = useState<string[]>([]);
+  const [autoB, setAutoB] = useState<string[]>([]);
+  // The user undid an auto-drop: leave the team over its limit (warning,
+  // no win probability) instead of auto-dropping again, until the trade
+  // itself changes.
+  const [declinedA, setDeclinedA] = useState(false);
+  const [declinedB, setDeclinedB] = useState(false);
 
   // The last recommendation -- cleared as soon as the user edits the trade
   // (it no longer describes what's on screen).
@@ -114,8 +124,21 @@ export function TradeHub({
     setRecError(null);
   }
 
+  // The trade's players changed: auto-drops were for the old trade -- undo
+  // them (a new one is suggested if a team is still over) and forget any
+  // declined auto-drop.
+  function resetAutoDrops() {
+    setDropA((d) => d.filter((n) => !autoA.includes(n)));
+    setDropB((d) => d.filter((n) => !autoB.includes(n)));
+    setAutoA([]);
+    setAutoB([]);
+    setDeclinedA(false);
+    setDeclinedB(false);
+  }
+
   function setTeam(side: Side, team: string) {
     edited();
+    resetAutoDrops();
     if (side === "a") {
       setTeamA(team);
       setSendA([]);
@@ -140,6 +163,7 @@ export function TradeHub({
 
   function toggle(side: Side, name: string) {
     edited();
+    resetAutoDrops();
     const [list, set, other, setOther] = side === "a" ? [sendA, setSendA, sendB, setSendB] : [sendB, setSendB, sendA, setSendA];
     if (list.includes(name)) set(list.filter((n) => n !== name));
     else if (list.length < TRADE_SIDE_CAP) {
@@ -154,8 +178,14 @@ export function TradeHub({
   function toggleDrop(side: Side, name: string) {
     edited();
     const [drops, setDrops, list, set] = side === "a" ? [dropA, setDropA, sendA, setSendA] : [dropB, setDropB, sendB, setSendB];
-    if (drops.includes(name)) setDrops(drops.filter((n) => n !== name));
-    else {
+    const [autos, setAutos, setDeclined] = side === "a" ? [autoA, setAutoA, setDeclinedA] : [autoB, setAutoB, setDeclinedB];
+    if (drops.includes(name)) {
+      setDrops(drops.filter((n) => n !== name));
+      if (autos.includes(name)) {
+        setAutos(autos.filter((n) => n !== name));
+        setDeclined(true);
+      }
+    } else {
       setDrops([...drops, name]);
       if (list.includes(name)) set(list.filter((n) => n !== name));
     }
@@ -195,6 +225,10 @@ export function TradeHub({
         // The partner's release to make room shows as a dropped row.
         setDropA([]);
         setDropB(res.trade.partner_drop ? [res.trade.partner_drop] : []);
+        setAutoA([]);
+        setAutoB(res.trade.partner_drop ? [res.trade.partner_drop] : []);
+        setDeclinedA(false);
+        setDeclinedB(false);
       } else {
         setTeamA(forTeam);
       }
@@ -213,6 +247,7 @@ export function TradeHub({
     teamA === startTeamA && teamB === NO_TEAM && sendA.length + sendB.length + dropA.length + dropB.length === 0 && !rec && !recError;
   function clearAll() {
     edited();
+    resetAutoDrops();
     setTeamA(startTeamA);
     setTeamB(NO_TEAM);
     setSendA([]);
@@ -226,6 +261,35 @@ export function TradeHub({
       if (teamA === NO_TEAM) setPickTeamOpen(true);
       else void recommend(teamA);
     });
+  }
+
+  // How many players over its starting active roster each team ends up --
+  // the same count the server uses: active (non-IR) players with stats this
+  // season, minus who it sends and drops, plus who it receives (players on
+  // someone's IR or without stats don't count).
+  const statNames = useMemo(() => new Set(players.map((p) => p.Player)), [players]);
+  function overBy(team: string, sends: string[], drops: string[], receives: string[]): number {
+    if (team === NO_TEAM) return 0;
+    const active = new Set(
+      rosterRows.filter((r) => r.FantasyTeam === team && r.LineupSlot !== "IR" && statNames.has(r.Player)).map((r) => r.Player),
+    );
+    const leaving = new Set([...sends, ...drops].filter((n) => active.has(n)));
+    const arriving = receives.filter((n) => statNames.has(n) && !active.has(n) && !owners.get(n)?.ir);
+    return Math.max(0, arriving.length - leaving.size);
+  }
+  const overA = overBy(teamA, sendA, dropA, sendB);
+  const overB = overBy(teamB, sendB, dropB, sendA);
+
+  // The win-probability panel found a team over its limit: drop the
+  // player(s) the server suggests, visibly -- unless the user undid that.
+  function applySuggestedDrops(team: string, names: string[]) {
+    if (team === teamA && !declinedA) {
+      setDropA((d) => [...d, ...names.filter((n) => !d.includes(n))]);
+      setAutoA((a) => [...a, ...names.filter((n) => !a.includes(n))]);
+    } else if (team === teamB && !declinedB) {
+      setDropB((d) => [...d, ...names.filter((n) => !d.includes(n))]);
+      setAutoB((a) => [...a, ...names.filter((n) => !a.includes(n))]);
+    }
   }
 
   const playersA = players.filter((p) => sendA.includes(p.Player));
@@ -280,6 +344,11 @@ export function TradeHub({
                 roster={teamA !== NO_TEAM ? rosterOf(teamA) : []}
                 sending={sendA}
                 dropped={dropA}
+                autoDropped={autoA}
+                overBy={overA}
+                // Unlocked premium resolves an over-size team with an
+                // auto-drop in a moment; only warn when that won't happen.
+                warn={overA > 0 && (declinedA || !premium.unlocked)}
                 players={players}
                 owners={owners}
                 onTeam={(t) => setTeam("a", t)}
@@ -298,6 +367,9 @@ export function TradeHub({
                 roster={teamB !== NO_TEAM ? rosterOf(teamB) : []}
                 sending={sendB}
                 dropped={dropB}
+                autoDropped={autoB}
+                overBy={overB}
+                warn={overB > 0 && (declinedB || !premium.unlocked)}
                 players={players}
                 owners={owners}
                 onTeam={(t) => setTeam("b", t)}
@@ -319,6 +391,11 @@ export function TradeHub({
         aSends={sendA}
         bSends={sendB}
         drops={bothTeams ? { [teamA]: dropA, [teamB]: dropB } : null}
+        overLimit={[
+          ...(overA > 0 && declinedA ? [{ team: teamA, overBy: overA }] : []),
+          ...(overB > 0 && declinedB ? [{ team: teamB, overBy: overB }] : []),
+        ]}
+        onSuggestedDrops={applySuggestedDrops}
         format={meta ? (meta.season_format[String(meta.current_year)] ?? "wl") : "wl"}
       />
 
@@ -414,6 +491,9 @@ function TradeSide({
   roster,
   sending,
   dropped,
+  autoDropped,
+  overBy,
+  warn,
   players,
   owners,
   onTeam,
@@ -429,6 +509,9 @@ function TradeSide({
   roster: RosterRankRow[];
   sending: string[];
   dropped: string[];
+  autoDropped: string[];
+  overBy: number;
+  warn: boolean;
   players: PlayerStat[];
   owners: Map<string, Owner>;
   onTeam: (team: string) => void;
@@ -462,11 +545,24 @@ function TradeSide({
       </div>
 
       <div className="flex items-baseline justify-between gap-2 text-sm">
-        <span className="font-medium">
-          {receiver} receives{" "}
-          <span className="tabular-nums text-muted-foreground">
-            {sending.length}/{TRADE_SIDE_CAP}
+        <span className="flex items-baseline gap-2 font-medium">
+          <span>
+            {receiver} receives{" "}
+            <span className="tabular-nums text-muted-foreground">
+              {sending.length}/{TRADE_SIDE_CAP}
+            </span>
           </span>
+          {warn && (
+            <span
+              className="flex items-center gap-1 self-center text-xs font-semibold text-gold"
+              title={`${team} has ${overBy} too many player${overBy === 1 ? "" : "s"}: drop ${overBy === 1 ? "one" : overBy} to calculate the win probability`}
+              role="img"
+              aria-label={`${team} is ${overBy} over its roster limit`}
+            >
+              <TriangleAlert className="size-3.5" aria-hidden />
+              {overBy} too many
+            </span>
+          )}
         </span>
         <AnyPlayerPicker players={players} owners={owners} exclude={[...sending, ...ownNames]} disabled={full} onPick={onToggle} />
       </div>
@@ -484,6 +580,7 @@ function TradeSide({
                 tag={ir ? "IR" : null}
                 checked={sending.includes(r.Player)}
                 dropped={dropped.includes(r.Player)}
+                autoDropped={autoDropped.includes(r.Player)}
                 disabled={!sending.includes(r.Player) && full}
                 onToggle={() => onToggle(r.Player)}
                 onDrop={() => onDrop(r.Player)}
@@ -525,6 +622,7 @@ function PlayerRow({
   tag,
   checked,
   dropped = false,
+  autoDropped = false,
   added = false,
   disabled = false,
   onToggle,
@@ -536,6 +634,8 @@ function PlayerRow({
   tag: string | null;
   checked: boolean;
   dropped?: boolean;
+  // Dropped automatically (the team had too many players).
+  autoDropped?: boolean;
   // Added with "Add any player": not on this roster, greyed.
   added?: boolean;
   disabled?: boolean;
@@ -580,7 +680,14 @@ function PlayerRow({
         >
           {name}
         </span>
-        {dropped && <span className="rounded-sm bg-loss/15 px-1.5 text-[11px] font-semibold text-loss">Dropped</span>}
+        {dropped && (
+          <span
+            className="rounded-sm bg-loss/15 px-1.5 text-[11px] font-semibold text-loss"
+            title={autoDropped ? "Dropped to make room: the player this team would miss least. Undo to keep him." : undefined}
+          >
+            {autoDropped ? "Auto-dropped" : "Dropped"}
+          </span>
+        )}
         {tag && <span className="rounded-sm bg-muted px-1.5 text-[11px] font-semibold text-muted-foreground">{tag}</span>}
         <span className="w-9 text-xs text-muted-foreground">{nbaTeam}</span>
         <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">{rank != null ? `#${rank}` : ""}</span>

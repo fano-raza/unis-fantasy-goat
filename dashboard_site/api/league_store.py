@@ -909,6 +909,7 @@ class LeagueStore:
         a_sends: list[str],
         b_sends: list[str],
         drops: dict[str, list[str]] | None = None,
+        auto_release: bool = True,
     ) -> dict:
         """Premium: both teams' weekly win probabilities before and after a trade
         built on the Trade Hub. `a_sends` go to team B, `b_sends` to team A.
@@ -918,7 +919,11 @@ class LeagueStore:
         they leave the team, nobody receives them). A team still over its
         starting number of active players after that releases the one it
         misses least (by its own score -- the trade finder's rule;
-        `auto_drop`). Players on IR,
+        `auto_drop`). With auto_release=False (the Trade Hub, which shows
+        that release on screen as a reversible auto-drop) nobody is
+        released: a team left over its size gets `over_by` > 0 and
+        `suggested_drops` (who it would release), and its numbers aren't
+        meaningful until a drop is made (`complete` is False). Players on IR,
         or with no stats this season, don't count (listed in `uncounted` /
         `unknown`). Same scoring as the optimizer, with both teams rescored
         against the league as it would be after the trade."""
@@ -968,6 +973,7 @@ class LeagueStore:
 
         dropped: dict[str, list] = {team_a: [], team_b: []}
         auto: dict[str, bool] = {team_a: False, team_b: False}
+        suggested: dict[str, list] = {team_a: [], team_b: []}
         for team in (team_a, team_b):
             # Players the user releases (Trade Hub "Drop"): always removed --
             # they leave this team and nobody receives them.
@@ -977,15 +983,22 @@ class LeagueStore:
                     new[team].remove(pid)
                     dropped[team].append(pid)
             i = league.idx[team]
-            while len(new[team]) > len(rosters[team]):
+            trial = list(new[team])
+            picks = []
+            while len(trial) > len(rosters[team]):
                 # Only players the team already had -- never the ones it just received.
-                options = [p for p in new[team] if p in rosters[team]]
+                options = [p for p in trial if p in rosters[team]]
                 if not options:
                     break
-                best = max(options, key=lambda d: float(league.score(sums({**new, team: [p for p in new[team] if p != d]})[None], [i])[0][0, 0]))
-                new[team].remove(best)
-                dropped[team].append(best)
-                auto[team] = True
+                best = max(options, key=lambda d: float(league.score(sums({**new, team: [p for p in trial if p != d]})[None], [i])[0][0, 0]))
+                trial.remove(best)
+                picks.append(best)
+            if auto_release:
+                new[team] = trial
+                dropped[team].extend(picks)
+                auto[team] = bool(picks)
+            else:
+                suggested[team] = picks
 
         before_S, after_S = league.sums, sums(new)
         name = lambda pid: str(players.at[pid, "Player"])  # noqa: E731
@@ -1011,10 +1024,13 @@ class LeagueStore:
                 "after": {c: round(float(p1[k]), 4) for c, k in zip(cats, cat_idx)},
                 "active_before": len(rosters[team]),
                 "active_after": len(new[team]),
+                "over_by": max(0, len(new[team]) - len(rosters[team])),
+                "suggested_drops": [name(p) for p in suggested[team]],
             }
 
-        return {"year": year, "categories": cats, "teams": [side(team_a), side(team_b)],
-                "uncounted": uncounted, "unknown": unknown}
+        sides = [side(team_a), side(team_b)]
+        return {"year": year, "categories": cats, "teams": sides, "uncounted": uncounted, "unknown": unknown,
+                "complete": all(sd["over_by"] == 0 for sd in sides)}
 
     def _trade_data_key(self, rosters: dict[str, list]) -> tuple:
         """Identity of the data a recommendation depends on: the blended

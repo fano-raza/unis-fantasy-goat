@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Crown } from "lucide-react";
+import { Crown, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoadingOverlay } from "@/components/loading-overlay";
@@ -26,6 +26,8 @@ export function TradeWinChance({
   aSends,
   bSends,
   drops,
+  overLimit = [],
+  onSuggestedDrops,
   format = "wl",
 }: {
   teamA: string | null;
@@ -33,6 +35,12 @@ export function TradeWinChance({
   aSends: string[];
   bSends: string[];
   drops: Record<string, string[]> | null;
+  // Teams left over their roster limit on purpose (the user undid an
+  // auto-drop): no win probability until they drop someone.
+  overLimit?: { team: string; overBy: number }[];
+  // A team ended up with too many players: the server's pick(s) for who it
+  // would release, for the page to drop visibly ("Auto-dropped").
+  onSuggestedDrops?: (team: string, names: string[]) => void;
   // The season's standings format -- picks the headline number.
   format?: SeasonFormat;
 }) {
@@ -58,6 +66,8 @@ export function TradeWinChance({
           <LockedPreview onUnlock={() => premium.requireUnlock()} />
         ) : !teamA || !teamB ? (
           <p className="text-sm text-muted-foreground">Choose a team on both sides to see how the trade changes their win probabilities.</p>
+        ) : overLimit.length > 0 ? (
+          <OverLimitMessage teams={overLimit} />
         ) : (
           <UnlockedOdds
             teamA={teamA}
@@ -68,10 +78,27 @@ export function TradeWinChance({
             format={format}
             password={premium.password}
             onRejected={premium.lock}
+            onSuggestedDrops={onSuggestedDrops}
           />
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function OverLimitMessage({ teams }: { teams: { team: string; overBy: number }[] }) {
+  return (
+    <div className="flex flex-col gap-1.5 rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+      {teams.map(({ team, overBy }) => (
+        <p key={team} className="flex items-start gap-2">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-gold" aria-hidden />
+          <span>
+            {team} has too many players on its roster and must drop {overBy === 1 ? "one" : overBy} to calculate the win
+            probability.
+          </span>
+        </p>
+      ))}
+    </div>
   );
 }
 
@@ -112,6 +139,7 @@ function UnlockedOdds({
   format,
   password,
   onRejected,
+  onSuggestedDrops,
 }: {
   teamA: string;
   teamB: string;
@@ -121,22 +149,38 @@ function UnlockedOdds({
   format: SeasonFormat;
   password: string;
   onRejected: () => void;
+  onSuggestedDrops?: (team: string, names: string[]) => void;
 }) {
   // The last answer, tagged with the trade it was for -- "loading" is
   // simply "what's on screen is for a different trade".
   const [result, setResult] = useState<{ key: string; odds: TradeOdds | null; error: string | null } | null>(null);
   const key = JSON.stringify([teamA, teamB, aSends, bSends, drops]);
-  const loading = result?.key !== key;
-  const odds = result?.odds ?? null;
+  // An answer for an over-limit roster isn't shown: the page drops the
+  // suggested player and asks again (keep the last complete numbers up).
+  const [shown, setShown] = useState<TradeOdds | null>(null);
+  const loading = result?.key !== key || (result?.odds != null && !result.odds.complete);
+  const odds = result?.odds?.complete ? result.odds : shown;
   const error = result?.key === key ? result.error : null;
+  // Over the limit but the server had nobody to suggest (e.g. every player
+  // the team has left was just received) -- explain instead of waiting.
+  const stuck =
+    result?.key === key && result.odds != null && !result.odds.complete
+      ? result.odds.teams.filter((t) => t.over_by > 0 && t.suggested_drops.length === 0)
+      : [];
 
   useEffect(() => {
     let cancelled = false;
     const id = setTimeout(() => {
       const [a, b, as, bs, d] = JSON.parse(key) as [string, string, string[], string[], Record<string, string[]> | null];
-      getTradeOdds({ password, team_a: a, team_b: b, a_sends: as, b_sends: bs, ...(d ? { drops: d } : {}) })
+      getTradeOdds({ password, team_a: a, team_b: b, a_sends: as, b_sends: bs, ...(d ? { drops: d } : {}), auto_release: false })
         .then((res) => {
-          if (!cancelled) setResult({ key, odds: res, error: null });
+          if (cancelled) return;
+          setResult({ key, odds: res, error: null });
+          if (res.complete) setShown(res);
+          else
+            for (const side of res.teams) {
+              if (side.over_by > 0 && side.suggested_drops.length > 0) onSuggestedDrops?.(side.team, side.suggested_drops);
+            }
         })
         .catch((err) => {
           if (cancelled) return;
@@ -160,8 +204,12 @@ function UnlockedOdds({
       cancelled = true;
       clearTimeout(id);
     };
+    // onSuggestedDrops is a fresh closure each render; the request only
+    // depends on the trade itself.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, password, onRejected]);
 
+  if (stuck.length > 0) return <OverLimitMessage teams={stuck.map((t) => ({ team: t.team, overBy: t.over_by }))} />;
   if (error && !odds) return <p className="text-sm text-muted-foreground">{error}</p>;
   const traded = aSends.length > 0 || bSends.length > 0;
 

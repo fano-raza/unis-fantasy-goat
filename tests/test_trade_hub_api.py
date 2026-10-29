@@ -155,7 +155,7 @@ def test_routes_pass_requests_through(monkeypatch):
     monkeypatch.setattr(app_module.league_store, "trade_recommend", lambda *a: seen.append(a) or {"ok": 2})
     r = client.post("/league/trade_odds", json={"password": "secret", "team_a": "A", "team_b": "B",
                                                  "a_sends": ["P1"], "b_sends": ["P5"]})
-    assert r.json() == {"ok": 1} and seen[-1] == ("A", "B", ["P1"], ["P5"], None)
+    assert r.json() == {"ok": 1} and seen[-1] == ("A", "B", ["P1"], ["P5"], None, True)
     r = client.post("/league/trade_recommend", json={"password": "secret", "team_a": "A", "give": ["P1"]})
     assert r.json() == {"ok": 2} and seen[-1] == ("A", None, ["P1"])
     assert client.post("/league/trade_recommend", json={"password": "secret", "team_a": "A",
@@ -202,3 +202,15 @@ def test_warm_up_fills_every_team_once(store):  # noqa: F811
     ls_module._TRADE_REC_CACHE.clear()
     assert store.warm_trade_recommendations(pause_seconds=0) == 4
     assert store.warm_trade_recommendations(pause_seconds=0) == 0   # nothing left to do
+
+
+def test_without_auto_release_an_over_roster_team_is_flagged_with_a_suggestion(store):  # noqa: F811
+    auto = store.trade_odds("A", "B", ["P1", "P2"], ["P5"])
+    flagged = store.trade_odds("A", "B", ["P1", "P2"], ["P5"], auto_release=False)
+    b = flagged["teams"][1]
+    assert not flagged["complete"] and b["over_by"] == 1 and b["drops"] == [] and not b["auto_drop"]
+    assert b["suggested_drops"] == auto["teams"][1]["drops"]       # same player the auto release picks
+    # Applying the suggestion as an explicit drop gives the auto-release numbers.
+    fixed = store.trade_odds("A", "B", ["P1", "P2"], ["P5"], drops={"B": b["suggested_drops"]}, auto_release=False)
+    assert fixed["complete"] and fixed["teams"][1]["matchup_win"] == auto["teams"][1]["matchup_win"]
+    assert auto["complete"]

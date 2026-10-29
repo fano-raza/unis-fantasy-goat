@@ -128,9 +128,12 @@ class TradeOddsRequest(BaseModel):
     # a pickup for the receiving team).
     a_sends: list[str] = Field(default_factory=list, max_length=10)
     b_sends: list[str] = Field(default_factory=list, max_length=10)
-    # Who a team releases if it ends up over its roster size; omitted ->
-    # the player it misses least.
+    # Players each team releases (always applied).
     drops: dict[str, list[str]] | None = None
+    # True: a team still over its roster size releases the player it misses
+    # least. False (Trade Hub): nobody is released; the response flags the
+    # team (over_by) with suggested_drops for the page to apply visibly.
+    auto_release: bool = True
 
 
 class TradeRecommendRequest(BaseModel):
