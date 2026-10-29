@@ -36,18 +36,15 @@ function getPlayerCatValue(player: PlayerStat, statWindow: StatWindow, cat: Cate
 // Aggregates a group of up to 5 players for one stat category -- what a
 // side gives up, so always the players ADDED together: their totals over
 // the window (Totals) or their per-game averages summed (Averages).
-// FG%/FT% use the real weighted ratio (the group's makes / attempts) rather
-// than a naive average of each player's percentage, which would misweight
-// players with very different attempt volumes -- same reasoning as
-// StatTable's Score column elsewhere in this app.
+// FG%/FT% are weighted by attempts (groupPercentage below) rather than a
+// naive average of each player's percentage, which would misweight players
+// with very different attempt volumes -- same reasoning as StatTable's Score
+// column elsewhere in this app.
 function aggregate(players: PlayerStat[], statWindow: StatWindow, mode: "totals" | "averages"): Record<Category, number | null> {
   const result = {} as Record<Category, number | null>;
   for (const cat of MAIN_CATS) {
     if (cat === "FG%" || cat === "FT%") {
-      // Weighted by volume: the group's makes / attempts, summed per game in
-      // Averages mode and over the window in Totals mode.
-      const group = madeAttemptedValue(players, statWindow, cat, mode);
-      result[cat] = group && group.att > 0 ? group.made / group.att : null;
+      result[cat] = groupPercentage(players, statWindow, cat);
       continue;
     }
     const values = players.map((p) => getPlayerCatValue(p, statWindow, cat, mode)).filter((v): v is number => v !== null);
@@ -63,6 +60,32 @@ function aggregate(players: PlayerStat[], statWindow: StatWindow, mode: "totals"
     result[cat] = values.reduce((a, b) => a + b, 0);
   }
   return result;
+}
+
+// FG%/FT% for a group (user rule, 2026-10-28): weighted by attempts -- the
+// players' makes / attempts over the window, so the same in Totals and
+// Averages mode. If any picked player is missing makes/attempts, falls back
+// to the plain average of the players' percentages.
+function groupPercentage(players: PlayerStat[], statWindow: StatWindow, cat: "FG%" | "FT%"): number | null {
+  let made = 0;
+  let att = 0;
+  let complete = true;
+  const pcts: number[] = [];
+  for (const p of players) {
+    const m = p[`${statWindow}_${cat}_made`];
+    const a = p[`${statWindow}_${cat}_att`];
+    const pct = p[`${statWindow}_${cat}`];
+    if (typeof m === "number" && typeof a === "number") {
+      made += m;
+      att += a;
+      if (a > 0) pcts.push(m / a);
+    } else {
+      complete = false;
+      if (typeof pct === "number") pcts.push(pct);
+    }
+  }
+  if (complete && att > 0) return made / att;
+  return pcts.length ? pcts.reduce((x, y) => x + y, 0) / pcts.length : null;
 }
 
 function formatStat(cat: Category, value: number | null): string {
