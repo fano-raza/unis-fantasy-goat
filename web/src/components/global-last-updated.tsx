@@ -15,11 +15,11 @@ import type { RefreshSource } from "@/lib/api";
 // -- mirrors every `<SourceLastUpdated source="...">` call site this
 // replaced, 1:1.
 function sourceForPathname(pathname: string): RefreshSource | null {
-  if (pathname.startsWith("/team/draft-hub")) return "draft";
+  if (pathname.startsWith("/league/draft-hub")) return "draft";
   if (pathname.startsWith("/team/trade-hub")) return "player_stats";
   if (pathname.startsWith("/team/roster")) return "team_summary";
   if (pathname === "/career/profile" || pathname === "/career/comparison") return "team_summary";
-  if (pathname.startsWith("/standings")) return "live";
+  if (pathname.startsWith("/league")) return "live";
   if (pathname.startsWith("/weekly-stats") || pathname === "/career/stats" || pathname === "/analysis") {
     return "live";
   }

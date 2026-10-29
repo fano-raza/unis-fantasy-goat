@@ -8,14 +8,15 @@ import { PremiumNavButton } from "@/components/premium";
 
 export const NAV_LINKS = [
   { href: "/weekly-stats", label: "Weekly Stats" },
-  // Team's and Career's hrefs point at their first sub-page (bare /team
-  // and /career have no view of their own -- next.config.ts redirects
+  // Team's, League's and Career's hrefs point at their first sub-page
+  // (bare /team, /league and /career have no view of their own --
+  // next.config.ts redirects
   // them), but the whole /team/* or /career/* section should still
   // highlight the nav item -- activePrefix covers that, since it isn't
-  // derivable from href alone here the way it is for Weekly Stats/
-  // Standings (whose sub-pages live directly under their own href).
+  // derivable from href alone here the way it is for Weekly Stats (whose
+  // sub-pages live directly under its own href).
   { href: "/team/roster", label: "Team", activePrefix: "/team" },
-  { href: "/standings", label: "Standings" },
+  { href: "/league/standings", label: "League", activePrefix: "/league" },
   { href: "/career/profile", label: "Career", activePrefix: "/career" },
   { href: "/analysis", label: "Analysis" },
   { href: "/champions-lounge", label: "Champions Lounge", locked: true },
@@ -27,11 +28,11 @@ export function Nav() {
     <nav className="-mx-4 flex items-end gap-1 overflow-x-auto px-4 sm:mx-0 sm:px-0">
       {NAV_LINKS.map((link) => {
         // Also active on a sub-page route (e.g. /weekly-stats/ultra,
-        // /standings/ratings) -- these split off from a single-URL page
+        // /league/ratings) -- these split off from a single-URL page
         // into their own routes but should still highlight the same top
         // nav item as their parent. Prefix defaults to href itself
-        // (Weekly Stats/Standings' sub-pages live directly under their own
-        // href), but Team/Career override it via activePrefix since their
+        // (Weekly Stats' sub-pages live directly under its own href), but
+        // Team/League/Career override it via activePrefix since their
         // hrefs are themselves nested sub-pages (see NAV_LINKS above).
         const prefix = link.activePrefix ?? link.href;
         const active = pathname === link.href || pathname.startsWith(`${prefix}/`);

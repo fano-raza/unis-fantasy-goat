@@ -28,10 +28,10 @@ import {
   type StandingsHistoryResponse,
   type StandingsResponse,
 } from "@/lib/api";
-import { STANDINGS_VIEW_OPTIONS, STANDINGS_VIEW_PATHS } from "@/lib/standings-nav";
+import { LEAGUE_VIEW_OPTIONS, LEAGUE_VIEW_PATHS } from "@/lib/section-nav";
 
 interface LeagueWinsViewProps {
-  // Fetched server-side (see app/standings/league-wins/page.tsx); null if
+  // Fetched server-side (see app/league/league-wins/page.tsx); null if
   // that fetch failed, in which case this falls back to the original
   // client fetch.
   initialBootstrap: StandingsBootstrap | null;
@@ -186,7 +186,7 @@ function LeagueWinsPageInner({ initialBootstrap }: LeagueWinsViewProps) {
     <div className="flex flex-col gap-4">
       <div className="sticky top-0 z-30 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2.5 backdrop-blur sm:mx-0 sm:px-0">
         <SteppableSelect label="Season" value={year} onValueChange={setYear} options={meta.years} />
-        <RoutedViewSwitcher options={STANDINGS_VIEW_OPTIONS} current="league_wins" paths={STANDINGS_VIEW_PATHS} />
+        <RoutedViewSwitcher options={LEAGUE_VIEW_OPTIONS} current="league_wins" paths={LEAGUE_VIEW_PATHS} />
       </div>
 
       <SeasonWeekRangeFilter

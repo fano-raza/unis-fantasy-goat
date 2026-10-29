@@ -47,7 +47,7 @@ import {
   type RatingsBootstrap,
   type SeasonLeadersResponse,
 } from "@/lib/api";
-import { STANDINGS_VIEW_OPTIONS, STANDINGS_VIEW_PATHS } from "@/lib/standings-nav";
+import { LEAGUE_VIEW_OPTIONS, LEAGUE_VIEW_PATHS } from "@/lib/section-nav";
 
 function formatCatValue(cat: Category, value: number): string {
   if (cat === "FG%" || cat === "FT%") return value.toFixed(3);
@@ -84,7 +84,7 @@ function buildRatingHistoryChartData(
 }
 
 interface RatingsViewProps {
-  // Fetched server-side (see app/standings/ratings/page.tsx); null if that
+  // Fetched server-side (see app/league/ratings/page.tsx); null if that
   // fetch failed, in which case this falls back to the original client
   // fetch.
   initialBootstrap: RatingsBootstrap | null;
@@ -260,7 +260,7 @@ function RatingsPageInner({ initialBootstrap }: RatingsViewProps) {
     <div className="flex flex-col gap-4">
       <div className="sticky top-0 z-30 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2.5 backdrop-blur sm:mx-0 sm:px-0">
         <SteppableSelect label="Season" value={year} onValueChange={setYear} options={meta.years} />
-        <RoutedViewSwitcher options={STANDINGS_VIEW_OPTIONS} current="ratings" paths={STANDINGS_VIEW_PATHS} />
+        <RoutedViewSwitcher options={LEAGUE_VIEW_OPTIONS} current="ratings" paths={LEAGUE_VIEW_PATHS} />
       </div>
 
       <SeasonWeekRangeFilter

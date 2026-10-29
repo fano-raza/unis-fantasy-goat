@@ -399,33 +399,33 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
             value={profile.Championships ?? 0}
             sub={splitYears(profile["Championship Years"])}
             icon={Trophy}
-            href={`/standings?year=${latestYear(profile["Championship Years"]) ?? meta.current_year}&tree=1`}
+            href={`/league/standings?year=${latestYear(profile["Championship Years"]) ?? meta.current_year}&tree=1`}
           />
           <StatTile
             label="MVPs"
             value={profile.MVPs ?? 0}
             sub={splitYears(profile["MVP Years"])}
             icon={Star}
-            href={`/standings/ratings?year=${latestYear(profile["MVP Years"]) ?? meta.current_year}`}
+            href={`/league/ratings?year=${latestYear(profile["MVP Years"]) ?? meta.current_year}`}
           />
           <StatTile
             label="Best Avg Weekly Rating"
             value={typeof profile["Best Avg Weekly Rating"] === "number" ? formatNumber(profile["Best Avg Weekly Rating"]) : "—"}
             sub={splitYears(profile["Best Avg Weekly Rating Years"])}
-            href={`/standings/ratings?year=${latestYear(profile["Best Avg Weekly Rating Years"]) ?? meta.current_year}`}
+            href={`/league/ratings?year=${latestYear(profile["Best Avg Weekly Rating Years"]) ?? meta.current_year}`}
           />
           <StatTile
             label="RS 1st Place"
             value={profile["RS 1st Place"] ?? 0}
             sub={splitYears(profile["RS 1st Years"])}
             icon={Podium}
-            href={`/standings?year=${latestYear(profile["RS 1st Years"]) ?? meta.current_year}`}
+            href={`/league/standings?year=${latestYear(profile["RS 1st Years"]) ?? meta.current_year}`}
           />
           <StatTile
             label="Best RS Finish"
             value={typeof profile["Best RS Finish"] === "number" ? ordinal(profile["Best RS Finish"]) : "—"}
             sub={splitYears(profile["Best RS Finish Years"])}
-            href={`/standings?year=${latestYear(profile["Best RS Finish Years"]) ?? meta.current_year}`}
+            href={`/league/standings?year=${latestYear(profile["Best RS Finish Years"]) ?? meta.current_year}`}
           />
           {playoffFinish && (
             <StatTile
@@ -433,7 +433,7 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
               value={playoffFinish.label}
               sub={playoffFinish.years}
               valueClassName={playoffFinish.label === "Champion" ? "text-gold" : undefined}
-              href={`/standings?year=${latestYear(playoffFinish.years) ?? meta.current_year}&tree=1`}
+              href={`/league/standings?year=${latestYear(playoffFinish.years) ?? meta.current_year}&tree=1`}
             />
           )}
         </div>

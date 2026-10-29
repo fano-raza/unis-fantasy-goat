@@ -12,10 +12,11 @@ import { NAV_LINKS } from "@/components/nav";
 import { useMobileMenu } from "@/components/mobile-menu-context";
 import { LightModeSwitch } from "@/components/light-mode-switch";
 import { PremiumNavButton } from "@/components/premium";
-import { STANDINGS_VIEW_OPTIONS, STANDINGS_VIEW_PATHS } from "@/lib/standings-nav";
 import {
   CAREER_VIEW_OPTIONS,
   CAREER_VIEW_PATHS,
+  LEAGUE_VIEW_OPTIONS,
+  LEAGUE_VIEW_PATHS,
   TEAM_VIEW_OPTIONS,
   TEAM_VIEW_PATHS,
   WEEKLY_VIEW_OPTIONS,
@@ -38,7 +39,7 @@ function subPagesFor(options: typeof TEAM_VIEW_OPTIONS, paths: Record<string, st
 const SUB_PAGES: Record<string, SubPage[]> = {
   "/weekly-stats": subPagesFor(WEEKLY_VIEW_OPTIONS, WEEKLY_VIEW_PATHS),
   "/team/roster": subPagesFor(TEAM_VIEW_OPTIONS, TEAM_VIEW_PATHS),
-  "/standings": subPagesFor(STANDINGS_VIEW_OPTIONS, STANDINGS_VIEW_PATHS),
+  "/league/standings": subPagesFor(LEAGUE_VIEW_OPTIONS, LEAGUE_VIEW_PATHS),
   "/career/profile": subPagesFor(CAREER_VIEW_OPTIONS, CAREER_VIEW_PATHS),
 };
 
@@ -89,7 +90,7 @@ export function MobileNav() {
           </div>
           {NAV_LINKS.map((link) => {
             // Also active on a sub-page route (e.g. /team/roster,
-            // /standings/ratings) -- see the matching comment in nav.tsx.
+            // /league/ratings) -- see the matching comment in nav.tsx.
             const prefix = link.activePrefix ?? link.href;
             const active = pathname === link.href || pathname.startsWith(`${prefix}/`);
             const subPages = SUB_PAGES[link.href];

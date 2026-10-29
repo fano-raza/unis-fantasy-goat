@@ -55,8 +55,8 @@ export function PageArrowNav() {
   const [isPending, startTransition] = useTransition();
 
   // Prefix-aware match, mirroring nav.tsx's activePrefix logic -- without
-  // this, any sub-page route (/standings/ratings, /team/roster, /players/
-  // draft, ...) fails an exact-href match and this whole bar (prev arrow,
+  // this, any sub-page route (/league/ratings, /team/roster, /career/
+  // stats, ...) fails an exact-href match and this whole bar (prev arrow,
   // page-name tab, next arrow) vanished entirely instead of staying on the
   // parent page's entry (feature request, 2026-10-06).
   const currentIndex = NAV_LINKS.findIndex((link) => {
