@@ -914,9 +914,11 @@ class LeagueStore:
         built on the Trade Hub. `a_sends` go to team B, `b_sends` to team A.
         A name may be anyone: a player on either roster, on a third team
         (who then loses him) or a free agent (a pickup, e.g. the open spot
-        in a 2-for-1). A team that ends up with more active players than it
-        started with releases the one it misses least (by its own score --
-        the trade finder's rule) unless `drops` names who. Players on IR,
+        in a 2-for-1). `drops` = players each team releases (always applied:
+        they leave the team, nobody receives them). A team still over its
+        starting number of active players after that releases the one it
+        misses least (by its own score -- the trade finder's rule;
+        `auto_drop`). Players on IR,
         or with no stats this season, don't count (listed in `uncounted` /
         `unknown`). Same scoring as the optimizer, with both teams rescored
         against the league as it would be after the trade."""
@@ -967,13 +969,13 @@ class LeagueStore:
         dropped: dict[str, list] = {team_a: [], team_b: []}
         auto: dict[str, bool] = {team_a: False, team_b: False}
         for team in (team_a, team_b):
-            extra = len(new[team]) - len(rosters[team])
-            if extra <= 0:
-                continue
-            chosen = [name_to_id[n] for n in (drops or {}).get(team, []) if name_to_id.get(n) in new[team]]
-            for pid in chosen[:extra]:
-                new[team].remove(pid)
-                dropped[team].append(pid)
+            # Players the user releases (Trade Hub "Drop"): always removed --
+            # they leave this team and nobody receives them.
+            for n in (drops or {}).get(team, []):
+                pid = name_to_id.get(n)
+                if pid in new[team]:
+                    new[team].remove(pid)
+                    dropped[team].append(pid)
             i = league.idx[team]
             while len(new[team]) > len(rosters[team]):
                 # Only players the team already had -- never the ones it just received.

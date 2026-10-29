@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeftRight, Check, Crown, Plus, RotateCcw, X } from "lucide-react";
+import { ArrowLeftRight, Check, Crown, Plus, RotateCcw, Undo2, UserMinus } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -61,13 +61,18 @@ export function TradeHub({
   const [remembered, setRemembered, hydrated] = useSelectedTeam(meta?.members[0] ?? "");
   const [teamA, setTeamA] = useState<string>(NO_TEAM);
   const [teamB, setTeamB] = useState<string>(NO_TEAM);
+  // Each side's list = the players the OTHER team receives (own roster
+  // players ticked, plus any player added with "Add any player").
   const [sendA, setSendA] = useState<string[]>([]);
   const [sendB, setSendB] = useState<string[]>([]);
+  // Players each team releases ("Drop"): they leave that team's win
+  // probability and nobody receives them.
+  const [dropA, setDropA] = useState<string[]>([]);
+  const [dropB, setDropB] = useState<string[]>([]);
 
-  // The last recommendation and the partner release it chose -- cleared as
-  // soon as the user edits the trade (it no longer describes what's on screen).
+  // The last recommendation -- cleared as soon as the user edits the trade
+  // (it no longer describes what's on screen).
   const [rec, setRec] = useState<TradeRecommendation | null>(null);
-  const [recDrops, setRecDrops] = useState<Record<string, string[]> | null>(null);
   const [recommending, setRecommending] = useState(false);
   const [recError, setRecError] = useState<string | null>(null);
   const [recPicked, setRecPicked] = useState<string[]>([]);
@@ -106,7 +111,6 @@ export function TradeHub({
 
   function edited() {
     setRec(null);
-    setRecDrops(null);
     setRecError(null);
   }
 
@@ -115,17 +119,21 @@ export function TradeHub({
     if (side === "a") {
       setTeamA(team);
       setSendA([]);
+      setDropA([]);
       if (team !== NO_TEAM) setRemembered(team);
       if (team === teamB) {
         setTeamB(NO_TEAM);
         setSendB([]);
+        setDropB([]);
       }
     } else {
       setTeamB(team);
       setSendB([]);
+      setDropB([]);
       if (team === teamA) {
         setTeamA(NO_TEAM);
         setSendA([]);
+        setDropA([]);
       }
     }
   }
@@ -136,8 +144,20 @@ export function TradeHub({
     if (list.includes(name)) set(list.filter((n) => n !== name));
     else if (list.length < TRADE_SIDE_CAP) {
       set([...list, name]);
-      // A player can only go one way.
+      // A player can only go one way, and a traded player isn't also dropped.
       if (other.includes(name)) setOther(other.filter((n) => n !== name));
+      const [drops, setDrops] = side === "a" ? [dropA, setDropA] : [dropB, setDropB];
+      if (drops.includes(name)) setDrops(drops.filter((n) => n !== name));
+    }
+  }
+
+  function toggleDrop(side: Side, name: string) {
+    edited();
+    const [drops, setDrops, list, set] = side === "a" ? [dropA, setDropA, sendA, setSendA] : [dropB, setDropB, sendB, setSendB];
+    if (drops.includes(name)) setDrops(drops.filter((n) => n !== name));
+    else {
+      setDrops([...drops, name]);
+      if (list.includes(name)) set(list.filter((n) => n !== name));
     }
   }
 
@@ -170,9 +190,11 @@ export function TradeHub({
         setTeamB(res.trade.partner);
         setSendA(res.trade.give);
         // Side B's list is what team A receives -- including the free agent
-        // who fills team A's open spot in a 2-for-1.
+        // who fills team A's open spot in a 2-for-1 (shown as an added row).
         setSendB([...res.trade.get, ...(res.trade.fa_add ? [res.trade.fa_add] : [])]);
-        setRecDrops(res.trade.partner_drop ? { [res.trade.partner]: [res.trade.partner_drop] } : null);
+        // The partner's release to make room shows as a dropped row.
+        setDropA([]);
+        setDropB(res.trade.partner_drop ? [res.trade.partner_drop] : []);
       } else {
         setTeamA(forTeam);
       }
@@ -187,13 +209,16 @@ export function TradeHub({
   // Back to how the page opens: side A on the remembered team, side B
   // empty, nothing picked, no recommendation.
   const startTeamA = teams.includes(remembered) ? remembered : NO_TEAM;
-  const isClear = teamA === startTeamA && teamB === NO_TEAM && sendA.length === 0 && sendB.length === 0 && !rec && !recError;
+  const isClear =
+    teamA === startTeamA && teamB === NO_TEAM && sendA.length + sendB.length + dropA.length + dropB.length === 0 && !rec && !recError;
   function clearAll() {
     edited();
     setTeamA(startTeamA);
     setTeamB(NO_TEAM);
     setSendA([]);
     setSendB([]);
+    setDropA([]);
+    setDropB([]);
   }
 
   function onRecommendClick() {
@@ -215,7 +240,9 @@ export function TradeHub({
         <CardHeader className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex flex-col gap-1">
             <CardTitle>Build a trade</CardTitle>
-            <CardDescription>Pick each team, then tap players to send them to the other side.</CardDescription>
+            <CardDescription>
+              Pick each team and tick the players it gives up. Add any player to a side to have the other team pick him up.
+            </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" variant="outline" onClick={clearAll} disabled={isClear || recommending}>
@@ -249,12 +276,15 @@ export function TradeHub({
                 team={teamA}
                 teams={teams}
                 otherTeam={teamB}
+                receiver={labelB}
                 roster={teamA !== NO_TEAM ? rosterOf(teamA) : []}
                 sending={sendA}
+                dropped={dropA}
                 players={players}
                 owners={owners}
                 onTeam={(t) => setTeam("a", t)}
                 onToggle={(n) => toggle("a", n)}
+                onDrop={(n) => toggleDrop("a", n)}
               />
               <div className="hidden items-center justify-center md:flex" aria-hidden>
                 <ArrowLeftRight className="size-5 text-muted-foreground" />
@@ -264,12 +294,15 @@ export function TradeHub({
                 team={teamB}
                 teams={teams}
                 otherTeam={teamA}
+                receiver={labelA}
                 roster={teamB !== NO_TEAM ? rosterOf(teamB) : []}
                 sending={sendB}
+                dropped={dropB}
                 players={players}
                 owners={owners}
                 onTeam={(t) => setTeam("b", t)}
                 onToggle={(n) => toggle("b", n)}
+                onDrop={(n) => toggleDrop("b", n)}
               />
             </div>
           </LoadingOverlay>
@@ -277,7 +310,7 @@ export function TradeHub({
       </Card>
 
       {(playersA.length > 0 || playersB.length > 0) && (
-        <TradeStatsComparison playersA={playersA} playersB={playersB} labelA={`${labelA} sends`} labelB={`${labelB} sends`} />
+        <TradeStatsComparison playersA={playersA} playersB={playersB} labelA={`${labelB} receives`} labelB={`${labelA} receives`} />
       )}
 
       <TradeWinChance
@@ -285,7 +318,7 @@ export function TradeHub({
         teamB={bothTeams ? teamB : null}
         aSends={sendA}
         bSends={sendB}
-        drops={recDrops}
+        drops={bothTeams ? { [teamA]: dropA, [teamB]: dropB } : null}
         format={meta ? (meta.season_format[String(meta.current_year)] ?? "wl") : "wl"}
       />
 
@@ -377,29 +410,37 @@ function TradeSide({
   team,
   teams,
   otherTeam,
+  receiver,
   roster,
   sending,
+  dropped,
   players,
   owners,
   onTeam,
   onToggle,
+  onDrop,
 }: {
   label: string;
   team: string;
   teams: string[];
   otherTeam: string;
+  // Who receives this side's ticked players (the other side's team).
+  receiver: string;
   roster: RosterRankRow[];
   sending: string[];
+  dropped: string[];
   players: PlayerStat[];
   owners: Map<string, Owner>;
   onTeam: (team: string) => void;
   onToggle: (name: string) => void;
+  onDrop: (name: string) => void;
 }) {
   const full = sending.length >= TRADE_SIDE_CAP;
   const options = [{ value: NO_TEAM, label: "No team (any players)" }, ...teams.filter((t) => t !== otherTeam).map((t) => ({ value: t, label: t }))];
   const ownNames = new Set(roster.map((r) => r.Player));
-  // Picked players who aren't on this side's own roster (free agents, other
-  // teams' players): listed as chips above the roster.
+  // Players added with "Add any player" (free agents, other teams' players):
+  // extra rows under the roster, ticked and greyed -- they don't count for
+  // this team, they're who the other team picks up.
   const extras = sending.filter((n) => !ownNames.has(n));
 
   return (
@@ -422,74 +463,142 @@ function TradeSide({
 
       <div className="flex items-baseline justify-between gap-2 text-sm">
         <span className="font-medium">
-          {team !== NO_TEAM ? `${team} sends` : "Sends"}{" "}
+          {receiver} receives{" "}
           <span className="tabular-nums text-muted-foreground">
             {sending.length}/{TRADE_SIDE_CAP}
           </span>
         </span>
-        <AnyPlayerPicker players={players} owners={owners} exclude={sending} disabled={full} onPick={onToggle} />
+        <AnyPlayerPicker players={players} owners={owners} exclude={[...sending, ...ownNames]} disabled={full} onPick={onToggle} />
       </div>
 
-      {extras.length > 0 && (
-        <ul className="flex flex-wrap gap-1.5">
-          {extras.map((n) => (
-            <li key={n} className="flex items-center gap-1.5 rounded-sm bg-secondary py-1 pr-1.5 pl-2.5 text-xs font-semibold text-secondary-foreground">
-              {n}
-              <span className="font-normal text-muted-foreground">{ownerLabel(owners.get(n))}</span>
-              <button type="button" onClick={() => onToggle(n)} className="text-muted-foreground hover:text-foreground" aria-label={`Remove ${n}`}>
-                <X className="size-3.5" />
-              </button>
-            </li>
-          ))}
+      {roster.length > 0 || extras.length > 0 ? (
+        <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
+          {roster.map((r) => {
+            const ir = r.LineupSlot === "IR";
+            return (
+              <PlayerRow
+                key={r.Player}
+                name={r.Player}
+                nbaTeam={r.NBATeam}
+                rank={r.Rank}
+                tag={ir ? "IR" : null}
+                checked={sending.includes(r.Player)}
+                dropped={dropped.includes(r.Player)}
+                disabled={!sending.includes(r.Player) && full}
+                onToggle={() => onToggle(r.Player)}
+                onDrop={() => onDrop(r.Player)}
+              />
+            );
+          })}
+          {extras.map((n) => {
+            const o = owners.get(n);
+            const p = players.find((x) => x.Player === n);
+            return (
+              <PlayerRow
+                key={n}
+                name={n}
+                nbaTeam={typeof p?.Team === "string" ? p.Team : ""}
+                rank={null}
+                tag={!o || !o.team ? "FA" : o.team}
+                added
+                checked
+                onToggle={() => onToggle(n)}
+              />
+            );
+          })}
         </ul>
-      )}
-
-      {team !== NO_TEAM ? (
-        roster.length > 0 ? (
-          <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
-            {roster.map((r) => {
-              const on = sending.includes(r.Player);
-              const ir = r.LineupSlot === "IR";
-              return (
-                <li key={r.Player}>
-                  <button
-                    type="button"
-                    role="checkbox"
-                    aria-checked={on}
-                    disabled={!on && full}
-                    onClick={() => onToggle(r.Player)}
-                    className={cn(
-                      "flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring disabled:opacity-50",
-                      on ? "bg-primary/10" : "hover:bg-muted/60",
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "flex size-4 shrink-0 items-center justify-center rounded-[4px] border",
-                        on ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/50",
-                      )}
-                      aria-hidden
-                    >
-                      {on && <Check className="size-3" strokeWidth={3} />}
-                    </span>
-                    <span className={cn("min-w-0 flex-1 truncate", on && "font-semibold", ir && "text-muted-foreground")}>{r.Player}</span>
-                    {ir && <span className="rounded-sm bg-muted px-1.5 text-[11px] font-semibold text-muted-foreground">IR</span>}
-                    <span className="w-9 text-xs text-muted-foreground">{r.NBATeam}</span>
-                    <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">#{r.Rank}</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
-          <p className="text-sm text-muted-foreground">Loading {team}&apos;s roster…</p>
-        )
+      ) : team !== NO_TEAM ? (
+        <p className="text-sm text-muted-foreground">Loading {team}&apos;s roster…</p>
       ) : (
         <p className="rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
           Choose a team to pick from its roster, or add any player.
         </p>
       )}
     </section>
+  );
+}
+
+function PlayerRow({
+  name,
+  nbaTeam,
+  rank,
+  tag,
+  checked,
+  dropped = false,
+  added = false,
+  disabled = false,
+  onToggle,
+  onDrop,
+}: {
+  name: string;
+  nbaTeam: string;
+  rank: number | null;
+  tag: string | null;
+  checked: boolean;
+  dropped?: boolean;
+  // Added with "Add any player": not on this roster, greyed.
+  added?: boolean;
+  disabled?: boolean;
+  onToggle: () => void;
+  // Omitted for added players (they aren't this team's to drop).
+  onDrop?: () => void;
+}) {
+  return (
+    <li className={cn("flex items-center", checked && !added && "bg-primary/10", dropped && "bg-loss/5")}>
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={checked}
+        disabled={disabled}
+        onClick={onToggle}
+        title={added ? `Not on this roster: ticked means the other team picks up ${name}. Untick to remove.` : undefined}
+        className={cn(
+          "flex min-w-0 flex-1 items-center gap-3 py-2 pl-3 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring disabled:opacity-50",
+          !checked && !dropped && "hover:bg-muted/60",
+        )}
+      >
+        <span
+          className={cn(
+            "flex size-4 shrink-0 items-center justify-center rounded-[4px] border",
+            checked
+              ? added
+                ? "border-muted-foreground/60 bg-muted-foreground/60 text-background"
+                : "border-primary bg-primary text-primary-foreground"
+              : "border-muted-foreground/50",
+          )}
+          aria-hidden
+        >
+          {checked && <Check className="size-3" strokeWidth={3} />}
+        </span>
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate",
+            checked && !added && "font-semibold",
+            (added || tag === "IR") && "text-muted-foreground",
+            dropped && "text-muted-foreground line-through",
+          )}
+        >
+          {name}
+        </span>
+        {dropped && <span className="rounded-sm bg-loss/15 px-1.5 text-[11px] font-semibold text-loss">Dropped</span>}
+        {tag && <span className="rounded-sm bg-muted px-1.5 text-[11px] font-semibold text-muted-foreground">{tag}</span>}
+        <span className="w-9 text-xs text-muted-foreground">{nbaTeam}</span>
+        <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">{rank != null ? `#${rank}` : ""}</span>
+      </button>
+      {onDrop ? (
+        <button
+          type="button"
+          onClick={onDrop}
+          aria-label={dropped ? `Keep ${name}` : `Drop ${name}`}
+          title={dropped ? "Keep on the roster" : "Drop from the roster (nobody receives him)"}
+          className="mx-1 flex size-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+        >
+          {dropped ? <Undo2 className="size-3.5" aria-hidden /> : <UserMinus className="size-3.5" aria-hidden />}
+        </button>
+      ) : (
+        <span className="mx-1 size-7 shrink-0" aria-hidden />
+      )}
+    </li>
   );
 }
 

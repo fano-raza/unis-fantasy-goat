@@ -82,6 +82,15 @@ def test_explicit_drop_is_respected(store):  # noqa: F811
     assert o["teams"][1]["drops"] == ["P8"] and not o["teams"][1]["auto_drop"]
 
 
+def test_drop_without_a_trade_costs_that_team_his_stats(store):  # noqa: F811
+    o = store.trade_odds("A", "B", [], [], drops={"A": ["P2"]})
+    a, b = o["teams"]
+    assert a["drops"] == ["P2"] and not a["auto_drop"] and a["active_after"] == 3
+    assert a["matchup_win"] == pytest.approx(
+        reference_matchup_win(store, "A", [], [], "A", "B", drops=[("A", "P2")]), abs=1e-4)
+    assert b["active_after"] == b["active_before"]
+
+
 def test_free_agent_pickup_fills_the_open_spot(store):  # noqa: F811
     o = store.trade_odds("A", "B", ["P1", "P2"], ["P5", "P17"])  # P17 is a free agent -> joins A
     a, b = o["teams"]

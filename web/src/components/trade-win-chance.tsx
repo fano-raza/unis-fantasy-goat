@@ -215,7 +215,9 @@ function TeamOdds({
       {(side.drops.length > 0 || short) && (
         <p className="text-xs text-muted-foreground">
           {side.drops.length > 0 &&
-            `${side.team} releases ${side.drops.join(" and ")} to make room${side.auto_drop ? " (the player it would miss least)" : ""}. `}
+            (side.auto_drop
+              ? `${side.team} releases ${side.drops.join(" and ")} to make room (the player it would miss least). `
+              : `${side.team} drops ${side.drops.join(" and ")}. `)}
           {short && `${side.team} is left with an open roster spot; add a free agent to the other side's list to fill it.`}
         </p>
       )}
