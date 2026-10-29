@@ -129,6 +129,9 @@ class OptimizerConfig:
     #   "standings"      0.5 x matchup_wins + 0.5 x expected share of the 9
     #                    categories won -- the league's W/L and category
     #                    standings, equally weighted (fixed a priori).
+    #   "categories"     expected share of the 9 categories won only -- what
+    #                    a Cats-format season's standings count (backtest:
+    #                    _planning/roster-optimizer.md, 2026-10-28).
     # Ignored categories (TO) are a fixed 50/50 coin flip in every
     # probabilistic objective: they still count toward "5 of 9", but no swap
     # can change them.
@@ -483,7 +486,7 @@ def optimize(
     values = pd.DataFrame(category_values(sums.to_numpy()), index=sums.index, columns=MAIN_CATS)
     shown = considered_cats(config)
     mode = config.objective
-    if mode not in ("ratings", "category_wins", "matchup_wins", "standings"):
+    if mode not in ("ratings", "category_wins", "matchup_wins", "standings", "categories"):
         raise ValueError(f"unknown objective {mode!r}")
 
     others_raw = values.drop(index=team).to_numpy()
@@ -515,7 +518,7 @@ def optimize(
     if any(c in config.ignored_cats for c in targets):
         raise ValueError(f"targets include an ignored category: {targets}")
     weights = category_weights(targets, config)
-    min_gain = config.min_gain_share if mode in ("matchup_wins", "standings") else config.min_gain
+    min_gain = config.min_gain_share if mode in ("matchup_wins", "standings", "categories") else config.min_gain
 
     def matchup_win(own_values: np.ndarray) -> float | None:
         if mode == "ratings":
@@ -529,6 +532,8 @@ def optimize(
         matchup = at_least_k(p, config.cats_to_win).mean(axis=-1)
         if mode == "matchup_wins":
             return matchup
+        if mode == "categories":
+            return p.mean(axis=(-1, -2))
         return 0.5 * matchup + 0.5 * p.mean(axis=(-1, -2))
 
     roster = list(rosters[team])

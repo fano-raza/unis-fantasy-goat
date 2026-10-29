@@ -152,6 +152,21 @@ The Trade Finder's minutes/starts projection correction ([`shared/projection_adj
 
 **Adopted anyway (user decision, 2026-10-27): one set of player projections for both premium tools.** A player's projected production is a fact about the player, not about the decision. Two tools showing different values for the same player would be confusing, and the backtest shows no cost here. Live since 2026-10-27: `LeagueStore._optimizer_inputs` applies `projection_adjust.adjusted_players` on top of `blend_players` when `Ref/player_game_logs.csv` + `Ref/player_minutes_prior.csv` exist (daily export [`scripts/export_player_game_logs.py`](../scripts/export_player_game_logs.py), ESPN's public endpoint, no login), and falls back to the plain blend otherwise. Responses report which was used (`"projections": "corrected" | "blend"`). Decision-specific safety margins stay per tool (the Trade Finder's free agent ×0.7). Script: [`scripts/backtest_optimizer_projections.py`](../scripts/backtest_optimizer_projections.py).
 
+## Cats-format seasons (tested 2026-10-28)
+
+User question: how does "win probability" work in a Cats season (standings by total category wins; 2024 and 2026 were Cats, 2027 is W/L)? The live objective is a fixed 50/50 mix of weekly matchup-win probability and expected category share, regardless of format.
+
+- **Display (shipped):** the premium panels' headline follows `LeagueMeta.season_format`. W/L shows weekly matchup win probability; Cats shows expected categories won per week (sum of the 8 per-category probabilities + 0.5 for TO, "of 9").
+- **Optimizer objective:** new `objective="categories"` (category share only) in `ro.optimize` and `tf.League`. Weekly replay, 46 team-seasons 2019–23, corrected projections, cap 3 ([`scripts/backtest_cats_objective.py`](../scripts/backtest_cats_objective.py)); every replay records category wins, so the Cats question is answerable on W/L seasons.
+  - Same +0.01 bar: categories-only −0.3 category wins/season [−1.6, +0.8] vs live, 12.4 vs 16.9 swaps.
+  - Matched bar (0.005, 18.7 swaps): −0.2 [−1.1, +0.7], better in only 28% of team-seasons.
+  - **Keep the live objective for both formats.**
+- **Trade recommender** (saved candidates rescored under category share, oracle = actual production; scripts in `_planning/prototypes/rescore_cat.py`, `cat_eval.py`). Fleece-style picks, categories-only minus live, paired by team-checkpoint, in expected categories won per week:
+  - 2019–23: +0.01 [−0.03, +0.06].
+  - 2024–26: **+0.08 [+0.035, +0.134]**; better in all three seasons, including the real Cats seasons (2024 +0.27 vs +0.21; 2026 +0.07 vs −0.02).
+  - Fair-style picks: categories-only finds fewer and gains less.
+  - **Suggestion for the next Cats season:** have `trade_recommend` score with `objective="categories"` for its least-lopsided pick, keeping Fair on the live objective. The evidence is mixed (recent seasons only), so it isn't switched now; 2027 is W/L.
+
 ## Ideas not yet tested
 
 - **Remaining-schedule weighting:** weight opponents by how often you still face them. Still season-long; probably the more promising variant.

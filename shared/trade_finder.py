@@ -150,8 +150,8 @@ class League:
     recomputed from each hypothetical league (as optimize would)."""
 
     def __init__(self, players: pd.DataFrame, rosters: dict[str, list], config: ro.OptimizerConfig):
-        if config.objective != "standings":
-            raise ValueError("the trade finder scores with the `standings` objective")
+        if config.objective not in ("standings", "categories"):
+            raise ValueError("the trade finder scores with the `standings` or `categories` objective")
         self.config = config
         players = players.copy()
         if config.use_availability and "availability" in players:
@@ -189,7 +189,8 @@ class League:
             p = np.where(sigma > 0, p, step)
             p = np.where(self.ignored, 0.5, p)
             m = ro.at_least_k(p, self.config.cats_to_win).mean(axis=-1)
-            scores.append(0.5 * m + 0.5 * p.mean(axis=(-1, -2)))
+            share = p.mean(axis=(-1, -2))
+            scores.append(share if self.config.objective == "categories" else 0.5 * m + 0.5 * share)
             matchups.append(m)
         return np.stack(scores, axis=-1), np.stack(matchups, axis=-1)
 
