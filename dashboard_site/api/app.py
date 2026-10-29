@@ -18,6 +18,7 @@ from .query_engine import StatsStore
 from .schemas import (
     AggregateRequest,
     HeadToHeadRequest,
+    HeadToHeadSummaryRequest,
     LeadersRequest,
     MetaResponse,
     NBAScheduleRequest,
@@ -138,6 +139,10 @@ def _refresh_data() -> None:
     new_store = StatsStore()
     reset_league_store()
     new_league_store = get_league_store(new_store)
+    # Build the heavy shared tables here, on this background thread, before
+    # the swap -- otherwise the first visitors after every reload paid
+    # ~8 s (far more under concurrent requests) rebuilding them.
+    new_league_store.warm()
     with _state_lock:
         store = new_store
         league_store = new_league_store
@@ -159,6 +164,8 @@ def _refresh_loop() -> None:
 loaded_sources: dict[str, str | None] = _iso_sources(_scan_source_mtimes(store.ref_dir, store))
 
 threading.Thread(target=_refresh_loop, daemon=True).start()
+# Same warm-up for the boot-time store, off the request path.
+threading.Thread(target=lambda: league_store.warm(), daemon=True).start()
 
 
 def _trade_warm_loop() -> None:
@@ -413,6 +420,13 @@ def league_head_to_head(req: HeadToHeadRequest) -> dict:
         return league_store.head_to_head(req.team_a, req.team_b, years=req.years, RS=req.RS, PO=req.PO)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+# One call for Comparison's whole Head-to-Head box, replacing its old
+# per-pair fan-out (up to 66 /league/head_to_head calls for 12 teams).
+@app.post("/league/head_to_head_summary")
+def league_head_to_head_summary(req: HeadToHeadSummaryRequest) -> dict:
+    return league_store.head_to_head_summary(req.teams, years=req.years, RS=req.RS, PO=req.PO)
 
 
 @app.post("/league/records")

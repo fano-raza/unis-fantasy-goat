@@ -77,6 +77,13 @@ class LeagueStore:
         self.store = store or StatsStore()
         self._rated_df: pd.DataFrame | None = None
         self._weekly_df: pd.DataFrame | None = None
+        # Serializes the first build of _rated_df/_weekly_df (~8 s together
+        # on the droplet's single vCPU). Without it, a burst of concurrent
+        # requests against a cold store (e.g. Comparison's head-to-head
+        # fan-out) each ran their own full build in parallel, turning one
+        # 8 s build into 25 s+ for everyone. Reentrant because
+        # _ensure_weekly_df calls _ensure_rated_df.
+        self._build_lock = threading.RLock()
         self._team_summary_df: pd.DataFrame | None = None
         self._player_stats_df: pd.DataFrame | None = None
         self._roster_ranks_df: pd.DataFrame | None = None
@@ -1300,6 +1307,37 @@ class LeagueStore:
             "matchups": matchups,
         }
 
+    def head_to_head_summary(
+        self,
+        teams: list[str],
+        years: list[int] | None = None,
+        RS: bool = True,
+        PO: bool = True,
+    ) -> dict:
+        """Each team's combined matchup W-L-T against every *other* team in
+        `teams` -- the same totals as summing head_to_head() over every
+        pair, in one pass and without the per-matchup rows. Teams with no
+        games against the rest of the set come back 0-0-0."""
+        df = self._ensure_weekly_df()
+        seasons = self._require_seasons(RS, PO)
+        mask = df["Team"].isin(teams) & df["Opp"].isin(teams) & (df["Team"] != df["Opp"]) & df["Season"].isin(seasons)
+        if years:
+            mask &= df["Year"].isin(years)
+        sums = df[mask].groupby("Team")[["MATCHUP_WINS", "MATCHUP_LOSSES", "MATCHUP_DRAWS"]].sum()
+        rows = []
+        for team in teams:
+            if team in sums.index:
+                r = sums.loc[team]
+                rows.append({
+                    "team": team,
+                    "wins": int(r["MATCHUP_WINS"]),
+                    "losses": int(r["MATCHUP_LOSSES"]),
+                    "ties": int(r["MATCHUP_DRAWS"]),
+                })
+            else:
+                rows.append({"team": team, "wins": 0, "losses": 0, "ties": 0})
+        return {"rows": rows}
+
     def records(self, years: list[int] | None = None, RS: bool = True, PO: bool = True) -> dict:
         """Best single week ever (overall rating and per category) plus longest win streaks per team."""
         # Excludes BYE rows -- a bye week's real box-score stats are still
@@ -1704,7 +1742,12 @@ class LeagueStore:
         (see _ensure_weekly_df / _filtered_raw)."""
         if self._rated_df is not None:
             return self._rated_df
+        with self._build_lock:
+            if self._rated_df is None:
+                self._rated_df = self._build_rated_df()
+        return self._rated_df
 
+    def _build_rated_df(self) -> pd.DataFrame:
         df = self.store.df
         if "Count" in df.columns:
             df = df[df["Count"] == True]  # noqa: E712
@@ -1714,12 +1757,23 @@ class LeagueStore:
             team_count = group["Team"].nunique()
             parts.append(per_week_rating(group, MAIN_CATS, NEG_CATS, team_count))
 
-        self._rated_df = pd.concat(parts, ignore_index=True) if parts else df
-        return self._rated_df
+        return pd.concat(parts, ignore_index=True) if parts else df
 
     def _ensure_weekly_df(self) -> pd.DataFrame:
         if self._weekly_df is not None:
             return self._weekly_df
+        with self._build_lock:
+            if self._weekly_df is None:
+                self._weekly_df = self._build_weekly_df()
+        return self._weekly_df
+
+    def warm(self) -> None:
+        """Build the shared per-week tables up front -- app.py calls this on
+        a fresh store before swapping it in, so the 90 s data reload never
+        hands visitors a cold store to rebuild on their own time."""
+        self._ensure_weekly_df()
+
+    def _build_weekly_df(self) -> pd.DataFrame:
         # Deliberately not store._ensure_matchup_df(): that builds pairings
         # off the raw Count flag, which (like _ensure_rated_df above) wrongly
         # includes consolation-bracket teams for playoff weeks. Build our own
@@ -1766,8 +1820,7 @@ class LeagueStore:
         if not bye_df.empty:
             weekly_df = pd.concat([weekly_df, bye_df], ignore_index=True, sort=False)
 
-        self._weekly_df = weekly_df
-        return self._weekly_df
+        return weekly_df
 
     @staticmethod
     def _compute_win_streaks(df: pd.DataFrame) -> list[dict]:

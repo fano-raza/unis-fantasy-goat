@@ -102,6 +102,13 @@ class HeadToHeadRequest(BaseModel):
     PO: bool = True
 
 
+class HeadToHeadSummaryRequest(BaseModel):
+    teams: list[str]
+    years: list[int] | None = None
+    RS: bool = True
+    PO: bool = True
+
+
 class RecordsRequest(BaseModel):
     years: list[int] | None = None
     RS: bool = True
