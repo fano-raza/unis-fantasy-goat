@@ -33,25 +33,21 @@ function getPlayerCatValue(player: PlayerStat, statWindow: StatWindow, cat: Cate
   return typeof value === "number" ? value : null;
 }
 
-function getPctComponents(player: PlayerStat, statWindow: StatWindow, cat: "FG%" | "FT%"): { made: number; att: number } | null {
-  const made = player[`${statWindow}_${cat}_made`];
-  const att = player[`${statWindow}_${cat}_att`];
-  return typeof made === "number" && typeof att === "number" ? { made, att } : null;
-}
-
-// Aggregates a group of up to 5 players for one stat category. Counting
-// categories sum or average normally; FG%/FT% use the real weighted ratio
-// (sum of makes / sum of attempts across the group) rather than a naive
-// average of each player's individual percentage, which would misweight
+// Aggregates a group of up to 5 players for one stat category -- what a
+// side gives up, so always the players ADDED together: their totals over
+// the window (Totals) or their per-game averages summed (Averages).
+// FG%/FT% use the real weighted ratio (the group's makes / attempts) rather
+// than a naive average of each player's percentage, which would misweight
 // players with very different attempt volumes -- same reasoning as
 // StatTable's Score column elsewhere in this app.
 function aggregate(players: PlayerStat[], statWindow: StatWindow, mode: "totals" | "averages"): Record<Category, number | null> {
   const result = {} as Record<Category, number | null>;
   for (const cat of MAIN_CATS) {
     if (cat === "FG%" || cat === "FT%") {
-      const components = players.map((p) => getPctComponents(p, statWindow, cat)).filter((c): c is { made: number; att: number } => c !== null);
-      const totalAtt = components.reduce((a, c) => a + c.att, 0);
-      result[cat] = totalAtt > 0 ? components.reduce((a, c) => a + c.made, 0) / totalAtt : null;
+      // Weighted by volume: the group's makes / attempts, summed per game in
+      // Averages mode and over the window in Totals mode.
+      const group = madeAttemptedValue(players, statWindow, cat, mode);
+      result[cat] = group && group.att > 0 ? group.made / group.att : null;
       continue;
     }
     const values = players.map((p) => getPlayerCatValue(p, statWindow, cat, mode)).filter((v): v is number => v !== null);
@@ -59,8 +55,12 @@ function aggregate(players: PlayerStat[], statWindow: StatWindow, mode: "totals"
       result[cat] = null;
       continue;
     }
-    const sum = values.reduce((a, b) => a + b, 0);
-    result[cat] = mode === "totals" ? sum : sum / values.length;
+    // Both modes ADD the players up (user correction, 2026-10-28): a side
+    // that sends two players gives up both players' production, so in
+    // Averages mode the side's line is the sum of their per-game averages
+    // (it used to be their mean, which made a 2-player side look like one
+    // average player).
+    result[cat] = values.reduce((a, b) => a + b, 0);
   }
   return result;
 }
@@ -115,11 +115,9 @@ interface MadeAttempted {
 }
 
 // Totals: real summed made/attempted across the group. Averages: each
-// player's own per-game made/attempted, averaged across the group -- same
-// "average of each player's own rate" convention the rest of this table's
-// Averages mode already uses for the 7 counting categories (see aggregate()
-// above), kept consistent rather than switching to a team-wide made/games
-// rate just for these two rows.
+// player's own per-game made/attempted, summed across the group -- the
+// same "add the players up" rule as the counting categories (aggregate()
+// above).
 function madeAttemptedValue(
   players: PlayerStat[],
   statWindow: StatWindow,
@@ -154,9 +152,10 @@ function madeAttemptedValue(
     }
   }
   if (madeRates.length === 0) return null;
+  // Summed per-game rates (see aggregate() above).
   return {
-    made: madeRates.reduce((sum, v) => sum + v, 0) / madeRates.length,
-    att: attRates.reduce((sum, v) => sum + v, 0) / attRates.length,
+    made: madeRates.reduce((sum, v) => sum + v, 0),
+    att: attRates.reduce((sum, v) => sum + v, 0),
   };
 }
 
