@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeftRight, Check, Crown, Plus, RotateCcw, Undo2, UserMinus } from "lucide-react";
+import { ArrowLeftRight, Check, Crown, Plus, RotateCcw, Undo2, X } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -590,10 +590,10 @@ function PlayerRow({
           type="button"
           onClick={onDrop}
           aria-label={dropped ? `Keep ${name}` : `Drop ${name}`}
-          title={dropped ? "Keep on the roster" : "Drop from the roster (nobody receives him)"}
+          title={dropped ? "Undo drop" : "Drop"}
           className="mx-1 flex size-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
         >
-          {dropped ? <Undo2 className="size-3.5" aria-hidden /> : <UserMinus className="size-3.5" aria-hidden />}
+          {dropped ? <Undo2 className="size-3.5" aria-hidden /> : <X className="size-3.5" aria-hidden />}
         </button>
       ) : (
         <span className="mx-1 size-7 shrink-0" aria-hidden />
