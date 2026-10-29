@@ -20,8 +20,10 @@ import {
   type LeagueMeta,
   type PlayerStat,
   type RosterRankRow,
+  type TradeOddsSide,
   type TradeRecommendation,
 } from "@/lib/api";
+import { expectedCategories, type SeasonFormat } from "@/components/headline-odds";
 import { TRADE_SEARCH_PHRASES } from "@/lib/loading-phrases";
 import { useSelectedTeam } from "@/lib/use-selected-team";
 import { cn } from "@/lib/utils";
@@ -326,7 +328,12 @@ export function TradeHub({
           </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          {(rec || recError) && <RecommendationNote rec={rec} error={recError} picked={rec?.kind === "none" ? recPicked : []} />}
+          {(rec || recError) && <RecommendationNote
+              rec={rec}
+              error={recError}
+              picked={rec?.kind === "none" ? recPicked : []}
+              format={meta ? (meta.season_format[String(meta.current_year)] ?? "wl") : "wl"}
+            />}
           <LoadingOverlay
             active={playersLoading || recommending}
             hasContent={players.length > 0}
@@ -433,13 +440,21 @@ export function TradeHub({
   );
 }
 
+// A team's change in the headline number the win-probability panel shows:
+// weekly matchup win probability (W/L) or expected categories won (Cats).
+function shownChange(side: TradeOddsSide, format: SeasonFormat): number {
+  return format === "cats" ? expectedCategories(side.after) - expectedCategories(side.start) : side.matchup_win - side.start_matchup_win;
+}
+
 function RecommendationNote({
   rec,
   error,
   picked,
+  format,
 }: {
   rec: TradeRecommendation | null;
   error: string | null;
+  format: SeasonFormat;
   // Players the search was limited to (team A's picks), if any.
   picked: string[];
 }) {
@@ -455,9 +470,21 @@ function RecommendationNote({
   } else if (rec.kind === "fair") {
     text = `Fair trade: ${rec.team_a} and ${rec.trade.partner} both come out ahead.`;
   } else {
-    text = rec.team_b
-      ? `No trade with ${rec.team_b} helps both teams. This one still helps ${rec.team_a} and costs ${rec.team_b} the least.`
-      : `No trade in the league helps both teams. This one still helps ${rec.team_a} and costs ${rec.trade.partner} the least.`;
+    // Not "fair" means the partner doesn't gain at least 1 point on the
+    // recommender's overall score -- but it may still gain a little, and
+    // the panel below shows that. Word it by what the panel shows
+    // (bug report 2026-10-28: "no trade helps both teams" next to both
+    // teams' win probability going up).
+    const partner = rec.odds?.teams[1];
+    const change = partner != null ? shownChange(partner, format) : -1;
+    const visible = format === "cats" ? 0.05 : 0.005;
+    const where2 = rec.team_b ? `with ${rec.team_b}` : "in the league";
+    text =
+      change > visible
+        ? `No trade ${where2} clearly helps both teams. This one helps ${rec.team_a} and only slightly helps ${rec.trade.partner}.`
+        : change >= -visible
+          ? `No trade ${where2} clearly helps both teams. This one helps ${rec.team_a} and leaves ${rec.trade.partner} about the same.`
+          : `No trade ${where2} helps both teams. This one still helps ${rec.team_a} and costs ${rec.trade.partner} the least.`;
   }
   const extra =
     rec.trade?.fa_add || rec.trade?.partner_drop
