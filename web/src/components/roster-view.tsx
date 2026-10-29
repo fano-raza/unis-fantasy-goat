@@ -489,6 +489,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
           {optResult && (
             <OptimizerResults
               result={optResult}
+              format={meta.season_format[String(year)] ?? "wl"}
               roster={teamRoster}
               allPlayers={rosterRows}
               gamesLeft={gamesLeftLabel}
@@ -702,7 +703,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
           projections). Hidden while an optimizer answer is on screen, which
           has its own category breakdown. */}
       {year === meta.current_year && team && !(optResult && optResult.swaps.length > 0) && (
-        <RosterCategoryOddsCard team={team} roster={simulatedActiveNames} />
+        <RosterCategoryOddsCard team={team} roster={simulatedActiveNames} format={meta.season_format[String(year)] ?? "wl"} />
       )}
 
       <Card>

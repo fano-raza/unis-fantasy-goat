@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowRight, Crown } from "lucide-react";
+import { Crown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoadingOverlay } from "@/components/loading-overlay";
 import { CategoryOddsBars } from "@/components/roster-optimizer";
+import { HeadlineOdds, type SeasonFormat } from "@/components/headline-odds";
 import { usePremium } from "@/components/premium";
 import { ApiError, getRosterCategoryOdds, type RosterCategoryOdds } from "@/lib/api";
 
@@ -33,7 +34,16 @@ const PREVIEW = [
  * to everyone; locked until premium mode is on. `roster` is the simulated
  * ACTIVE roster's names, or null for no what-if.
  */
-export function RosterCategoryOddsCard({ team, roster }: { team: string; roster: string[] | null }) {
+export function RosterCategoryOddsCard({
+  team,
+  roster,
+  format = "wl",
+}: {
+  team: string;
+  roster: string[] | null;
+  // The season's standings format -- picks the headline number.
+  format?: SeasonFormat;
+}) {
   const premium = usePremium();
   return (
     <Card>
@@ -49,7 +59,7 @@ export function RosterCategoryOddsCard({ team, roster }: { team: string; roster:
       </CardHeader>
       <CardContent>
         {premium.unlocked && premium.password ? (
-          <UnlockedOdds team={team} roster={roster} password={premium.password} onRejected={premium.lock} />
+          <UnlockedOdds team={team} roster={roster} format={format} password={premium.password} onRejected={premium.lock} />
         ) : (
           <LockedPreview onUnlock={() => premium.requireUnlock()} />
         )}
@@ -85,11 +95,13 @@ function LockedPreview({ onUnlock }: { onUnlock: () => void }) {
 function UnlockedOdds({
   team,
   roster,
+  format,
   password,
   onRejected,
 }: {
   team: string;
   roster: string[] | null;
+  format: SeasonFormat;
   password: string;
   onRejected: () => void;
 }) {
@@ -139,20 +151,12 @@ function UnlockedOdds({
     <LoadingOverlay active={loading} hasContent={odds != null} label="Calculating win probabilities">
       {odds && (
         <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1">
-            <span className="label">Weekly matchup win probability</span>
-            <span className="font-display text-3xl leading-none font-bold tabular-nums [font-variation-settings:'opsz'_36]">
-              {pct(odds.start_matchup_win)}
-              {swapped && (
-                <>
-                  <ArrowRight className="mx-1.5 inline size-5 align-[-2px] text-muted-foreground" aria-label="to" />
-                  <span className={odds.current_matchup_win >= odds.start_matchup_win ? "text-win" : "text-loss"}>
-                    {pct(odds.current_matchup_win)}
-                  </span>
-                </>
-              )}
-            </span>
-          </div>
+          <HeadlineOdds
+            format={format}
+            startWin={odds.start_matchup_win}
+            startCats={odds.start}
+            after={swapped ? { win: odds.current_matchup_win, cats: odds.current } : undefined}
+          />
           <CategoryOddsBars
             categories={odds.categories}
             strongest={odds.strongest}

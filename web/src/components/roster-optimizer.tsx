@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SteppableSelect } from "@/components/steppable-select";
 import { cn } from "@/lib/utils";
+import { HeadlineOdds, type SeasonFormat } from "@/components/headline-odds";
 import { ordinal } from "@/lib/team-summary-fields";
 import { usePremium } from "@/components/premium";
 import {
@@ -162,8 +163,11 @@ export function OptimizerResults({
   gamesLeft,
   placementFor,
   onClose,
+  format = "wl",
 }: {
   result: RosterOptimizerResult;
+  // The season's standings format -- picks the headline number.
+  format?: SeasonFormat;
   // This team's real roster, as the Roster page shows it.
   roster: RosterRankRow[];
   // Every player that season (rostered or free agent), for the incoming
@@ -207,23 +211,13 @@ export function OptimizerResults({
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-        <div className="flex flex-col gap-1">
-          <span className="label">Weekly matchup win probability</span>
-          <span className="font-display text-3xl leading-none font-bold tabular-nums [font-variation-settings:'opsz'_36]">
-            {pct(result.start_matchup_win)}
-            {improved && (
-              <>
-                <ArrowRight className="mx-1.5 inline size-5 align-[-2px] text-muted-foreground" aria-label="to" />
-                <span className="text-win">{pct(result.end_matchup_win)}</span>
-              </>
-            )}
-            {improved && (
-              <span className="ml-2 font-sans text-sm font-normal text-muted-foreground">
-                with {result.swaps.length} {result.swaps.length === 1 ? "swap" : "swaps"}
-              </span>
-            )}
-          </span>
-        </div>
+        <HeadlineOdds
+          format={format}
+          startWin={result.start_matchup_win}
+          startCats={result.start}
+          after={improved ? { win: result.end_matchup_win, cats: result.end } : undefined}
+          extra={improved ? `with ${result.swaps.length} ${result.swaps.length === 1 ? "swap" : "swaps"}` : undefined}
+        />
         <Button type="button" variant="outline" size="sm" onClick={onClose}>
           Back to roster
         </Button>

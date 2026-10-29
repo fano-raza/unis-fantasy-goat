@@ -286,6 +286,7 @@ export function TradeHub({
         aSends={sendA}
         bSends={sendB}
         drops={recDrops}
+        format={meta ? (meta.season_format[String(meta.current_year)] ?? "wl") : "wl"}
       />
 
       <Dialog open={pickTeamOpen} onOpenChange={setPickTeamOpen}>

@@ -1,18 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowRight, Crown } from "lucide-react";
+import { Crown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoadingOverlay } from "@/components/loading-overlay";
 import { CategoryOddsBars } from "@/components/roster-optimizer";
 import { usePremium } from "@/components/premium";
 import { ApiError, getTradeOdds, type TradeOdds, type TradeOddsSide } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { HeadlineOdds, type SeasonFormat } from "@/components/headline-odds";
 
 // Waits for a burst of clicks to settle before asking the server.
 const DEBOUNCE_MS = 300;
-const pct = (x: number) => `${Math.round(x * 100)}%`;
 
 /**
  * Premium panel at the bottom of the Trade Hub: how the trade on screen
@@ -27,12 +26,15 @@ export function TradeWinChance({
   aSends,
   bSends,
   drops,
+  format = "wl",
 }: {
   teamA: string | null;
   teamB: string | null;
   aSends: string[];
   bSends: string[];
   drops: Record<string, string[]> | null;
+  // The season's standings format -- picks the headline number.
+  format?: SeasonFormat;
 }) {
   const premium = usePremium();
   return (
@@ -45,7 +47,11 @@ export function TradeWinChance({
             Premium
           </span>
         </CardTitle>
-        <CardDescription>How often each team would win its weekly matchup, before and after this trade</CardDescription>
+        <CardDescription>
+          {format === "cats"
+            ? "How many categories each team would win in a typical week, before and after this trade"
+            : "How often each team would win its weekly matchup, before and after this trade"}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {!premium.unlocked || !premium.password ? (
@@ -59,6 +65,7 @@ export function TradeWinChance({
             aSends={aSends}
             bSends={bSends}
             drops={drops}
+            format={format}
             password={premium.password}
             onRejected={premium.lock}
           />
@@ -102,6 +109,7 @@ function UnlockedOdds({
   aSends,
   bSends,
   drops,
+  format,
   password,
   onRejected,
 }: {
@@ -110,6 +118,7 @@ function UnlockedOdds({
   aSends: string[];
   bSends: string[];
   drops: Record<string, string[]> | null;
+  format: SeasonFormat;
   password: string;
   onRejected: () => void;
 }) {
@@ -163,7 +172,7 @@ function UnlockedOdds({
           {error && <p className="text-sm text-loss">{error}</p>}
           <div className="grid gap-6 sm:grid-cols-2">
             {odds.teams.map((side) => (
-              <TeamOdds key={side.team} side={side} categories={odds.categories} traded={traded} />
+              <TeamOdds key={side.team} side={side} categories={odds.categories} traded={traded} format={format} />
             ))}
           </div>
           {(odds.uncounted.length > 0 || odds.unknown.length > 0) && (
@@ -179,22 +188,28 @@ function UnlockedOdds({
   );
 }
 
-function TeamOdds({ side, categories, traded }: { side: TradeOddsSide; categories: TradeOdds["categories"]; traded: boolean }) {
-  const delta = side.matchup_win - side.start_matchup_win;
+function TeamOdds({
+  side,
+  categories,
+  traded,
+  format,
+}: {
+  side: TradeOddsSide;
+  categories: TradeOdds["categories"];
+  traded: boolean;
+  format: SeasonFormat;
+}) {
   const short = side.active_after < side.active_before;
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      <div className="flex flex-col gap-1">
-        <span className="label">{side.team}</span>
-        <span className="font-display text-3xl leading-none font-bold tabular-nums [font-variation-settings:'opsz'_36]">
-          {pct(side.start_matchup_win)}
-          {traded && (
-            <>
-              <ArrowRight className="mx-1.5 inline size-5 align-[-2px] text-muted-foreground" aria-label="to" />
-              <span className={cn(delta > 0.0005 ? "text-win" : delta < -0.0005 ? "text-loss" : "text-foreground")}>{pct(side.matchup_win)}</span>
-            </>
-          )}
-        </span>
+      <div className="flex flex-col gap-1.5">
+        <span className="font-semibold">{side.team}</span>
+        <HeadlineOdds
+          format={format}
+          startWin={side.start_matchup_win}
+          startCats={side.start}
+          after={traded ? { win: side.matchup_win, cats: side.after } : undefined}
+        />
       </div>
       <CategoryOddsBars categories={categories} strongest={[]} before={side.start} after={traded ? side.after : undefined} />
       {(side.drops.length > 0 || short) && (
