@@ -7,7 +7,7 @@ For a team and the player(s) it's willing to trade away:
      is one over, so it drops the player whose loss hurts it least; you have
      an open spot, so you add the best healthy free agent for your team.
   2. Rescore BOTH teams with the optimizer's `standings` objective (half
-     weekly matchup-win chance, half expected category share, averaged over
+     weekly matchup-win probability, half expected category share, averaged over
      every opponent, TO a fixed coin flip) against the league as it would be
      after the trade -- the two teams play each other too.
   3. Keep the trades that pass the mode's rule (user decisions, 2026-10-27):

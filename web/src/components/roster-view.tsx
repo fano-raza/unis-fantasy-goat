@@ -611,7 +611,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                           )}
                           <span className={cn(isSwappedIn && "text-yellow-500", slot.removed && "line-through")}>{row.Player}</span>
                           {slot.onIR && (
-                            <span className="rounded-sm bg-muted px-1 font-sans text-[0.6875rem] font-bold text-muted-foreground" title="On injured reserve: not counted in win chances">
+                            <span className="rounded-sm bg-muted px-1 font-sans text-[0.6875rem] font-bold text-muted-foreground" title="On injured reserve: not counted in win probabilities">
                               IR
                             </span>
                           )}

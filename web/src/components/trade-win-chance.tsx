@@ -16,7 +16,7 @@ const pct = (x: number) => `${Math.round(x * 100)}%`;
 
 /**
  * Premium panel at the bottom of the Trade Hub: how the trade on screen
- * changes each team's weekly matchup win chance, overall and by category.
+ * changes each team's weekly matchup win probability, overall and by category.
  * Needs a team on both sides. `drops`: who a team releases to make room,
  * as chosen by a recommendation (omitted -> the server picks the player
  * that team misses least).
@@ -39,7 +39,7 @@ export function TradeWinChance({
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          Win chance
+          Win probability
           <span className="flex items-center gap-1 font-sans text-xs font-semibold text-gold">
             <Crown className={premium.unlocked ? "size-3.5 fill-current" : "size-3.5"} aria-hidden />
             Premium
@@ -51,7 +51,7 @@ export function TradeWinChance({
         {!premium.unlocked || !premium.password ? (
           <LockedPreview onUnlock={() => premium.requireUnlock()} />
         ) : !teamA || !teamB ? (
-          <p className="text-sm text-muted-foreground">Choose a team on both sides to see how the trade changes their chances.</p>
+          <p className="text-sm text-muted-foreground">Choose a team on both sides to see how the trade changes their win probabilities.</p>
         ) : (
           <UnlockedOdds
             teamA={teamA}
@@ -143,7 +143,7 @@ function UnlockedOdds({
                 ? "One of these teams has no roster this season."
                 : err instanceof ApiError && err.status === 422
                   ? "This trade can't be scored: a player is on both sides."
-                  : "Couldn't load win chances. Try again in a moment.",
+                  : "Couldn't load win probabilities. Try again in a moment.",
           }));
         });
     }, DEBOUNCE_MS);
@@ -157,7 +157,7 @@ function UnlockedOdds({
   const traded = aSends.length > 0 || bSends.length > 0;
 
   return (
-    <LoadingOverlay active={loading} hasContent={odds != null} label="Calculating win chances">
+    <LoadingOverlay active={loading} hasContent={odds != null} label="Calculating win probabilities">
       {odds && (
         <div className="flex flex-col gap-4">
           {error && <p className="text-sm text-loss">{error}</p>}

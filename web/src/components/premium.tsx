@@ -19,8 +19,8 @@ const LEGACY_PASSWORD_KEY = "roster-optimizer-password";
 // Shown in the unlocked dialog -- add new premium features here.
 export const PREMIUM_FEATURES = [
   "Roster optimizer: the best free-agent swaps for your team",
-  "Win chance by category for manual roster swaps",
-  "Trade Hub: each team's win chance before and after a trade",
+  "Win probability by category for manual roster swaps",
+  "Trade Hub: each team's win probability before and after a trade",
   "Trade Hub: recommend a trade for your team",
 ];
 

@@ -398,9 +398,9 @@ export interface OptimizerSwap {
   drop: OptimizerPlayer;
   add: OptimizerPlayer;
   score_gain: number;
-  // Weekly matchup-win chance (0-1) after this swap.
+  // Weekly matchup-win probability (0-1) after this swap.
   matchup_win_after: number | null;
-  // Change in each category's weekly win chance (0-1 scale) from this swap.
+  // Change in each category's weekly win probability (0-1 scale) from this swap.
   category_change: Record<OptimizerCategory, number>;
 }
 
@@ -430,7 +430,7 @@ export const runRosterOptimizer = (req: { team: string; password: string; max_sw
 export const checkPremiumPassword = (password: string) =>
   post<{ ok: true }>("/premium/check_password", { password });
 
-// Premium: a team's weekly win chance per category (0-1), for its real
+// Premium: a team's weekly win probability per category (0-1), for its real
 // roster ("start") and with the Roster page's manual what-if swaps applied
 // ("current"). Same scoring as the optimizer's before/after numbers.
 export interface RosterCategoryOdds {
@@ -454,7 +454,7 @@ export interface RosterCategoryOdds {
 export const getRosterCategoryOdds = (req: { team: string; password: string; roster?: string[] }) =>
   post<RosterCategoryOdds>("/league/roster_category_odds", req);
 
-// Trade Hub (premium): both teams' weekly win chances before and after a
+// Trade Hub (premium): both teams' weekly win probabilities before and after a
 // trade. See dashboard_site/api/league_store.py::trade_odds.
 export interface TradeOddsSide {
   team: string;

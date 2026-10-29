@@ -465,7 +465,7 @@ def premium_check_password(req: RosterOptimizerPasswordRequest) -> dict:
 
 @app.post("/league/roster_category_odds")
 def league_roster_category_odds(req: RosterCategoryOddsRequest) -> dict:
-    """Premium: per-category weekly win chances for a team's roster, before
+    """Premium: per-category weekly win probabilities for a team's roster, before
     and after the Roster page's manual what-if swaps."""
     _check_roster_optimizer_password(req.password)
     try:
@@ -478,7 +478,7 @@ def league_roster_category_odds(req: RosterCategoryOddsRequest) -> dict:
 
 @app.post("/league/trade_odds")
 def league_trade_odds(req: TradeOddsRequest) -> dict:
-    """Premium: both teams' weekly win chances before and after a Trade Hub
+    """Premium: both teams' weekly win probabilities before and after a Trade Hub
     trade."""
     _check_roster_optimizer_password(req.password)
     try:

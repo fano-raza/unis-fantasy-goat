@@ -113,7 +113,7 @@ export function RosterOptimizerButton({
               Optimize {team}&apos;s roster
             </DialogTitle>
             <DialogDescription>
-              Finds the free-agent pickups that most raise this team&apos;s chances of winning its weekly matchups,
+              Finds the free-agent pickups that most raise this team&apos;s probability of winning its weekly matchups,
               based on projected production for the rest of the season.
             </DialogDescription>
           </DialogHeader>
@@ -208,7 +208,7 @@ export function OptimizerResults({
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
         <div className="flex flex-col gap-1">
-          <span className="label">Weekly matchup win chance</span>
+          <span className="label">Weekly matchup win probability</span>
           <span className="font-display text-3xl leading-none font-bold tabular-nums [font-variation-settings:'opsz'_36]">
             {pct(result.start_matchup_win)}
             {improved && (
@@ -257,12 +257,12 @@ export function OptimizerResults({
       ) : (
         <p className="rounded-lg bg-muted/60 p-3 text-sm">
           No swap is worth making this week: none of the available players would raise this team&apos;s weekly win
-          chance by at least 1 point. Check back next week.
+          probability by at least 1 point. Check back next week.
         </p>
       )}
 
       <p className="text-xs text-muted-foreground">
-        Win chances are against an average opponent in this league, and turnovers are left out. Stats as of{" "}
+        Win probabilities are against an average opponent in this league, and turnovers are left out. Stats as of{" "}
         {formatAsOf(result.data_as_of.player_stats)}; rosters and projections refresh daily.
       </p>
     </div>
@@ -368,7 +368,7 @@ function CompareTable({
 function CategoryDetails({ result }: { result: RosterOptimizerResult }) {
   return (
     <details className="group">
-      <summary className="cursor-pointer text-sm font-semibold select-none">Win chance by category</summary>
+      <summary className="cursor-pointer text-sm font-semibold select-none">Win probability by category</summary>
       <div className="mt-3">
         <CategoryOddsBars
           categories={result.categories}
@@ -382,7 +382,7 @@ function CategoryDetails({ result }: { result: RosterOptimizerResult }) {
 }
 
 /**
- * Weekly win chance per category as bars: `before` alone, or `before`
+ * Weekly win probability per category as bars: `before` alone, or `before`
  * (grey) with `after` drawn over it and the change in points. Shared by the
  * optimizer's results and the Roster page's premium category panel.
  */

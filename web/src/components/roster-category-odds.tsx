@@ -39,7 +39,7 @@ export function RosterCategoryOddsCard({ team, roster }: { team: string; roster:
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          Win chance by category
+          Win probability by category
           <span className="flex items-center gap-1 font-sans text-xs font-semibold text-gold">
             <Crown className={premium.unlocked ? "size-3.5 fill-current" : "size-3.5"} aria-hidden />
             Premium
@@ -121,7 +121,7 @@ function UnlockedOdds({
               ? `No current roster found for ${team}.`
               : err instanceof ApiError && err.status === 422
                 ? "None of the players on this simulated roster have stats this season."
-                : "Couldn't load win chances. Try again in a moment.",
+                : "Couldn't load win probabilities. Try again in a moment.",
           );
         })
         .finally(() => !cancelled && setLoading(false));
@@ -136,11 +136,11 @@ function UnlockedOdds({
 
   const swapped = roster != null && odds != null;
   return (
-    <LoadingOverlay active={loading} hasContent={odds != null} label="Calculating win chances">
+    <LoadingOverlay active={loading} hasContent={odds != null} label="Calculating win probabilities">
       {odds && (
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1">
-            <span className="label">Weekly matchup win chance</span>
+            <span className="label">Weekly matchup win probability</span>
             <span className="font-display text-3xl leading-none font-bold tabular-nums [font-variation-settings:'opsz'_36]">
               {pct(odds.start_matchup_win)}
               {swapped && (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeftRight, Check, Crown, Plus, X } from "lucide-react";
+import { ArrowLeftRight, Check, Crown, Plus, RotateCcw, X } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -184,6 +184,18 @@ export function TradeHub({
     }
   }
 
+  // Back to how the page opens: side A on the remembered team, side B
+  // empty, nothing picked, no recommendation.
+  const startTeamA = teams.includes(remembered) ? remembered : NO_TEAM;
+  const isClear = teamA === startTeamA && teamB === NO_TEAM && sendA.length === 0 && sendB.length === 0 && !rec && !recError;
+  function clearAll() {
+    edited();
+    setTeamA(startTeamA);
+    setTeamB(NO_TEAM);
+    setSendA([]);
+    setSendB([]);
+  }
+
   function onRecommendClick() {
     premium.requireUnlock(() => {
       if (teamA === NO_TEAM) setPickTeamOpen(true);
@@ -205,16 +217,22 @@ export function TradeHub({
             <CardTitle>Build a trade</CardTitle>
             <CardDescription>Pick each team, then tap players to send them to the other side.</CardDescription>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onRecommendClick}
-            disabled={recommending || teams.length === 0}
-            className="border-gold/60 text-gold hover:bg-gold/10 hover:text-gold"
-          >
-            <Crown className={premium.unlocked ? "size-4 fill-current" : "size-4"} aria-hidden />
-            {recommending ? "Finding a trade…" : "Recommend trade"}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="outline" onClick={clearAll} disabled={isClear || recommending}>
+              <RotateCcw className="size-4" aria-hidden />
+              Clear
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onRecommendClick}
+              disabled={recommending || teams.length === 0}
+              className="border-gold/60 text-gold hover:bg-gold/10 hover:text-gold"
+            >
+              <Crown className={premium.unlocked ? "size-4 fill-current" : "size-4"} aria-hidden />
+              {recommending ? "Finding a trade…" : "Recommend trade"}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {(rec || recError) && <RecommendationNote rec={rec} error={recError} picked={rec?.kind === "none" ? recPicked : []} />}

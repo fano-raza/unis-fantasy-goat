@@ -847,7 +847,7 @@ class LeagueStore:
         }
 
     def roster_category_odds(self, team: str, roster: list[str] | None = None) -> dict:
-        """Premium: `team`'s weekly win chance in each category for its real
+        """Premium: `team`'s weekly win probability in each category for its real
         active roster ("start") and for a hypothetical active roster
         ("current") -- the Roster page's what-ifs (swaps, removals, players
         brought back from IR), sent as the full list of player names that
@@ -910,7 +910,7 @@ class LeagueStore:
         b_sends: list[str],
         drops: dict[str, list[str]] | None = None,
     ) -> dict:
-        """Premium: both teams' weekly win chances before and after a trade
+        """Premium: both teams' weekly win probabilities before and after a trade
         built on the Trade Hub. `a_sends` go to team B, `b_sends` to team A.
         A name may be anyone: a player on either roster, on a third team
         (who then loses him) or a free agent (a pickup, e.g. the open spot
