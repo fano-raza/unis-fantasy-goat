@@ -241,7 +241,7 @@ export function DraftHub({
 }: {
   meta: LeagueMeta;
   // Fetched server-side for the default (every year, every team) filter
-  // (see app/players/draft/page.tsx) -- skips this component's own fetch
+  // (see app/team/draft-hub/page.tsx) -- skips this component's own fetch
   // on first render when present. undefined (not fetched, e.g. an older
   // caller) behaves like before; null (server fetch failed) also falls
   // back to the client fetch.

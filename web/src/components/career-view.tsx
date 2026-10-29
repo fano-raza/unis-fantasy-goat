@@ -10,6 +10,8 @@ import { Switch } from "@/components/ui/switch";
 import { StatTable } from "@/components/stat-table";
 import { FilterPanel, type FilterPanelValue } from "@/components/filter-panel";
 import { FilterDrawer } from "@/components/filter-drawer";
+import { RoutedViewSwitcher } from "@/components/routed-view-switcher";
+import { CAREER_VIEW_OPTIONS, CAREER_VIEW_PATHS } from "@/lib/section-nav";
 import { LabeledSelect, NO_FOCUS_TEAM } from "@/components/labeled-select";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { LoadingOverlay } from "@/components/loading-overlay";
@@ -24,7 +26,7 @@ import {
 } from "@/lib/api";
 
 interface CareerStatsViewProps {
-  // Fetched server-side (see app/career/page.tsx) so the bootstrap round
+  // Fetched server-side (see app/career/stats/page.tsx) so the bootstrap round
   // trip happens during SSR/ISR instead of after client hydration -- null
   // if that fetch failed, in which case this falls back to the original
   // client-side fetch.
@@ -157,6 +159,7 @@ export function CareerStatsView({ initialBootstrap }: CareerStatsViewProps) {
 
         <Card variant="plain">
           <CardContent className="flex flex-wrap items-center gap-6">
+            <RoutedViewSwitcher options={CAREER_VIEW_OPTIONS} current="stats" paths={CAREER_VIEW_PATHS} />
             <label className="flex items-center gap-2 label text-foreground">
               <span className="text-muted-foreground">Totals</span>
               <Switch

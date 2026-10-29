@@ -15,6 +15,8 @@ import { Button } from "@/components/ui/button";
 import { StatTable } from "@/components/stat-table";
 import { LabeledSelect, NO_FOCUS_TEAM } from "@/components/labeled-select";
 import { SteppableSelect } from "@/components/steppable-select";
+import { RoutedViewSwitcher } from "@/components/routed-view-switcher";
+import { WEEKLY_VIEW_OPTIONS, WEEKLY_VIEW_PATHS } from "@/lib/section-nav";
 import { useSelectedTeam } from "@/lib/use-selected-team";
 import {
   API_BASE_URL,
@@ -375,6 +377,7 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
             isPlayoffWeek && "rounded-md border border-gold/50 bg-gold/[0.06] p-3",
           )}
         >
+          <RoutedViewSwitcher options={WEEKLY_VIEW_OPTIONS} current="weekly" paths={WEEKLY_VIEW_PATHS} />
           <SteppableSelect label="Season" value={year} onValueChange={handleYearChange} options={meta.years} />
           <div className="flex items-center gap-1">
             <SteppableSelect label="Week" value={week} onValueChange={setWeek} options={weekOptions} />

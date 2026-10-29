@@ -53,7 +53,7 @@ export function TradeHub({
   initialPlayers,
   meta,
 }: {
-  // Fetched server-side (see app/players/page.tsx); null -> client fetch.
+  // Fetched server-side (see app/team/trade-hub/page.tsx); null -> client fetch.
   initialPlayers?: PlayerStat[] | null;
   meta: LeagueMeta | null;
 }) {

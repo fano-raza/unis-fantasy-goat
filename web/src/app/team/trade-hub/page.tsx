@@ -1,12 +1,12 @@
 import { getLeagueMeta, getPlayerStats, type LeagueMeta, type PlayerStat } from "@/lib/api";
 import { RoutedViewSwitcher } from "@/components/routed-view-switcher";
 import { TradeHub } from "@/components/trade-hub";
-import { TEAM_PLAYERS_VIEW_OPTIONS, TEAM_PLAYERS_VIEW_PATHS } from "@/lib/team-players-nav";
+import { TEAM_VIEW_OPTIONS, TEAM_VIEW_PATHS } from "@/lib/section-nav";
 
-// See app/page.tsx for the full rationale on this pattern.
+// See app/weekly-stats/page.tsx for the full rationale on this pattern.
 export const revalidate = 30;
 
-export default async function PlayersPage() {
+export default async function TradeHubPage() {
   let initialPlayers: PlayerStat[] | null = null;
   let meta: LeagueMeta | null = null;
   try {
@@ -32,7 +32,7 @@ export default async function PlayersPage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="sticky top-0 z-30 -mx-4 flex items-center gap-3 border-b border-border bg-background/95 px-4 py-2.5 backdrop-blur sm:mx-0 sm:px-0">
-        <RoutedViewSwitcher options={TEAM_PLAYERS_VIEW_OPTIONS} current="trade" paths={TEAM_PLAYERS_VIEW_PATHS} />
+        <RoutedViewSwitcher options={TEAM_VIEW_OPTIONS} current="trade" paths={TEAM_VIEW_PATHS} />
       </div>
       <TradeHub initialPlayers={initialPlayers} meta={meta} />
     </div>

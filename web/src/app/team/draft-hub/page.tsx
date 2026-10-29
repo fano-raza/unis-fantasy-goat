@@ -1,7 +1,7 @@
 import { getDraftPicks, getLeagueMeta, type DraftPick, type LeagueMeta } from "@/lib/api";
 import { DraftPageView } from "@/components/draft-page-view";
 
-// See app/page.tsx for the full rationale on this pattern.
+// See app/weekly-stats/page.tsx for the full rationale on this pattern.
 export const revalidate = 30;
 
 export default async function DraftHubPage() {

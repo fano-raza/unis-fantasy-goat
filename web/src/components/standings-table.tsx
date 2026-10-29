@@ -72,7 +72,7 @@ export function StandingsTable({
               </TableCell>
               <TableCell className="team-name">
                 <span className="inline-flex items-center gap-1.5">
-                  <Link href={`/team/profile?team=${encodeURIComponent(row.team)}`} className="hover:underline">
+                  <Link href={`/career/profile?team=${encodeURIComponent(row.team)}`} className="hover:underline">
                     {row.team}
                   </Link>
                   {row.clinched && (

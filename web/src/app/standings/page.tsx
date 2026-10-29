@@ -1,7 +1,7 @@
 import { getStandingsBootstrap, type StandingsBootstrap } from "@/lib/api";
 import { StandingsView } from "@/components/standings-view";
 
-// See app/page.tsx for the full rationale on this pattern.
+// See app/weekly-stats/page.tsx for the full rationale on this pattern.
 export const revalidate = 30;
 
 export default async function StandingsPage() {

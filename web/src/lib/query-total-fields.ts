@@ -1,6 +1,6 @@
 // /query-backed win/loss totals for Team Profile's League Top 3 and the
 // Team Comparison table. Kept in a plain (non-"use client") module on
-// purpose: the server pages (app/team/profile, app/team/comparison) map
+// purpose: the server pages (app/career/profile, app/career/comparison) map
 // over these to prefetch their bootstrap, and a value imported from a
 // "use client" file is only a client reference on the server -- calling
 // .map on it threw, silently nulling both pages' server bootstrap so every

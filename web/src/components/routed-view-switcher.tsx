@@ -6,8 +6,8 @@ import { ViewTabs, type ViewTabOption } from "@/components/view-tabs";
 
 // Same ArrowToggle(mobile)/ViewTabs(desktop) pair used elsewhere, but each
 // option navigates to its own real route instead of flipping local state --
-// for pages split into sibling sub-page routes (e.g. /team/profile,
-// /team/comparison, /team/roster) that still want one shared toggle UI to
+// for pages split into sibling sub-page routes (e.g. /career/profile,
+// /career/comparison, /career/stats) that still want one shared toggle UI to
 // move between them.
 export function RoutedViewSwitcher({
   options,

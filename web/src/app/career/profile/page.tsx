@@ -10,7 +10,7 @@ import {
 import { ProfileView, type ProfileBootstrap } from "@/components/profile-view";
 import { PROFILE_QUERY_TOTAL_FIELDS as QUERY_TOTAL_FIELDS } from "@/lib/query-total-fields";
 
-// See app/page.tsx for the full rationale on this pattern.
+// See app/weekly-stats/page.tsx for the full rationale on this pattern.
 export const revalidate = 30;
 
 export default async function ProfilePage() {

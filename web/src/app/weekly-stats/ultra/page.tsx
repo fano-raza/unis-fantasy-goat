@@ -1,7 +1,7 @@
 import { getUltraBootstrap, type UltraBootstrap } from "@/lib/api";
 import { UltraView } from "@/components/ultra-view";
 
-// See app/page.tsx for the full rationale on this pattern.
+// See app/weekly-stats/page.tsx for the full rationale on this pattern.
 export const revalidate = 30;
 
 export default async function UltraPage() {

@@ -1,7 +1,7 @@
 import { getRatingsBootstrap, type RatingsBootstrap } from "@/lib/api";
 import { RatingsView } from "@/components/ratings-view";
 
-// See app/page.tsx for the full rationale on this pattern.
+// See app/weekly-stats/page.tsx for the full rationale on this pattern.
 export const revalidate = 30;
 
 export default async function RatingsPage() {

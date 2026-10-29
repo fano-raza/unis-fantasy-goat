@@ -721,9 +721,9 @@ export const getPlayoffBrackets = (init?: RequestInit) =>
 export type StatWindow = "season" | "d7" | "d14" | "d30" | "d90";
 
 // Real NBA player stats (scripts/export_player_stats.py, via nba_api) for
-// the Players page's Trade Hub. Loosely typed rather than one field per of
+// the Team section's Trade Hub. Loosely typed rather than one field per of
 // the ~100 {window}_{cat}_{total|avg|made|att} columns -- see
-// web/src/app/players/page.tsx's getPlayerCatValue for the accessor that
+// web/src/app/team/trade-hub/page.tsx's getPlayerCatValue for the accessor that
 // builds the right key.
 export interface PlayerStat {
   PlayerId: number;

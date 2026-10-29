@@ -9,6 +9,8 @@ import {
 import { StatTable } from "@/components/stat-table";
 import { ChecklistGroup } from "@/components/filter-panel";
 import { GenericFilterDrawer } from "@/components/generic-filter-drawer";
+import { RoutedViewSwitcher } from "@/components/routed-view-switcher";
+import { WEEKLY_VIEW_OPTIONS, WEEKLY_VIEW_PATHS } from "@/lib/section-nav";
 import { LabeledSelect, NO_FOCUS_TEAM } from "@/components/labeled-select";
 import { SteppableSelect } from "@/components/steppable-select";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
@@ -17,7 +19,7 @@ import { getAverages, getUltraBootstrap, type AggregateRow, type LeagueMeta, typ
 import { useSelectedTeam } from "@/lib/use-selected-team";
 
 interface UltraViewProps {
-  // Fetched server-side (see app/ultra/page.tsx); null if that fetch
+  // Fetched server-side (see app/weekly-stats/ultra/page.tsx); null if that fetch
   // failed, in which case this falls back to the original client fetch.
   initialBootstrap: UltraBootstrap | null;
 }
@@ -131,6 +133,7 @@ export function UltraView({ initialBootstrap }: UltraViewProps) {
       <div className="flex flex-1 flex-col gap-4">
         <Card variant="plain">
           <CardContent className="flex flex-wrap items-center gap-6">
+            <RoutedViewSwitcher options={WEEKLY_VIEW_OPTIONS} current="ultra" paths={WEEKLY_VIEW_PATHS} />
             <SteppableSelect label="Season" value={year} onValueChange={setYear} options={meta.years} />
             <LabeledSelect
               label="Focus team"

@@ -13,35 +13,33 @@ import { useMobileMenu } from "@/components/mobile-menu-context";
 import { LightModeSwitch } from "@/components/light-mode-switch";
 import { PremiumNavButton } from "@/components/premium";
 import { STANDINGS_VIEW_OPTIONS, STANDINGS_VIEW_PATHS } from "@/lib/standings-nav";
-import { TEAM_PLAYERS_VIEW_OPTIONS, TEAM_PLAYERS_VIEW_PATHS } from "@/lib/team-players-nav";
+import {
+  CAREER_VIEW_OPTIONS,
+  CAREER_VIEW_PATHS,
+  TEAM_VIEW_OPTIONS,
+  TEAM_VIEW_PATHS,
+  WEEKLY_VIEW_OPTIONS,
+  WEEKLY_VIEW_PATHS,
+} from "@/lib/section-nav";
 
 interface SubPage {
   label: string;
   href: string;
 }
 
-function subPagesFor(values: string[], options: typeof TEAM_PLAYERS_VIEW_OPTIONS, paths: Record<string, string>): SubPage[] {
-  return values.map((value) => ({
-    label: options.find((o) => o.value === value)!.label,
-    href: paths[value],
-  }));
+function subPagesFor(options: typeof TEAM_VIEW_OPTIONS, paths: Record<string, string>): SubPage[] {
+  return options.map((o) => ({ label: o.label, href: paths[o.value] }));
 }
 
-// Which top-level NAV_LINKS entries have sub-pages, and which of the
-// shared option lists' entries belong under each one (feature request,
-// 2026-10-06). Team shows its 4 Team-ish pages, Players its 3 Players-ish
-// ones -- not all 5 shared ones under both -- since this is a quick-access
-// menu grouped by what a user would expect under each label, not the
-// RoutedViewSwitcher's unified cycling order (a different concern, fixed
-// separately -- see team-players-nav.ts).
+// Which top-level NAV_LINKS entries have sub-pages (keyed by the entry's
+// href), each listing its section's full sub-page set in the same order
+// as that section's RoutedViewSwitcher (feature request, 2026-10-06;
+// sections reorganized 2026-10-28 -- see lib/section-nav.ts).
 const SUB_PAGES: Record<string, SubPage[]> = {
-  "/standings": subPagesFor(["1v1", "league_wins", "ratings"], STANDINGS_VIEW_OPTIONS, STANDINGS_VIEW_PATHS),
-  "/team/profile": subPagesFor(
-    ["profile", "comparison", "roster", "trade"],
-    TEAM_PLAYERS_VIEW_OPTIONS,
-    TEAM_PLAYERS_VIEW_PATHS,
-  ),
-  "/players": subPagesFor(["draft", "trade", "roster"], TEAM_PLAYERS_VIEW_OPTIONS, TEAM_PLAYERS_VIEW_PATHS),
+  "/weekly-stats": subPagesFor(WEEKLY_VIEW_OPTIONS, WEEKLY_VIEW_PATHS),
+  "/team/roster": subPagesFor(TEAM_VIEW_OPTIONS, TEAM_VIEW_PATHS),
+  "/standings": subPagesFor(STANDINGS_VIEW_OPTIONS, STANDINGS_VIEW_PATHS),
+  "/career/profile": subPagesFor(CAREER_VIEW_OPTIONS, CAREER_VIEW_PATHS),
 };
 
 // Mobile-only slide-in drawer, standing in for the desktop top pill nav

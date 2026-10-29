@@ -51,7 +51,7 @@ import { cn } from "@/lib/utils";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { useElementHeight } from "@/lib/use-element-height";
 import { useSelectedTeam } from "@/lib/use-selected-team";
-import { TEAM_PLAYERS_VIEW_OPTIONS, TEAM_PLAYERS_VIEW_PATHS } from "@/lib/team-players-nav";
+import { CAREER_VIEW_OPTIONS, CAREER_VIEW_PATHS } from "@/lib/section-nav";
 
 const SELECTED_TEAMS_KEY = "comparison-selected-teams";
 const MOBILE_TEAM_CAP = 2;
@@ -181,7 +181,7 @@ export interface ComparisonBootstrap {
 }
 
 interface ComparisonViewProps {
-  // Fetched server-side (see app/team/comparison/page.tsx) -- all three
+  // Fetched server-side (see app/career/comparison/page.tsx) -- all three
   // are unconditional/universal (not dependent on which team is selected,
   // which is client-only localStorage state), so the whole thing can be
   // seeded at once. null if that fetch failed, in which case this falls
@@ -371,7 +371,7 @@ export function ComparisonView({ initialBootstrap }: ComparisonViewProps) {
         ref={stickyBarRef}
         className="sticky top-0 z-30 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2.5 backdrop-blur sm:mx-0 sm:px-0"
       >
-        <RoutedViewSwitcher options={TEAM_PLAYERS_VIEW_OPTIONS} current="comparison" paths={TEAM_PLAYERS_VIEW_PATHS} />
+        <RoutedViewSwitcher options={CAREER_VIEW_OPTIONS} current="comparison" paths={CAREER_VIEW_PATHS} />
 
         <div className="flex flex-wrap items-center gap-2">
           {visibleSelected.map((t) => (

@@ -59,7 +59,7 @@ import { TeamBadges } from "@/components/team-badges";
 import { BadgeDrawer } from "@/components/badge-drawer";
 import { SELECTED_TEAM_STORAGE_KEY } from "@/lib/use-selected-team";
 
-import { TEAM_PLAYERS_VIEW_OPTIONS, TEAM_PLAYERS_VIEW_PATHS } from "@/lib/team-players-nav";
+import { CAREER_VIEW_OPTIONS, CAREER_VIEW_PATHS } from "@/lib/section-nav";
 
 // Gold / silver / bronze for the League Top 3 table's 1st/2nd/3rd rank text
 // -- topFields is always filtered to rank <= 3, so no 4th-place case exists.
@@ -154,7 +154,7 @@ export interface ProfileBootstrap {
 }
 
 interface ProfileViewProps {
-  // Fetched server-side (see app/team/profile/page.tsx) -- all of it is
+  // Fetched server-side (see app/career/profile/page.tsx) -- all of it is
   // unconditional/universal (every team's totals/averages/history, not
   // filtered by which team is displayed -- that selection is resolved
   // client-side below from the URL/localStorage). null if the server
@@ -334,7 +334,7 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
   return (
     <div className="flex flex-col gap-4">
       <div className="sticky top-0 z-30 -mx-4 flex flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2.5 backdrop-blur sm:mx-0 sm:px-0">
-        <RoutedViewSwitcher options={TEAM_PLAYERS_VIEW_OPTIONS} current="profile" paths={TEAM_PLAYERS_VIEW_PATHS} />
+        <RoutedViewSwitcher options={CAREER_VIEW_OPTIONS} current="profile" paths={CAREER_VIEW_PATHS} />
 
         <span className="label">
           Team

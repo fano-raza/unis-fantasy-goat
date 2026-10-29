@@ -87,7 +87,7 @@ function TeamLink({
 }) {
   return (
     <Link
-      href={`/team/profile?team=${encodeURIComponent(team)}`}
+      href={`/career/profile?team=${encodeURIComponent(team)}`}
       className={cn("hover:underline", className)}
     >
       {team}
