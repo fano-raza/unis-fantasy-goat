@@ -32,7 +32,7 @@ import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { LoadingOverlay } from "@/components/loading-overlay";
 import { X } from "lucide-react";
 import {
-  getHeadToHead,
+  getHeadToHeadSummary,
   getLeagueMeta,
   getQuery,
   getTeamSummary,
@@ -310,12 +310,11 @@ export function ComparisonView({ initialBootstrap }: ComparisonViewProps) {
   // of a loading indicator.
   const dataLoading = !hydrated || (selected.length > 0 && allTeams.length === 0);
 
-  // Aggregate H2H: summed matchup W-L-T against every *other* selected team
-  // (pairwise -- N teams = N*(N-1)/2 calls to the existing single-pair
-  // endpoint, same fan-out pattern as the rest of this app's multi-fetch
-  // effects). A pair with no real matchup history throws on the backend --
-  // caught and treated as 0-0-0 for that pair rather than failing the whole
-  // aggregate.
+  // Aggregate H2H: summed matchup W-L-T against every *other* selected team,
+  // in one backend call (/league/head_to_head_summary). This used to fan out
+  // one /league/head_to_head call per pair -- up to 66 for 12 teams, each
+  // returning every matchup row -- which was the main reason this box was
+  // slow to load (2026-10-28).
   useEffect(() => {
     const teams = selectedRows.map((r) => r.Team);
     if (teams.length < 2) {
@@ -328,35 +327,22 @@ export function ComparisonView({ initialBootstrap }: ComparisonViewProps) {
     // team just changed) sitting on screen until the new fetch resolves.
     setH2h(null);
     let cancelled = false;
-    const pairs: [string, string][] = [];
-    for (let i = 0; i < teams.length; i++) {
-      for (let j = i + 1; j < teams.length; j++) pairs.push([teams[i], teams[j]]);
-    }
-    Promise.all(pairs.map(([a, b]) => getHeadToHead({ team_a: a, team_b: b }).catch(() => null))).then(
-      (results) => {
+    getHeadToHeadSummary({ teams })
+      .then((res) => {
         if (cancelled) return;
-        const totals = new Map(teams.map((t) => [t, { wins: 0, losses: 0, ties: 0 }]));
-        results.forEach((res, idx) => {
-          if (!res) return;
-          const [a, b] = pairs[idx];
-          const ta = totals.get(a)!;
-          const tb = totals.get(b)!;
-          ta.wins += res.record.wins;
-          ta.losses += res.record.losses;
-          ta.ties += res.record.ties;
-          tb.wins += res.record.losses;
-          tb.losses += res.record.wins;
-          tb.ties += res.record.ties;
-        });
         setH2h(
-          teams.map((t) => {
-            const { wins, losses, ties } = totals.get(t)!;
+          res.rows.map(({ team, wins, losses, ties }) => {
             const denom = wins + losses + ties;
-            return { team: t, wins, losses, ties, winPct: denom > 0 ? (wins + 0.49 * ties) / denom : 0 };
+            return { team, wins, losses, ties, winPct: denom > 0 ? (wins + 0.49 * ties) / denom : 0 };
           }),
         );
-      },
-    );
+      })
+      .catch(() => {
+        // Backend error -- show every team as 0-0-0 rather than a spinner
+        // that never resolves (same fallback the old per-pair fetch used).
+        if (cancelled) return;
+        setH2h(teams.map((team) => ({ team, wins: 0, losses: 0, ties: 0, winPct: 0 })));
+      });
     return () => {
       cancelled = true;
     };

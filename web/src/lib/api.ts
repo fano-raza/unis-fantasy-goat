@@ -660,6 +660,15 @@ export const getRsFinishHistory = () =>
 export const getHeadToHead = (req: HeadToHeadRequest) =>
   post<HeadToHeadResponse>("/league/head_to_head", req);
 
+export interface HeadToHeadSummaryResponse {
+  rows: { team: string; wins: number; losses: number; ties: number }[];
+}
+
+// Each team's combined W-L-T against every other team in `teams`, in one
+// call (vs. one getHeadToHead per pair).
+export const getHeadToHeadSummary = (req: { teams: string[]; years?: number[]; RS?: boolean; PO?: boolean }) =>
+  post<HeadToHeadSummaryResponse>("/league/head_to_head_summary", req);
+
 export const getRecords = (req: RecordsRequest = {}) =>
   post<RecordsResponse>("/league/records", req);
 
