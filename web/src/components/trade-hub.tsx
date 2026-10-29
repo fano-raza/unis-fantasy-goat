@@ -405,7 +405,9 @@ export function TradeHub({
             phrases={recommending ? TRADE_SEARCH_PHRASES : undefined}
             intervalMs={recommending ? 1800 : undefined}
           >
-            <div className="grid gap-4 md:grid-cols-[1fr_auto_1fr]">
+            {/* Two columns on phones too (user, 2026-10-28): compact rows
+                below md -- "L. James", no NBA team/rank/tags. */}
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-[1fr_auto_1fr] md:gap-4">
               <TradeSide {...sideProps("a")} />
               <div className="hidden items-center justify-center md:flex" aria-hidden>
                 <ArrowLeftRight className="size-5 text-muted-foreground" />
@@ -587,7 +589,7 @@ function TradeSide({
   onRemoveAdded: (name: string) => void;
   onDrop: (name: string) => void;
 }) {
-  const options = [{ value: NO_TEAM, label: "No team (any players)" }, ...teams.filter((t) => t !== otherTeam).map((t) => ({ value: t, label: t }))];
+  const options = [{ value: NO_TEAM, label: "Select team" }, ...teams.filter((t) => t !== otherTeam).map((t) => ({ value: t, label: t }))];
   const onRoster = new Set([...roster.map((r) => r.Player), ...incoming.map((i) => i.name), ...added]);
   const nbaTeamOf = (name: string) => {
     const r = rosterRow(name);
@@ -597,9 +599,9 @@ function TradeSide({
   };
 
   return (
-    <section className="flex min-w-0 flex-col gap-3" aria-label={label}>
+    <section className="flex min-w-0 flex-col gap-2 md:gap-3" aria-label={team !== NO_TEAM ? team : label}>
       <div className="flex items-center gap-2">
-        <span className="label w-14 shrink-0">{label}</span>
+        <span className="label hidden w-14 shrink-0 md:inline">{label}</span>
         <Select value={team} onValueChange={(v) => v !== null && onTeam(v)}>
           <SelectTrigger size="sm" className="min-w-0 flex-1">
             <SelectValue>{(v: string) => options.find((o) => o.value === v)?.label ?? v}</SelectValue>
@@ -620,7 +622,7 @@ function TradeSide({
             aria-label={`${team} is ${overBy} over its roster limit`}
           >
             <TriangleAlert className="size-3.5" aria-hidden />
-            {overBy} too many
+            <span className="hidden md:inline">{overBy} too many</span>
           </span>
         )}
       </div>
@@ -684,6 +686,13 @@ function TradeSide({
 
 type RowState = "kept" | "traded" | "dropped" | "autoDropped" | "incoming";
 
+// "LeBron James" -> "L. James", "Jaren Jackson Jr." -> "J. Jackson Jr." --
+// the compact phone layout.
+function shortName(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return parts.length < 2 ? name : `${parts[0][0]}. ${parts.slice(1).join(" ")}`;
+}
+
 function PlayerRow({
   name,
   nbaTeam,
@@ -720,7 +729,7 @@ function PlayerRow({
         aria-label={actionLabel}
         title={actionLabel}
         className={cn(
-          "flex min-w-0 flex-1 items-center gap-3 py-2 pl-3 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring",
+          "flex min-w-0 flex-1 items-center gap-3 py-1.5 pl-2 text-left text-[13px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring md:py-2 md:pl-3 md:text-sm",
           state === "kept" && "hover:bg-muted/60",
           state === "incoming" && "hover:bg-win/10",
         )}
@@ -733,12 +742,15 @@ function PlayerRow({
             out && "line-through",
           )}
         >
-          {name}
+          <span className="hidden md:inline">{name}</span>
+          <span className="md:hidden">{shortName(name)}</span>
         </span>
-        {state === "traded" && <span className="rounded-sm bg-muted px-1.5 text-[11px] font-semibold text-muted-foreground">Traded</span>}
+        {state === "traded" && (
+          <span className="hidden rounded-sm bg-muted px-1.5 text-[11px] font-semibold text-muted-foreground md:inline">Traded</span>
+        )}
         {dropped && (
           <span
-            className="rounded-sm bg-loss/15 px-1.5 text-[11px] font-semibold text-loss"
+            className="hidden rounded-sm bg-loss/15 px-1.5 text-[11px] font-semibold text-loss md:inline"
             title={state === "autoDropped" ? "Dropped to make room: the player this team would miss least. Undo to keep him." : undefined}
           >
             {state === "autoDropped" ? "Auto-dropped" : "Dropped"}
@@ -747,15 +759,15 @@ function PlayerRow({
         {tag && (
           <span
             className={cn(
-              "rounded-sm px-1.5 text-[11px] font-semibold",
+              "hidden rounded-sm px-1.5 text-[11px] font-semibold md:inline",
               state === "incoming" ? "bg-win/15 text-win" : "bg-muted text-muted-foreground",
             )}
           >
             {tag}
           </span>
         )}
-        <span className="w-9 text-xs text-muted-foreground">{nbaTeam}</span>
-        <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">{rank != null ? `#${rank}` : ""}</span>
+        <span className="hidden w-9 text-xs text-muted-foreground md:inline">{nbaTeam}</span>
+        <span className="hidden w-10 text-right text-xs tabular-nums text-muted-foreground md:inline">{rank != null ? `#${rank}` : ""}</span>
       </button>
       {onDrop ? (
         <button
@@ -763,12 +775,12 @@ function PlayerRow({
           onClick={onDrop}
           aria-label={dropped ? `Undo drop ${name}` : `Drop ${name}`}
           title={dropped ? "Undo drop" : "Drop"}
-          className="mx-1 flex size-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          className="mx-0.5 flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring md:mx-1 md:size-7"
         >
           {dropped ? <Undo2 className="size-3.5" aria-hidden /> : <X className="size-3.5" aria-hidden />}
         </button>
       ) : (
-        <span className="mx-1 size-7 shrink-0" aria-hidden />
+        <span className="mx-0.5 size-6 shrink-0 md:mx-1 md:size-7" aria-hidden />
       )}
     </li>
   );
@@ -789,7 +801,7 @@ function AddPlayerRow({
   const remaining = useMemo(() => players.filter((p) => !exclude.has(p.Player)), [players, exclude]);
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring">
+      <PopoverTrigger className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-[13px] text-muted-foreground md:px-3 md:py-2 md:text-sm transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring">
         <Plus className="size-4" aria-hidden />
         Add player
       </PopoverTrigger>
