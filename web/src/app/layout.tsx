@@ -91,6 +91,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               </div>
               <PageArrowNav />
             </div>
+            {/* Mobile-only full-width strip at the bottom of the frozen
+                header, in the page background color (same fill as the
+                current-page tab), so the tab opens into a band of page
+                color and scrolled content passes under it instead of
+                butting right up against the tab (user request,
+                2026-10-29). h-4 = main's mobile px-4 side padding. */}
+            <div aria-hidden="true" className="h-4 bg-background sm:hidden" />
           </header>
           {/* No visible trigger left in the header -- FloatingMenuButton
               (feature request, 2026-10-06) and PageArrowNav's page-name tab
