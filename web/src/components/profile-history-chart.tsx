@@ -155,7 +155,8 @@ export function ProfileHistoryChart({ team, meta }: { team: string; meta: League
                 <YAxis
                   reversed
                   allowDecimals={false}
-                  domain={[1, meta.members.length]}
+                  domain={[1, 10]}
+                  ticks={[1, 10]}
                   width={32}
                   tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
                   stroke="var(--border)"
