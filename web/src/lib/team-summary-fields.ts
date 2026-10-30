@@ -1,3 +1,4 @@
+import { formatNumber } from "@/lib/format-number";
 import type { TeamSummary } from "./api";
 
 // Direction map for scripts/export_team_summary.py's columns -- which fields
@@ -157,7 +158,7 @@ export function rankFor(field: string, rows: TeamSummary[], team: string): numbe
 export function formatValue(value: string | number | null | undefined): string {
   if (value === null || value === undefined || value === "") return "—";
   if (typeof value === "number") {
-    return Number.isInteger(value) ? String(value) : value.toFixed(3);
+    return formatNumber(value);
   }
   return String(value);
 }
