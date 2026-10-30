@@ -1,6 +1,6 @@
 // Fixed-order categorical palette for team/series lines. Returns CSS
 // variables, not hexes, so every chart follows the viewer's light/dark mode
-// with no JS -- the values live in globals.css as --series-1..11, stepped
+// with no JS -- the values live in globals.css as --series-1..12, stepped
 // separately for each mode's card surface (Recharts passes these straight
 // through to SVG stroke/fill, same as the existing var(--border) axes).
 //
@@ -10,9 +10,11 @@
 // adjacent CVD dE 8.4 dark / 9.1 light, normal-vision dE >= 18. Light slots
 // 3-5 sit under 3:1 on white -- allowed because every chart here has a
 // legend and its data is also shown in a table. Slots 1-8 are the skill's
-// reference palette; 9-11 were added for the league's 10-11 teams. Order
+// reference palette; 9-11 were added for the league's 10-11 teams, and 12
+// (brown, #9c622f in both modes, re-validated 2026-10-30) when Adam made it
+// 12 -- past the palette, every chart's 12th team had fallen back to grey. Order
 // matters -- assign in sequence, never cycle or regenerate.
-export const SERIES_PALETTE_SIZE = 11;
+export const SERIES_PALETTE_SIZE = 12;
 const SERIES_COUNT = SERIES_PALETTE_SIZE;
 
 export function categoricalPalette(n: number): string[] {
