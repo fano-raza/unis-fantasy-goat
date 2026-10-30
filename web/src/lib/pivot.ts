@@ -14,6 +14,8 @@ export interface GroupBy {
 export interface PivotResult {
   chartData: Record<string, number>[];
   seriesKeys: string[];
+  // Series key -> its color group (see colorGroupFor).
+  colorGroups: Record<string, string>;
 }
 
 export interface ScatterPoint {
@@ -27,6 +29,8 @@ export interface ScatterPoint {
 
 export interface ScatterSeries {
   key: string;
+  // See colorGroupFor.
+  colorGroup: string;
   points: ScatterPoint[];
 }
 
@@ -36,6 +40,18 @@ function groupKeyFor(row: AnalysisRow, groupBy: GroupBy): string {
   if (groupBy.season) parts.push(String(row.year));
   if (groupBy.week) parts.push(`Wk${row.week}`);
   return parts.length ? parts.join(" ") : "All";
+}
+
+// The entity a series' color follows: its team when grouping by team, else
+// its season, else its week. Color tracks identity, not the series count --
+// Team + Season can mean ~88 series, far past the 11 validated palette slots
+// (which used to leave everything past the 11th grey), but it's still only
+// 10-11 teams, so every season of a team shares that team's color.
+export function colorGroupFor(row: AnalysisRow, groupBy: GroupBy): string {
+  if (groupBy.team) return row.team;
+  if (groupBy.season) return String(row.year);
+  if (groupBy.week) return `Wk${row.week}`;
+  return "All";
 }
 
 // Groups filtered rows by (group key, X value), averages Y within each
@@ -51,11 +67,13 @@ export function pivot(
   groupBy: GroupBy,
 ): PivotResult {
   const buckets = new Map<string, Map<number, number[]>>();
+  const colorGroups: Record<string, string> = {};
   for (const row of rows) {
     const x = xField.get(row);
     const y = yField.get(row);
     if (x === undefined || y === undefined) continue;
     const key = groupKeyFor(row, groupBy);
+    colorGroups[key] = colorGroupFor(row, groupBy);
     if (!buckets.has(key)) buckets.set(key, new Map());
     const xMap = buckets.get(key)!;
     if (!xMap.has(x)) xMap.set(x, []);
@@ -83,7 +101,7 @@ export function pivot(
     return point;
   });
 
-  return { chartData, seriesKeys };
+  return { chartData, seriesKeys, colorGroups };
 }
 
 // For continuous X fields (a stat/rating/rank, not Season/Week): no
@@ -107,11 +125,13 @@ export function pivotScatter(
 ): ScatterSeries[] {
   const isGrouped = groupBy.team || groupBy.season || groupBy.week;
   const buckets = new Map<string, ScatterPoint[]>();
+  const colorGroups: Record<string, string> = {};
   for (const row of rows) {
     const x = xField.get(row);
     const y = yField.get(row);
     if (x === undefined || y === undefined) continue;
     const key = groupKeyFor(row, groupBy);
+    colorGroups[key] = colorGroupFor(row, groupBy);
     if (!buckets.has(key)) buckets.set(key, []);
     buckets.get(key)!.push({ x, y, label: `${row.team} · ${row.year} Wk${row.week}` });
   }
@@ -120,9 +140,10 @@ export function pivotScatter(
     .sort()
     .map((key) => {
       const points = buckets.get(key)!;
-      if (!isGrouped) return { key, points };
+      const colorGroup = colorGroups[key];
+      if (!isGrouped) return { key, colorGroup, points };
       const avgX = points.reduce((a, p) => a + p.x, 0) / points.length;
       const avgY = points.reduce((a, p) => a + p.y, 0) / points.length;
-      return { key, points: [{ x: avgX, y: avgY, label: key }] };
+      return { key, colorGroup, points: [{ x: avgX, y: avgY, label: key }] };
     });
 }

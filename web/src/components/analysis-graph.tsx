@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/select";
 import type { AnalysisRow } from "@/lib/api";
 import { ANALYSIS_FIELDS, DEFAULT_X_FIELD, getField } from "@/lib/fields";
-import { categoricalPalette } from "@/lib/palette";
+import { categoricalPalette, SERIES_PALETTE_SIZE } from "@/lib/palette";
 import { niceTicks } from "@/lib/chart-ticks";
 import { pivot, pivotScatter, type GroupBy } from "@/lib/pivot";
 import { cn } from "@/lib/utils";
@@ -125,8 +125,11 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
   // actively misleading.
   const isTimeAxis = xField.key === "year" || xField.key === "week";
 
-  const { chartData, seriesKeys } = useMemo(
-    () => (isTimeAxis ? pivot(rows, xField, yField, params.groupBy) : { chartData: [], seriesKeys: [] }),
+  const { chartData, seriesKeys, colorGroups } = useMemo(
+    () =>
+      isTimeAxis
+        ? pivot(rows, xField, yField, params.groupBy)
+        : { chartData: [], seriesKeys: [], colorGroups: {} as Record<string, string> },
     [rows, xField, yField, params.groupBy, isTimeAxis],
   );
   const scatterSeries = useMemo(
@@ -135,7 +138,33 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
   );
   const activeSeriesKeys = isTimeAxis ? seriesKeys : scatterSeries.map((s) => s.key);
   const hasData = isTimeAxis ? chartData.length > 0 : scatterSeries.some((s) => s.points.length > 0);
-  const colors = useMemo(() => categoricalPalette(activeSeriesKeys.length), [activeSeriesKeys.length]);
+  // One color per color group (team, else season, else week -- see
+  // pivot.ts's colorGroupFor), not per series. Weeks are the one group that
+  // can outnumber the palette; they're ordered, so past 11 they get a
+  // single-hue light-to-dark ramp instead of falling back to grey.
+  const groupOf = useMemo(() => {
+    const m: Record<string, string> = isTimeAxis ? { ...colorGroups } : {};
+    for (const s of scatterSeries) m[s.key] = s.colorGroup;
+    return m;
+  }, [isTimeAxis, colorGroups, scatterSeries]);
+  const legendGroups = useMemo(
+    () =>
+      Array.from(new Set(activeSeriesKeys.map((k) => groupOf[k]))).sort((a, b) =>
+        a.localeCompare(b, undefined, { numeric: true }),
+      ),
+    [activeSeriesKeys, groupOf],
+  );
+  const groupColor = useMemo(() => {
+    const n = legendGroups.length;
+    const palette =
+      n <= SERIES_PALETTE_SIZE
+        ? categoricalPalette(n)
+        : legendGroups.map(
+            (_, i) => `color-mix(in oklab, var(--series-1) ${Math.round(25 + (75 * i) / (n - 1))}%, var(--card))`,
+          );
+    return new Map(legendGroups.map((g, i) => [g, palette[i]]));
+  }, [legendGroups]);
+  const colorFor = (key: string) => groupColor.get(groupOf[key]) ?? "var(--muted-foreground)";
 
   // Precomputed once per data change, not per mousemove -- see DENSE_THRESHOLD.
   const { maxPointCount, minRow, maxRow } = useMemo(() => {
@@ -296,12 +325,12 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
                     ]}
                   />
                 )}
-                {seriesKeys.map((key, i) => (
+                {seriesKeys.map((key) => (
                   <Line
                     key={key}
                     dataKey={key}
                     name={key}
-                    stroke={colors[i]}
+                    stroke={colorFor(key)}
                     connectNulls={false}
                     dot={{ r: 2 }}
                     activeDot={false}
@@ -335,7 +364,7 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
               </>
             )}
           </div>
-          <ChartLegend items={seriesKeys.map((key, i) => ({ key, color: colors[i] }))} />
+          <ChartLegend items={legendGroups.map((key) => ({ key, color: groupColor.get(key)! }))} />
           </>
         ) : (
           // Continuous X (a stat/rating/rank): unconnected scatter, every
@@ -405,19 +434,19 @@ export function AnalysisGraph({ id, rows, allYears, onRemove }: AnalysisGraphPro
                     }}
                   />
                 )}
-                {scatterSeries.map((s, i) => (
+                {scatterSeries.map((s) => (
                   <Scatter
                     key={s.key}
                     name={s.key}
                     data={s.points}
-                    fill={colors[i]}
+                    fill={colorFor(s.key)}
                     isAnimationActive={false}
                   />
                 ))}
               </ScatterChart>
             </ResponsiveContainer>
           </div>
-          <ChartLegend items={activeSeriesKeys.map((key, i) => ({ key, color: colors[i] }))} />
+          <ChartLegend items={legendGroups.map((key) => ({ key, color: groupColor.get(key)! }))} />
           </>
         )}
       </CardContent>

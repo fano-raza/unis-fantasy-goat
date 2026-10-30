@@ -12,7 +12,8 @@
 // legend and its data is also shown in a table. Slots 1-8 are the skill's
 // reference palette; 9-11 were added for the league's 10-11 teams. Order
 // matters -- assign in sequence, never cycle or regenerate.
-const SERIES_COUNT = 11;
+export const SERIES_PALETTE_SIZE = 11;
+const SERIES_COUNT = SERIES_PALETTE_SIZE;
 
 export function categoricalPalette(n: number): string[] {
   // Past the validated set, fall back to muted grey rather than inventing
