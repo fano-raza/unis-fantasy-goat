@@ -49,7 +49,8 @@ import {
   type TeamSummary,
 } from "@/lib/api";
 import { NEG_CATS } from "@/lib/highlight";
-import { comparableFields, formatValue, ordinal, rankFor } from "@/lib/team-summary-fields";
+import { comparableFields, directionFor, formatValue, ordinal, rankFor } from "@/lib/team-summary-fields";
+import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { ProfileHistoryChart } from "@/components/profile-history-chart";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
@@ -106,6 +107,24 @@ function rankForCategory(cat: Category, rows: AggregateRow[], team: string): num
     return v != null && (higherIsBetter ? v > value : v < value);
   }).length;
   return better + 1;
+}
+
+interface RankingEntry {
+  team: string;
+  value: number;
+  rank: number;
+}
+
+// Every team's value for one stat, best first, with standard competition
+// ranks (ties share a rank, e.g. 1,1,3) -- the League Top 3 popup's list.
+// Built from data the page already has, so it needs no extra fetch.
+function rankingFrom(entries: { team: string; value: unknown }[], higherIsBetter: boolean): RankingEntry[] {
+  const numeric = entries.filter((e): e is { team: string; value: number } => typeof e.value === "number");
+  const sorted = [...numeric].sort((a, b) => (higherIsBetter ? b.value - a.value : a.value - b.value));
+  return sorted.map((e) => ({
+    ...e,
+    rank: numeric.filter((o) => (higherIsBetter ? o.value > e.value : o.value < e.value)).length + 1,
+  }));
 }
 
 const SELECTED_TEAM_KEY = SELECTED_TEAM_STORAGE_KEY;
@@ -292,6 +311,11 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
         field,
         rank: rankFor(field, allTeams, team),
         value: allTeams.find((r) => r.Team === team)?.[field] ?? null,
+        ranking: () =>
+          rankingFrom(
+            allTeams.map((r) => ({ team: r.Team, value: r[field] })),
+            directionFor(field) === "higher",
+          ),
       }));
 
     const statFields =
@@ -301,11 +325,13 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
               field: `Total ${cat}`,
               rank: rankForCategory(cat, totals, team),
               value: totals.find((r) => r.team === team)?.stats[cat] ?? null,
+              ranking: () => rankingFrom(totals.map((r) => ({ team: r.team, value: r.stats[cat] })), !NEG_CATS.includes(cat)),
             },
             {
               field: `Avg ${cat}`,
               rank: rankForCategory(cat, averages, team),
               value: averages.find((r) => r.team === team)?.stats[cat] ?? null,
+              ranking: () => rankingFrom(averages.map((r) => ({ team: r.team, value: r.stats[cat] })), !NEG_CATS.includes(cat)),
             },
           ])
         : [];
@@ -313,11 +339,19 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
     const queryFields = QUERY_TOTAL_FIELDS.map((f) => {
       const rows = queryTotals[f.label];
       const result = rows ? rankFromQueryRows(rows, team, f.direction) : undefined;
-      return { field: f.label, rank: result?.rank, value: result?.value ?? null };
+      return {
+        field: f.label,
+        rank: result?.rank,
+        value: result?.value ?? null,
+        ranking: () => rankingFrom((rows ?? []).flatMap((r) => (r.Team ? [{ team: r.Team, value: r.value }] : [])), f.direction === "higher"),
+      };
     });
 
     return [...summaryFields, ...statFields, ...queryFields]
-      .filter((r): r is { field: string; rank: number; value: string | number | null } => r.rank !== undefined && r.rank <= 3)
+      .filter(
+        (r): r is { field: string; rank: number; value: string | number | null; ranking: () => RankingEntry[] } =>
+          r.rank !== undefined && r.rank <= 3,
+      )
       .sort((a, b) => a.rank - b.rank);
   }, [team, allTeams, totals, averages, queryTotals]);
 
@@ -463,7 +497,14 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
                 {topFields.map((row) => (
                   <TableRow key={row.field}>
                     <TableCell className="font-sans font-medium text-muted-foreground">
-                      {row.field}
+                      <Popover>
+                        <PopoverTrigger className="cursor-pointer text-left underline decoration-dotted decoration-muted-foreground/50 underline-offset-4 hover:text-foreground hover:decoration-foreground">
+                          {row.field}
+                        </PopoverTrigger>
+                        <PopoverContent align="start" className="w-64">
+                          <StatRankingList field={row.field} ranking={row.ranking()} team={team} />
+                        </PopoverContent>
+                      </Popover>
                     </TableCell>
                     <TableCell className="text-right">{formatValue(row.value)}</TableCell>
                     <TableCell className={cn("text-right font-extrabold", rankColorClass(row.rank))}>
@@ -571,4 +612,29 @@ function StatTile({
     );
   }
   return <div className={className}>{content}</div>;
+}
+
+function StatRankingList({ field, ranking, team }: { field: string; ranking: RankingEntry[]; team: string }) {
+  return (
+    <>
+      <PopoverTitle className="font-semibold">{field}</PopoverTitle>
+      <ol className="flex flex-col">
+        {ranking.map((r) => (
+          <li
+            key={r.team}
+            className={cn(
+              "flex items-center gap-2 rounded-sm px-1.5 py-0.5",
+              r.team === team && "bg-focus-row font-semibold text-primary",
+            )}
+          >
+            <span className={cn("w-8 shrink-0 font-extrabold", r.rank <= 3 ? rankColorClass(r.rank) : "text-muted-foreground")}>
+              {ordinal(r.rank)}
+            </span>
+            <span className="team-name min-w-0 flex-1 truncate">{r.team}</span>
+            <span className="font-mono tabular-nums">{formatValue(r.value)}</span>
+          </li>
+        ))}
+      </ol>
+    </>
+  );
 }
