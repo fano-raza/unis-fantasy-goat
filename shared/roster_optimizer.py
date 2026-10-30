@@ -468,10 +468,13 @@ def optimize(
     config: OptimizerConfig | None = None,
     targets: list[str] | None = None,
     unscaled_teams: frozenset | set = frozenset(),
+    ignore_opponents: frozenset | set = frozenset(),
 ) -> OptimizerResult:
     """Greedy drop/add search for `team`. players = blend_players() output;
     rosters = every fantasy team -> PlayerIds; free_agents = PlayerIds
-    available to add (anyone not on a roster)."""
+    available to add (anyone not on a roster). ignore_opponents = teams left
+    out of the opponent average (e.g. ones the manager expects to beat
+    anyway); category variability is still measured on the whole league."""
     config = config or OptimizerConfig()
     out_now = pd.Series(False, index=players.index)
     if "InjuryStatus" in players:
@@ -489,7 +492,7 @@ def optimize(
     if mode not in ("ratings", "category_wins", "matchup_wins", "standings", "categories"):
         raise ValueError(f"unknown objective {mode!r}")
 
-    others_raw = values.drop(index=team).to_numpy()
+    others_raw = values.drop(index=[team, *(t for t in ignore_opponents if t in values.index and t != team)]).to_numpy()
     others = _oriented(others_raw)
     o_lo, o_hi = others.min(axis=0), others.max(axis=0)
     sigma = category_sigma(values, config)

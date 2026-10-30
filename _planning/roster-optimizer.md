@@ -167,6 +167,17 @@ User question: how does "win probability" work in a Cats season (standings by to
   - Fair-style picks: categories-only finds fewer and gains less.
   - **Suggestion for the next Cats season:** have `trade_recommend` score with `objective="categories"` for its least-lopsided pick, keeping Fair on the live objective. The evidence is mixed (recent seasons only), so it isn't switched now; 2027 is W/L.
 
+## Ignoring some opponents (tested 2026-10-30)
+
+User question: could the optimizer target "everyone except" a few teams the manager expects to beat anyway? Engine support added as `ro.optimize(..., ignore_opponents=...)` (default empty = live behavior; category variability is still measured on the whole league). Not in the app yet.
+
+Test ([`scripts/backtest_opponent_subset.py`](../scripts/backtest_opponent_subset.py)): ignore Chirayu and Saamrit (the user's pick, as teams in every season) vs the live whole-league score. Weekly replay, 46 team-seasons 2019–23, corrected projections, cap 3. For Chirayu/Saamrit themselves only the other one is ignored.
+
+- **Recommendations do differ:** from the same roster in the same week, the subset version picks the same moves in 79% of 828 team-weeks (same pickups 85%). Only 4% of team-seasons get identical advice all year. Same move count (16.8 vs 16.9 swaps/season).
+- **Results don't:** subset − league = **+0.02 matchup wins/season [−0.28, +0.36]**, −0.1 category wins [−0.8, +0.7]. Split by opponent: vs Chirayu/Saamrit −0.02 [−0.16, +0.13]; vs everyone else +0.04 [−0.21, +0.30]. By season +0.88, −0.39, +0.17, −0.35, −0.05 (noise). Teams other than the two only: −0.12 [−0.46, +0.26].
+- **Caveat:** in 2019–23 Chirayu and Saamrit were not easy opponents (a stand-pat roster beat them 30.5% of the time vs 36.9% for everyone else), so this tests ignoring two ordinary teams, not teams the manager truly beats regardless. Ignoring them cost nothing even in those games: the optimizer gives up little by dropping two of nine opponents from the average.
+- **Takeaway:** harmless as a user preference, no evidence it helps. A version that ignores the teams the model itself projects you to beat most hasn't been tested.
+
 ## Ideas not yet tested
 
 - **Remaining-schedule weighting:** weight opponents by how often you still face them. Still season-long; probably the more promising variant.
