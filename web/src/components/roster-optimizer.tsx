@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ArrowLeft, ArrowLeftRight, ArrowRight, Crown, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -77,6 +77,13 @@ export function RosterOptimizerButton({
   const [excluded, setExcluded] = useState<{ team: string; teams: ReadonlySet<string> }>({ team, teams: new Set() });
   const excludedTeams = excluded.team === team ? excluded.teams : new Set<string>();
   const selectedCount = opponents.filter((t) => !excludedTeams.has(t)).length;
+  // Focus lands on Optimize when the team screen opens (Next unmounts, and
+  // the dialog would otherwise drop focus on the first enabled control --
+  // usually "None", which then looks pressed while every team is checked).
+  const optimizeRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (open && step === "opponents") optimizeRef.current?.focus();
+  }, [open, step]);
 
   function setExcludedTeams(teams: ReadonlySet<string>) {
     setExcluded({ team, teams });
@@ -201,7 +208,7 @@ export function RosterOptimizerButton({
                   <ArrowLeft className="size-4" />
                   Back
                 </Button>
-                <Button type="submit" size="sm" className="ml-auto" disabled={selectedCount === 0}>
+                <Button ref={optimizeRef} type="submit" size="sm" className="ml-auto" disabled={selectedCount === 0}>
                   <ArrowLeftRight className="size-4" />
                   Optimize
                 </Button>
