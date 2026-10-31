@@ -81,8 +81,9 @@ function easternDateKey(isoDate: string): string {
 type GameState = "counted" | "missed" | "upcoming" | "doubtful" | "benched" | "out";
 
 const GAME_STATE_STYLE: Record<GameState, string> = {
-  counted: "bg-primary opacity-45",
-  missed: "bg-muted-foreground/45",
+  // Slightly muted (it's in the past) but still clearly blue next to grey.
+  counted: "bg-primary/75",
+  missed: "bg-muted-foreground/30",
   upcoming: "border-2 border-primary",
   doubtful: "border-2 border-yellow-500",
   benched: "border-2 border-muted-foreground/60",
