@@ -85,10 +85,10 @@ const GAME_STATE_STYLE: Record<GameState, string> = {
 };
 
 const GAME_STATE_LABEL: Record<GameState, string> = {
-  counted: "Played -- counted",
+  counted: "Played, counted",
   missed: "Didn't count",
   upcoming: "Upcoming game",
-  out: "Upcoming -- on IR or injured, won't count",
+  out: "Upcoming, on IR or injured: won't count",
 };
 
 function todayKey(): string {
