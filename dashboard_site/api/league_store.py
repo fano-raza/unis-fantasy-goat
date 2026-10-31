@@ -65,6 +65,11 @@ SEASON_IS_WL = {
 }
 
 
+class OpponentSelectionError(ValueError):
+    """Bad Roster Optimizer opponent picks (unknown team / none left) -- the
+    caller's input, not the data, so the API answers 422 rather than 503."""
+
+
 class LeagueStore:
     """Weighted-Rank-bearing views built on dashboard_site's own CSV-loaded
     data (via StatsStore), deliberately independent of Models/League.py so
@@ -779,18 +784,28 @@ class LeagueStore:
             self._blended_players_cache = (cache_key, players, self._projection_kind)
         return year, rosters, free_agents, players, name_to_id
 
-    def roster_optimizer(self, team: str, max_swaps: int = 3) -> dict:
+    def roster_optimizer(self, team: str, max_swaps: int = 3, ignore_opponents=()) -> dict:
         """This week's recommended drop/add swaps for one fantasy team, from
         the backtested configuration (ro.recommended_config()). Inputs are the
         daily exports: player_stats.csv (real stats), player_projections.csv
-        (ESPN projection + injury status), roster_ranks.csv (who owns whom)."""
+        (ESPN projection + injury status), roster_ranks.csv (who owns whom).
+        ignore_opponents = teams the manager doesn't want to optimize against
+        (left out of the opponent average; see ro.optimize) -- at least one
+        opponent has to stay in."""
         year, rosters, free_agents, players, _ = self._optimizer_inputs()
         if team not in rosters:
             raise KeyError(f"no {year} roster found for team {team!r}")
 
+        ignored = set(ignore_opponents) - {team}
+        unknown = sorted(ignored - set(rosters))
+        if unknown:
+            raise OpponentSelectionError(f"not a {year} team: {', '.join(unknown)}")
+        if not set(rosters) - ignored - {team}:
+            raise OpponentSelectionError("pick at least one team to optimize against")
+
         max_swaps = max(1, min(int(max_swaps), len(rosters[team])))
         config = ro.recommended_config(max_swaps=max_swaps)
-        result = ro.optimize(team, players, rosters, free_agents, config)
+        result = ro.optimize(team, players, rosters, free_agents, config, ignore_opponents=frozenset(ignored))
 
         def player_card(pid) -> dict:
             p = players.loc[pid]
@@ -843,6 +858,8 @@ class LeagueStore:
             "end_matchup_win": round(result.swaps[-1].matchup_win if result.swaps else result.start_matchup_win, 4),
             "start_score": round(result.start_objective, 4),
             "end_score": round(result.end_objective, 4),
+            # Opponents left out of every number above (sorted; [] = whole league).
+            "ignored_opponents": sorted(ignored),
             "swaps": swaps,
             "projections": getattr(self, "_projection_kind", "blend"),
             "data_as_of": {

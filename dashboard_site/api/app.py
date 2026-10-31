@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import daily_games_store
-from .league_store import get_league_store, reset_league_store
+from .league_store import OpponentSelectionError, get_league_store, reset_league_store
 from .query_engine import StatsStore
 from .schemas import (
     AggregateRequest,
@@ -521,9 +521,11 @@ def league_roster_optimizer(req: RosterOptimizerRequest) -> dict:
     """Password-gated Roster Optimizer (_planning/roster-optimizer.md)."""
     _check_roster_optimizer_password(req.password)
     try:
-        return league_store.roster_optimizer(req.team, req.max_swaps)
+        return league_store.roster_optimizer(req.team, req.max_swaps, ignore_opponents=req.ignore_opponents)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc.args[0])) from exc
+    except OpponentSelectionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 

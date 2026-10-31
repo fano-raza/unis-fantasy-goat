@@ -163,6 +163,9 @@ class RosterOptimizerRequest(BaseModel):
     password: str
     # Upper bound is the team's roster size, clamped server-side.
     max_swaps: int = Field(3, ge=1, le=20)
+    # Fantasy teams to leave out of the opponent average (the manager's
+    # "don't optimize against" picks). Empty = the whole league.
+    ignore_opponents: list[str] = Field(default_factory=list, max_length=30)
 
 
 class WeekCalendarRequest(BaseModel):

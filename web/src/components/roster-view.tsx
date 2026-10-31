@@ -219,6 +219,15 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
     () => rosterRows.filter((r) => r.FantasyTeam === team).sort((a, b) => a.Rank - b.Rank),
     [rosterRows, team],
   );
+  // The optimizer's "optimize against" choices: every other team this
+  // season (free agents have an empty FantasyTeam and aren't a team).
+  const opponents = useMemo(
+    () =>
+      [...new Set(rosterRows.map((r) => r.FantasyTeam).filter((t): t is string => !!t && t !== team))].sort((a, b) =>
+        a.localeCompare(b),
+      ),
+    [rosterRows, team],
+  );
 
   // Every other player in the league that year -- rostered by someone
   // else, or a free agent (FantasyTeam === "") -- the pool any slot can
@@ -453,6 +462,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
             <RosterOptimizerButton
               team={team}
               rosterSize={teamRoster.length}
+              opponents={opponents}
               disabled={optimizing}
               onRunningChange={setOptimizing}
               onResult={(res) => {

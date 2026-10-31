@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, type FormEvent, type ReactNode } from "react";
-import { ArrowLeftRight, ArrowRight, Crown, Minus, Plus } from "lucide-react";
+import { ArrowLeft, ArrowLeftRight, ArrowRight, Crown, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SteppableSelect } from "@/components/steppable-select";
@@ -34,6 +35,7 @@ function errorMessage(err: unknown): string {
     } catch {}
     if (err.status === 503) return detail || "The optimizer isn't available right now.";
     if (err.status === 404) return detail || "No current roster found for this team.";
+    if (err.status === 422) return detail || "Check the teams you picked and try again.";
   }
   return "Couldn't reach the server. Try again in a moment.";
 }
@@ -42,45 +44,78 @@ function errorMessage(err: unknown): string {
  * "Optimize" button for the Roster page (current season only) -- a premium
  * feature: visible to everyone, but clicking it while premium is locked
  * opens the premium login first (components/premium.tsx), then continues
- * straight into this dialog. Asks how many players to swap out, then
- * closes and runs the backtested Roster Optimizer for `team` -- the page
- * shows the loading veil while `onRunningChange(true)` and the comparison
- * once `onResult` fires. See _planning/roster-optimizer.md.
+ * straight into this dialog. Two screens: how many players to swap out,
+ * then which opponents to optimize against (all by default -- unchecked
+ * ones are left out of the opponent average). Then it closes and runs the
+ * backtested Roster Optimizer for `team` -- the page shows the loading
+ * veil while `onRunningChange(true)` and the comparison once `onResult`
+ * fires. See _planning/roster-optimizer.md.
  */
 export function RosterOptimizerButton({
   team,
   rosterSize,
+  opponents,
   disabled,
   onRunningChange,
   onResult,
 }: {
   team: string;
   rosterSize: number;
+  // The season's other fantasy teams, in display order.
+  opponents: string[];
   disabled?: boolean;
   onRunningChange: (running: boolean) => void;
   onResult: (result: RosterOptimizerResult) => void;
 }) {
   const premium = usePremium();
   const [open, setOpen] = useState(false);
+  const [step, setStep] = useState<"swaps" | "opponents">("swaps");
   const [maxSwaps, setMaxSwaps] = useState(3);
   const [error, setError] = useState<string | null>(null);
+  // Unchecked opponents, remembered while the page stays on this team so a
+  // re-run keeps the same picks; switching teams starts from "all" again.
+  const [excluded, setExcluded] = useState<{ team: string; teams: ReadonlySet<string> }>({ team, teams: new Set() });
+  const excludedTeams = excluded.team === team ? excluded.teams : new Set<string>();
+  const selectedCount = opponents.filter((t) => !excludedTeams.has(t)).length;
+
+  function setExcludedTeams(teams: ReadonlySet<string>) {
+    setExcluded({ team, teams });
+  }
+  function toggleOpponent(t: string, checked: boolean) {
+    const next = new Set(excludedTeams);
+    if (checked) next.delete(t);
+    else next.add(t);
+    setExcludedTeams(next);
+  }
 
   function openDialog() {
     premium.requireUnlock(() => {
       setMaxSwaps((n) => Math.max(1, Math.min(n, rosterSize)));
       setError(null);
+      setStep("swaps");
       setOpen(true);
     });
   }
 
-  async function submitSwaps(e: FormEvent) {
+  function submitSwaps(e: FormEvent) {
     e.preventDefault();
-    if (!premium.password) return;
+    setError(null);
+    setStep("opponents");
+  }
+
+  async function submitOpponents(e: FormEvent) {
+    e.preventDefault();
+    if (!premium.password || selectedCount === 0) return;
     setOpen(false);
     onRunningChange(true);
     try {
       const [result] = await Promise.all([
-        runRosterOptimizer({ team, password: premium.password, max_swaps: maxSwaps }),
+        runRosterOptimizer({
+          team,
+          password: premium.password,
+          max_swaps: maxSwaps,
+          ignore_opponents: opponents.filter((t) => excludedTeams.has(t)),
+        }),
         new Promise((resolve) => setTimeout(resolve, MIN_RUN_MS)),
       ]);
       onResult(result);
@@ -118,16 +153,61 @@ export function RosterOptimizerButton({
               based on projected production for the rest of the season.
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={submitSwaps} className="flex flex-col gap-4">
-            <p className="text-sm font-medium">How many players are you willing to swap out?</p>
-            <div className="flex flex-wrap items-end gap-3">
-              <SteppableSelect label="Up to" value={maxSwaps} onValueChange={setMaxSwaps} options={swapOptions} />
-              <Button type="submit" size="sm">
-                <ArrowLeftRight className="size-4" />
-                Optimize
-              </Button>
-            </div>
-          </form>
+          {step === "swaps" ? (
+            <form onSubmit={submitSwaps} className="flex flex-col gap-4">
+              <p className="text-sm font-medium">How many players are you willing to swap out?</p>
+              <div className="flex flex-wrap items-end gap-3">
+                <SteppableSelect label="Up to" value={maxSwaps} onValueChange={setMaxSwaps} options={swapOptions} />
+                <Button type="submit" size="sm">
+                  Next
+                  <ArrowRight className="size-4" />
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={submitOpponents} className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <p className="text-sm font-medium">Which teams do you want to optimize against?</p>
+                <p className="text-xs text-muted-foreground">
+                  The optimizer raises your win probability against the checked teams. Uncheck any you don&apos;t
+                  want it to plan around.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="outline" size="xs" onClick={() => setExcludedTeams(new Set())}
+                  disabled={selectedCount === opponents.length}>
+                  Select all
+                </Button>
+                <Button type="button" variant="outline" size="xs" onClick={() => setExcludedTeams(new Set(opponents))}
+                  disabled={selectedCount === 0}>
+                  None
+                </Button>
+                <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+                  {selectedCount} of {opponents.length}
+                </span>
+              </div>
+              <fieldset className="grid grid-cols-1 gap-x-4 gap-y-2.5 sm:grid-cols-2">
+                <legend className="sr-only">Opponents</legend>
+                {opponents.map((t) => (
+                  <label key={t} className="flex cursor-pointer items-center gap-2.5 text-sm">
+                    <Checkbox checked={!excludedTeams.has(t)} onCheckedChange={(checked) => toggleOpponent(t, checked)} />
+                    <span className="team-name">{t}</span>
+                  </label>
+                ))}
+              </fieldset>
+              {selectedCount === 0 && <p className="text-xs text-loss">Pick at least one team.</p>}
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="ghost" size="sm" onClick={() => setStep("swaps")}>
+                  <ArrowLeft className="size-4" />
+                  Back
+                </Button>
+                <Button type="submit" size="sm" className="ml-auto" disabled={selectedCount === 0}>
+                  <ArrowLeftRight className="size-4" />
+                  Optimize
+                </Button>
+              </div>
+            </form>
+          )}
           {error && <p className="text-sm text-loss">{error}</p>}
         </DialogContent>
       </Dialog>
@@ -256,7 +336,10 @@ export function OptimizerResults({
       )}
 
       <p className="text-xs text-muted-foreground">
-        Win probabilities are against an average opponent in this league, and turnovers are left out. Stats as of{" "}
+        {result.ignored_opponents?.length
+          ? `Win probabilities are against an average of the teams you picked (leaving out ${listNames(result.ignored_opponents)}), and turnovers are left out.`
+          : "Win probabilities are against an average opponent in this league, and turnovers are left out."}{" "}
+        Stats as of{" "}
         {formatAsOf(result.data_as_of.player_stats)}; rosters and projections refresh daily.
       </p>
     </div>
@@ -451,6 +534,11 @@ export function CategoryOddsBars({
       )}
     </div>
   );
+}
+
+function listNames(names: string[]): string {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
 function formatAsOf(iso: string | null): string {

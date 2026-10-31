@@ -169,7 +169,7 @@ User question: how does "win probability" work in a Cats season (standings by to
 
 ## Ignoring some opponents (tested 2026-10-30)
 
-User question: could the optimizer target "everyone except" a few teams the manager expects to beat anyway? Engine support added as `ro.optimize(..., ignore_opponents=...)` (default empty = live behavior; category variability is still measured on the whole league). Not in the app yet.
+User question: could the optimizer target "everyone except" a few teams the manager expects to beat anyway? Engine support added as `ro.optimize(..., ignore_opponents=...)` (default empty = live behavior; category variability is still measured on the whole league). **In the app since 2026-10-31** (see below).
 
 Test ([`scripts/backtest_opponent_subset.py`](../scripts/backtest_opponent_subset.py)): ignore Chirayu and Saamrit (the user's pick, as teams in every season) vs the live whole-league score. Weekly replay, 46 team-seasons 2019–23, corrected projections, cap 3. For Chirayu/Saamrit themselves only the other one is ignored.
 
@@ -177,6 +177,14 @@ Test ([`scripts/backtest_opponent_subset.py`](../scripts/backtest_opponent_subse
 - **Results don't:** subset − league = **+0.02 matchup wins/season [−0.28, +0.36]**, −0.1 category wins [−0.8, +0.7]. Split by opponent: vs Chirayu/Saamrit −0.02 [−0.16, +0.13]; vs everyone else +0.04 [−0.21, +0.30]. By season +0.88, −0.39, +0.17, −0.35, −0.05 (noise). Teams other than the two only: −0.12 [−0.46, +0.26].
 - **Caveat:** in 2019–23 Chirayu and Saamrit were not easy opponents (a stand-pat roster beat them 30.5% of the time vs 36.9% for everyone else), so this tests ignoring two ordinary teams, not teams the manager truly beats regardless. Ignoring them cost nothing even in those games: the optimizer gives up little by dropping two of nine opponents from the average.
 - **Takeaway:** harmless as a user preference, no evidence it helps. A version that ignores the teams the model itself projects you to beat most hasn't been tested.
+
+### In the app (2026-10-31)
+
+User request: an extra screen in the Optimize flow asking which teams to optimize against, all checked by default, with Select all / None. Flow is now Optimize -> "How many players are you willing to swap out?" -> Next -> "Which teams do you want to optimize against?" (checkbox per opponent, Select all / None, "N of M" count, Back, Optimize; Optimize disabled with "Pick at least one team." when nothing is checked). Picks are remembered while the page stays on the same team and reset to all on a team switch.
+
+- API: `POST /league/roster_optimizer` takes `ignore_opponents: list[str]` (the unchecked teams; empty = whole league). Unknown team names or unchecking everyone -> 422 (`OpponentSelectionError`). The team itself in the list is ignored. Response adds `ignored_opponents` (sorted).
+- Every number in the response (start/end win probability, category shares) is then against the average of the picked teams only; the results footnote says which teams were left out.
+- Tests: `test_store_ignore_opponents`, `test_store_ignore_opponents_validated`, `test_bad_opponent_picks_are_422`, plus the pass-through in `test_correct_password_runs`.
 
 ## Ideas not yet tested
 

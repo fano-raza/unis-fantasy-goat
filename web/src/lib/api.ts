@@ -418,11 +418,20 @@ export interface RosterOptimizerResult {
   end_matchup_win: number;
   start_score: number;
   end_score: number;
+  // Teams left out of the opponent average at the manager's request
+  // (sorted; empty = the whole league). Every number above is vs the rest.
+  ignored_opponents: string[];
   swaps: OptimizerSwap[];
   data_as_of: { player_stats: string | null; projections: string | null; rosters: string | null };
 }
 
-export const runRosterOptimizer = (req: { team: string; password: string; max_swaps: number }) =>
+export const runRosterOptimizer = (req: {
+  team: string;
+  password: string;
+  max_swaps: number;
+  // Opponents to leave out (the unchecked ones); omit/empty = whole league.
+  ignore_opponents?: string[];
+}) =>
   post<RosterOptimizerResult>("/league/roster_optimizer", req);
 
 // Premium mode login: confirms the shared premium password (401 if wrong)

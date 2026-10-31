@@ -29,15 +29,21 @@ def test_wrong_password_rejected(monkeypatch):
 
 def test_correct_password_runs(monkeypatch):
     monkeypatch.setenv("ROSTER_OPTIMIZER_PASSWORD", "secret")
-    monkeypatch.setattr(app_module.league_store, "roster_optimizer", lambda team, n: {"team": team, "max_swaps": n})
+    monkeypatch.setattr(
+        app_module.league_store,
+        "roster_optimizer",
+        lambda team, n, ignore_opponents=(): {"team": team, "max_swaps": n, "ignored": list(ignore_opponents)},
+    )
     r = client.post(URL, json={"team": "Fano", "password": "secret", "max_swaps": 4})
-    assert r.status_code == 200 and r.json() == {"team": "Fano", "max_swaps": 4}
+    assert r.status_code == 200 and r.json() == {"team": "Fano", "max_swaps": 4, "ignored": []}
+    r = client.post(URL, json={"team": "Fano", "password": "secret", "ignore_opponents": ["Chirayu"]})
+    assert r.status_code == 200 and r.json()["ignored"] == ["Chirayu"]
 
 
 def test_unknown_team_is_404(monkeypatch):
     monkeypatch.setenv("ROSTER_OPTIMIZER_PASSWORD", "secret")
 
-    def boom(team, n):
+    def boom(team, n, ignore_opponents=()):
         raise KeyError(f"no 2027 roster found for team {team!r}")
 
     monkeypatch.setattr(app_module.league_store, "roster_optimizer", boom)
@@ -137,6 +143,39 @@ def test_store_clamps_max_swaps_to_roster_size(store):
 def test_store_unknown_team(store):
     with pytest.raises(KeyError):
         store.roster_optimizer("Nobody")
+
+
+def test_store_ignore_opponents(store):
+    full = store.roster_optimizer("T", max_swaps=3)
+    assert full["ignored_opponents"] == []
+    subset = store.roster_optimizer("T", max_swaps=3, ignore_opponents=["A", "B"])
+    assert subset["ignored_opponents"] == ["A", "B"]
+    # Only C left to measure against: a different opponent average.
+    assert subset["start_matchup_win"] != full["start_matchup_win"]
+    # The team itself in the list is harmless (it's never its own opponent).
+    assert store.roster_optimizer("T", ignore_opponents=["T"])["ignored_opponents"] == []
+
+
+def test_store_ignore_opponents_validated(store):
+    from dashboard_site.api.league_store import OpponentSelectionError
+
+    with pytest.raises(OpponentSelectionError, match="Nobody"):
+        store.roster_optimizer("T", ignore_opponents=["Nobody"])
+    with pytest.raises(OpponentSelectionError, match="at least one"):
+        store.roster_optimizer("T", ignore_opponents=["A", "B", "C"])
+
+
+def test_bad_opponent_picks_are_422(monkeypatch):
+    from dashboard_site.api.league_store import OpponentSelectionError
+
+    monkeypatch.setenv("ROSTER_OPTIMIZER_PASSWORD", "secret")
+
+    def boom(team, n, ignore_opponents=()):
+        raise OpponentSelectionError("pick at least one team to optimize against")
+
+    monkeypatch.setattr(app_module.league_store, "roster_optimizer", boom)
+    r = client.post(URL, json={"team": "Fano", "password": "secret", "ignore_opponents": ["A"]})
+    assert r.status_code == 422 and "at least one" in r.json()["detail"]
 
 
 # --- Premium mode: shared password check + manual-swap category odds ------
