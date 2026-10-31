@@ -1247,6 +1247,10 @@ class LeagueStore:
             "year": int(r["year"]),
             "week": int(r["week"]),
             "rank_table": json.loads(r["rank_table_json"]),
+            # Added 2026-10-31; older rows (and an older file header) have none.
+            "top_bottom": json.loads(r["top_bottom_json"])
+            if "top_bottom_json" in r and pd.notna(r["top_bottom_json"]) and r["top_bottom_json"]
+            else [],
             "beatdowns": json.loads(r["beatdowns_json"]) if pd.notna(r["beatdowns_json"]) else [],
             "upsets": json.loads(r["upsets_json"]) if pd.notna(r["upsets_json"]) else [],
             "milestones": json.loads(r["milestones_json"]) if pd.notna(r["milestones_json"]) else [],

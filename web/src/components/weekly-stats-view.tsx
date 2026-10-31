@@ -510,6 +510,20 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
               )}
               {recap && recap.kind !== "playoff" && (
                 <div className="flex flex-col gap-4">
+                  {(recap.top_bottom?.length ?? 0) > 0 && (
+                    <div className="flex flex-col gap-1">
+                      <span className="label">
+                        Top &amp; Bottom
+                      </span>
+                      <ul className="flex flex-col gap-1">
+                        {recap.top_bottom!.map((s, i) => (
+                          <li key={i} className="text-sm">
+                            • {s}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   {recap.beatdowns.length > 0 && (
                     <div className="flex flex-col gap-1">
                       <span className="label">

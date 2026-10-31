@@ -581,6 +581,8 @@ export interface RegularSeasonWeeklyRecap {
   kind: "regular_season";
   year: number;
   week: number;
+  // [week's top-rated team line, bottom-rated team line]; empty before 2026-10-31.
+  top_bottom?: string[];
   beatdowns: string[];
   upsets: string[];
   milestones: string[];

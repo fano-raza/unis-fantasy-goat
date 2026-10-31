@@ -50,6 +50,7 @@ CSV_FIELDS = [
     "year",
     "week",
     "rank_table_json",
+    "top_bottom_json",
     "beatdowns_json",
     "upsets_json",
     "milestones_json",
@@ -272,10 +273,22 @@ WEEKLY_RECAP_SYSTEM_PROMPT = (
     "You generate short trash-talk sentences for sections of a Discord fantasy-basketball weekly recap -- "
     "a league of guys who talk shit to each other. Every team is owned and managed by a man -- always "
     "refer to team owners with he/him/his pronouns, never they/them/theirs. "
-    "You will be given JSON facts with these lists: major_victories, underdog_victories, milestones, and "
+    "You will be given JSON facts with these lists: top_bottom, major_victories, underdog_victories, milestones, and "
     "(only during the final third of the season, when relevant) playoff_race_context. "
     "Return ONLY a valid JSON object (no markdown code fences, no commentary outside the JSON) with "
     "exactly these keys: "
+    '"top_bottom" -- an array of EXACTLY two sentences (or an empty array if top_bottom is null): the FIRST '
+    "hypes top_bottom.top, the team with this week's best performance rating (#1 of this week's performance "
+    "rankings); the SECOND roasts top_bottom.bottom, the team with this week's worst performance rating. "
+    "Use the history: when *_rank_streak is 2 or more, call out the streak ('third week in a row at the "
+    "bottom'); otherwise, when *_rank_count_this_season is 2 or more, call out the season count ('his third "
+    "top rank of the season'); if both are 1, it's his first of the season. Work in the matchup when it's "
+    "ironic or telling -- the top team losing or tying his matchup anyway, the bottom team still stealing a "
+    "win (or handing his opponent a free win) -- and a big rating_gap_to_next (far ahead of / far behind "
+    "everyone else) when it's notable. season_standing is his position in the season standings, useful for "
+    "playoff-seed context. Mirror the commissioner's own weekly posts, e.g. 'With his third top rank of the "
+    "season, Amil was able to secure his spot as the second best ranked team' / 's.AI ends up in the bottom "
+    "spot of rankings again for the third week in a row'; "
     '"beatdowns" -- an array with EXACTLY one short trash-talk sentence per entry in major_victories, '
     "SAME ORDER, each naming both teams and the category score (e.g. '7-2'); "
     '"upsets" -- an array with EXACTLY one short trash-talk sentence per entry in underdog_victories, SAME '
@@ -420,6 +433,59 @@ async def _playoff_race_facts(api_post: ApiPost, year: int, week: int, standings
     }
 
 
+def _result_label(row: dict) -> str | None:
+    if row.get("matchup_win"):
+        return "win"
+    if row.get("matchup_loss"):
+        return "loss"
+    if row.get("matchup_tie"):
+        return "tie"
+    return None
+
+
+def _top_bottom_facts(ranked: list[dict], weeks_desc: list[tuple[int, list[dict]]], standings: dict[str, int]) -> dict | None:
+    """The week's top- and bottom-ranked teams by weekly performance rating
+    -- what the user's own hand-written "Week N Rankings" posts always led
+    with (user request 2026-10-31: "the weekly recap message should talk
+    about the highest rated player that week and the lowest rated player"
+    -- "player" = the manager). Same streak/season-count history the
+    retired top/bottom message used (_team_history_from_weeks), plus the
+    matchup result, the rating gap to the next team and the standings spot."""
+    ranked = sorted(ranked, key=lambda r: r["rank"])
+    if len(ranked) < 2:
+        return None
+
+    def side(row: dict, neighbor: dict, target: str) -> dict:
+        hist = _team_history_from_weeks(weeks_desc, row["team"], target)
+        return {
+            "team": row["team"],
+            "week_rating": row.get("rating"),
+            # vs the #2 team (top) / the second-worst team (bottom)
+            "rating_gap_to_next": round(abs((row.get("rating") or 0) - (neighbor.get("rating") or 0)), 2),
+            f"{target}_rank_streak": hist["rank_streak"],
+            f"{target}_rank_count_this_season": hist["rank_total"],
+            "opponent": row.get("opponent"),
+            "matchup_result": _result_label(row),
+            "category_score": f"{row.get('cat_wins')}-{row.get('cat_losses')}"
+            + (f"-{row['cat_ties']}" if row.get("cat_ties") else ""),
+            "season_standing": standings.get(row["team"]),
+        }
+
+    return {"top": side(ranked[0], ranked[1], "top"), "bottom": side(ranked[-1], ranked[-2], "bottom")}
+
+
+def _top_bottom_fallback(facts: dict | None) -> list[str]:
+    """Plain lines used when the AI half is unavailable, so the section
+    still posts (like Rankings/Standings, it shouldn't depend on the LLM)."""
+    if not facts:
+        return []
+    top, bottom = facts["top"], facts["bottom"]
+    return [
+        f"{top['team']} had the best week (rating {top['week_rating']})",
+        f"{bottom['team']} had the worst week (rating {bottom['week_rating']})",
+    ]
+
+
 async def build_weekly_recap_league_facts(api_post: ApiPost, api_get, year: int, week: int) -> dict:
     """League-wide facts for the whole week -- major blowouts (>=7 category
     wins), upsets (the winner was UPSET_STANDINGS_GAP+ places lower in the
@@ -504,6 +570,7 @@ async def build_weekly_recap_league_facts(api_post: ApiPost, api_get, year: int,
             )
 
     weeks_desc = await _fetch_weeks_desc(api_post, year, week)
+    top_bottom = _top_bottom_facts(ranked, weeks_desc, this_week_ranks)
     status2, summary_rows = await api_post("/league/team_summary", {})
     summary_by_team = {r["Team"]: r for r in summary_rows} if status2 == 200 else {}
     status3, records = await api_post("/league/records", {})
@@ -563,6 +630,7 @@ async def build_weekly_recap_league_facts(api_post: ApiPost, api_get, year: int,
 
     return {
         "week": week,
+        "top_bottom": top_bottom,
         "major_victories": major_victories,
         "underdog_victories": underdog_victories,
         "milestones": milestones,
@@ -593,9 +661,11 @@ async def generate_weekly_recap_sections(facts: dict) -> dict:
     their own. Deliberately sends only the 4 fields the model actually
     needs, not standings_this_week/standings_last_week -- those are
     purely for build_weekly_recap_message()'s deterministic sections."""
-    empty = {"beatdowns": [], "upsets": [], "milestones": [], "playoff_race": ""}
+    fallback_top_bottom = _top_bottom_fallback(facts.get("top_bottom"))
+    empty = {"top_bottom": fallback_top_bottom, "beatdowns": [], "upsets": [], "milestones": [], "playoff_race": ""}
     llm_facts = {
         "week": facts.get("week"),
+        "top_bottom": facts.get("top_bottom"),
         "major_victories": facts.get("major_victories", []),
         "underdog_victories": facts.get("underdog_victories", []),
         "milestones": facts.get("milestones", []),
@@ -609,7 +679,10 @@ async def generate_weekly_recap_sections(facts: dict) -> dict:
     parsed = _extract_json_object(text)
     if not parsed:
         return empty
+    top_bottom = [_strip_bullet_period(s) for s in (parsed.get("top_bottom") or []) if s]
     return {
+        # Exactly [top, bottom] or the plain fallback -- never half a pair.
+        "top_bottom": top_bottom if len(top_bottom) == 2 else fallback_top_bottom,
         "beatdowns": [_strip_bullet_period(s) for s in (parsed.get("beatdowns") or [])],
         "upsets": [_strip_bullet_period(s) for s in (parsed.get("upsets") or [])],
         "milestones": [_strip_bullet_period(s) for s in (parsed.get("milestones") or [])],
@@ -644,6 +717,8 @@ def build_weekly_recap_message(year: int, week: int, ranked_rows: list[dict], fa
     events -> season-long standings context), open to the user's
     feedback."""
     parts = [build_header(year, week), "**Rankings**\n" + build_rank_table(ranked_rows)]
+    if sections.get("top_bottom"):
+        parts.append("**Top & Bottom**\n" + "\n".join(f"- {s}" for s in sections["top_bottom"]))
     if sections.get("beatdowns"):
         parts.append("**Beatdowns**\n" + "\n".join(f"- {s}" for s in sections["beatdowns"]))
     if sections.get("upsets"):
@@ -658,6 +733,17 @@ def build_weekly_recap_message(year: int, week: int, ranked_rows: list[dict], fa
 
 def _ensure_csv(path: Path) -> None:
     if path.exists():
+        with path.open(newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            if reader.fieldnames == CSV_FIELDS:
+                return
+            rows = list(reader)
+        # Older header (e.g. before top_bottom_json): rewrite once with the
+        # current columns, existing rows blank in the new ones.
+        with path.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=CSV_FIELDS, restval="", extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(rows)
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as f:
@@ -694,6 +780,7 @@ def append_weekly_recap(
         "year": year,
         "week": week,
         "rank_table_json": rank_table_json,
+        "top_bottom_json": json.dumps(sections.get("top_bottom") or []),
         "beatdowns_json": json.dumps(sections.get("beatdowns") or []),
         "upsets_json": json.dumps(sections.get("upsets") or []),
         "milestones_json": json.dumps(sections.get("milestones") or []),
