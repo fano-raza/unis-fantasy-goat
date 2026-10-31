@@ -42,3 +42,14 @@ def test_csv_header_upgraded_in_place(tmp_path):
         rows = list(reader)
     assert reader.fieldnames == wr.CSV_FIELDS
     assert rows[0]["year"] == "2027" and rows[0]["top_bottom_json"] == "" and rows[0]["upsets_json"] == "x"
+
+
+def test_all_play_league_record():
+    def r(team, pts, reb, to):
+        return {"team": team, "stats": {"PTS": pts, "REB": reb, "TO": to}}
+    ranked = [r("A", 500, 200, 50), r("B", 400, 150, 60), r("C", 600, 100, 70), r("D", 500, 300, 50)]
+    out = wr._all_play(ranked[0], ranked)
+    # vs B: wins PTS, REB, TO (fewer) -> win; vs C: loses PTS, wins REB, TO -> win;
+    # vs D: ties PTS and TO, loses REB -> loss.
+    assert out == {"league_record": "2-1-0", "would_have_beaten": ["B", "C"], "would_have_lost_to": ["D"],
+                   "would_have_tied": []}

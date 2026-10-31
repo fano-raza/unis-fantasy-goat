@@ -286,7 +286,12 @@ WEEKLY_RECAP_SYSTEM_PROMPT = (
     "ironic or telling -- the top team losing or tying his matchup anyway, the bottom team still stealing a "
     "win (or handing his opponent a free win) -- and a big rating_gap_to_next (far ahead of / far behind "
     "everyone else) when it's notable. season_standing is his position in the season standings, useful for "
-    "playoff-seed context. Mirror the commissioner's own weekly posts, e.g. 'With his third top rank of the "
+    "playoff-seed context. league_record (wins-losses-ties) is how his week would have done head-to-head against "
+    "EVERY other team (league wins), with the teams listed in would_have_beaten/would_have_lost_to/"
+    "would_have_tied -- always work it in: for the top team, a clean sweep of the league is worth hyping, and if "
+    "only 1 or 2 teams would still have beaten (or tied) him despite his top rating, NAME them; for the bottom "
+    "team, losing to the entire league is worth roasting, and if he'd still have beaten (or tied) 1 or 2 teams "
+    "despite the worst rating, NAME them. Mirror the commissioner's own weekly posts, e.g. 'With his third top rank of the "
     "season, Amil was able to secure his spot as the second best ranked team' / 's.AI ends up in the bottom "
     "spot of rankings again for the third week in a row'; "
     '"beatdowns" -- an array with EXACTLY one short trash-talk sentence per entry in major_victories, '
@@ -443,6 +448,34 @@ def _result_label(row: dict) -> str | None:
     return None
 
 
+def _all_play(row: dict, ranked: list[dict]) -> dict:
+    """How `row`'s week would have gone against every other team ("league
+    wins"): category-by-category on the week's raw stats (TO lower is
+    better), more categories won = a win. User request 2026-10-31 -- worth
+    mentioning both when it's all of them and when one or two teams break
+    the pattern."""
+    beat, lost, tied = [], [], []
+    mine = row.get("stats") or {}
+    for other in ranked:
+        if other["team"] == row["team"]:
+            continue
+        theirs = other.get("stats") or {}
+        w = l = 0
+        for cat, value in mine.items():
+            o = theirs.get(cat)
+            if value is None or o is None or value == o:
+                continue
+            better = value < o if cat in NEG_CATS else value > o
+            w, l = (w + 1, l) if better else (w, l + 1)
+        (beat if w > l else lost if l > w else tied).append(other["team"])
+    return {
+        "league_record": f"{len(beat)}-{len(lost)}-{len(tied)}",
+        "would_have_beaten": beat,
+        "would_have_lost_to": lost,
+        "would_have_tied": tied,
+    }
+
+
 def _top_bottom_facts(ranked: list[dict], weeks_desc: list[tuple[int, list[dict]]], standings: dict[str, int]) -> dict | None:
     """The week's top- and bottom-ranked teams by weekly performance rating
     -- what the user's own hand-written "Week N Rankings" posts always led
@@ -469,6 +502,7 @@ def _top_bottom_facts(ranked: list[dict], weeks_desc: list[tuple[int, list[dict]
             "category_score": f"{row.get('cat_wins')}-{row.get('cat_losses')}"
             + (f"-{row['cat_ties']}" if row.get("cat_ties") else ""),
             "season_standing": standings.get(row["team"]),
+            **_all_play(row, ranked),
         }
 
     return {"top": side(ranked[0], ranked[1], "top"), "bottom": side(ranked[-1], ranked[-2], "bottom")}

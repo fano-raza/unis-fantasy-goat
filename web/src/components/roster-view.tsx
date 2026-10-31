@@ -69,20 +69,23 @@ function easternDateKey(isoDate: string): string {
 }
 
 // How one scheduled game shows on the full-week grid (user spec 2026-10-31):
-//   counted  -- past, he played in a lineup spot: stats counted (faded green)
+//   counted  -- past, he played in a lineup spot: stats counted (faded blue)
 //   missed   -- past, didn't count: not on the roster that day, on the bench
 //               or IR, or didn't play (grey)
-//   upcoming -- healthy and on the roster, bench included (green ring)
+//   upcoming -- healthy and in the lineup (blue ring)
 //   doubtful -- upcoming, listed day-to-day (yellow ring; still counted)
+//   benched  -- upcoming, currently in a bench slot (grey ring; not counted)
 //   out      -- upcoming but on IR, injured, or no longer on the roster (red ring)
-// counted + upcoming + doubtful are this week's games; missed + out aren't.
-type GameState = "counted" | "missed" | "upcoming" | "doubtful" | "out";
+// counted + upcoming + doubtful are this week's games; the rest aren't.
+// Blue rather than green per the user (2026-10-31).
+type GameState = "counted" | "missed" | "upcoming" | "doubtful" | "benched" | "out";
 
 const GAME_STATE_STYLE: Record<GameState, string> = {
-  counted: "bg-win opacity-45",
+  counted: "bg-primary opacity-45",
   missed: "bg-muted-foreground/45",
-  upcoming: "border-2 border-win",
+  upcoming: "border-2 border-primary",
   doubtful: "border-2 border-yellow-500",
+  benched: "border-2 border-muted-foreground/60",
   out: "border-2 border-loss",
 };
 
@@ -91,6 +94,7 @@ const GAME_STATE_LABEL: Record<GameState, string> = {
   missed: "Didn't count",
   upcoming: "Upcoming game",
   doubtful: "Upcoming, day-to-day",
+  benched: "Upcoming, on the bench: won't count",
   out: "Upcoming, won't count (IR, injured or off the roster)",
 };
 
@@ -473,6 +477,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
     const slots = status ? Object.entries(status.slots).sort(([a], [b]) => a.localeCompare(b)) : [];
     const latestSlot = slots.length ? slots[slots.length - 1][1] : row.LineupSlot;
     if (status?.out || (!swappedIn && latestSlot === "IR")) return "out";
+    if (!swappedIn && latestSlot === "BE") return "benched";
     if (status?.injury_status === "DAY_TO_DAY") return "doubtful";
     return "upcoming";
   }
@@ -514,7 +519,9 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
       .map((s) => ({ row: s.display, swappedIn: s.display.Player !== s.originalPlayer, departed: false })),
     ...departedRows.map((row) => ({ row, swappedIn: false, departed: true })),
   ];
-  function teamGameCounts(): { left: number; total: number } {
+  // played = games that already counted; total = played + upcoming games
+  // expected to count.
+  function teamGameCounts(): { left: number; total: number; played: number } {
     let left = 0;
     let total = 0;
     for (const r of countedRows) {
@@ -522,7 +529,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
       left += c.left;
       total += c.total;
     }
-    return { left, total };
+    return { left, total, played: total - left };
   }
   // Games that count (or will) on one day, across the whole team.
   function teamGamesOn(day: string): number {
@@ -673,6 +680,18 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
           ) : teamRoster.length === 0 ? (
             <p className="text-sm text-muted-foreground">No roster data for {team} in {year}.</p>
           ) : (
+            <>
+            {!scheduleLoading && (() => {
+              const { played, total } = teamGameCounts();
+              return (
+                <p className="mb-3 text-sm text-muted-foreground" title="Games that counted so far / games expected to count this week">
+                  <span className="font-mono text-base font-extrabold tabular-nums text-primary">
+                    {played}/{total}
+                  </span>{" "}
+                  games played / expected this week
+                </p>
+              );
+            })()}
             <Table>
               <TableHeader>
                 <TableRow>
@@ -922,6 +941,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                 })}
               </TableBody>
             </Table>
+            </>
           )}
           {showFullWeek && !optResult && (
             <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted-foreground" aria-label="Game key">
@@ -931,6 +951,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                   ["missed", "Didn't count (bench, IR, off roster or didn't play)"],
                   ["upcoming", "Upcoming"],
                   ["doubtful", "Upcoming, day-to-day"],
+                  ["benched", "Upcoming, on the bench"],
                   ["out", "Upcoming, won't count (IR, injured or off the roster)"],
                 ] as const
               ).map(([state, label]) => (
