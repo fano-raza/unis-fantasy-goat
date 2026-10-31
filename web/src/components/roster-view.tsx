@@ -74,7 +74,7 @@ function easternDateKey(isoDate: string): string {
 //               or IR, or didn't play (grey)
 //   upcoming -- healthy and on the roster, bench included (green ring)
 //   doubtful -- upcoming, listed day-to-day (yellow ring; still counted)
-//   out      -- upcoming but on IR or injured (red ring)
+//   out      -- upcoming but on IR, injured, or no longer on the roster (red ring)
 // counted + upcoming + doubtful are this week's games; missed + out aren't.
 type GameState = "counted" | "missed" | "upcoming" | "doubtful" | "out";
 
@@ -91,7 +91,7 @@ const GAME_STATE_LABEL: Record<GameState, string> = {
   missed: "Didn't count",
   upcoming: "Upcoming game",
   doubtful: "Upcoming, day-to-day",
-  out: "Upcoming, on IR or injured: won't count",
+  out: "Upcoming, won't count (IR, injured or off the roster)",
 };
 
 function todayKey(): string {
@@ -453,7 +453,9 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
 
   // `swappedIn`: a what-if player shown in another's slot -- judged as if
   // he'd been added (IR status ignored for a player being activated).
-  function gameState(row: RosterRankRow, day: string, swappedIn = false): GameState {
+  // `departed`: on this roster earlier in the week, not anymore -- his
+  // upcoming games can't count.
+  function gameState(row: RosterRankRow, day: string, swappedIn = false, departed = false): GameState {
     const status = weekStatus?.players[row.Player];
     const played = status?.played.includes(day) ?? false;
     // Today's game counts as past once he's logged playing in it.
@@ -467,6 +469,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
       if (logsCover && !played) return "missed"; // injured / 0 minutes
       return "counted";
     }
+    if (departed) return "out";
     const slots = status ? Object.entries(status.slots).sort(([a], [b]) => a.localeCompare(b)) : [];
     const latestSlot = slots.length ? slots[slots.length - 1][1] : row.LineupSlot;
     if (status?.out || (!swappedIn && latestSlot === "IR")) return "out";
@@ -476,16 +479,74 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
 
   // "left/total": games still to come that will count / every game this
   // week that counted or will.
-  function gameCounts(row: RosterRankRow, swappedIn = false): { left: number; total: number } {
+  function gameCounts(row: RosterRankRow, swappedIn = false, departed = false): { left: number; total: number } {
     const days = new Set((gamesByNBATeam.get(row.NBATeam) ?? []).map((g) => easternDateKey(g.Date)));
     let left = 0;
     let total = 0;
     for (const day of days) {
-      const state = gameState(row, day, swappedIn);
+      const state = gameState(row, day, swappedIn, departed);
       if (state === "upcoming" || state === "doubtful") left++;
       if (state === "upcoming" || state === "doubtful" || state === "counted") total++;
     }
     return { left, total };
+  }
+
+  // Players on this team at some point this week who aren't anymore
+  // (dropped / traded): shown greyed out under the roster, since the games
+  // they played for the team still count toward its totals.
+  const departedRows = useMemo((): RosterRankRow[] => {
+    if (!weekStatus) return [];
+    const current = new Set(teamRoster.map((r) => r.Player));
+    const byName = new Map(rosterRows.map((r) => [r.Player, r]));
+    return Object.keys(weekStatus.players)
+      .filter((name) => !current.has(name))
+      .map(
+        (name) =>
+          byName.get(name) ?? { Year: year, FantasyTeam: null, Player: name, NBATeam: "", Rank: NaN },
+      )
+      .sort((a, b) => a.Player.localeCompare(b.Player));
+  }, [weekStatus, teamRoster, rosterRows, year]);
+
+  // Every row the grid shows, with how to judge it -- for the team totals.
+  const countedRows: { row: RosterRankRow; swappedIn: boolean; departed: boolean }[] = [
+    ...sortedSlots
+      .filter((s) => !s.removed)
+      .map((s) => ({ row: s.display, swappedIn: s.display.Player !== s.originalPlayer, departed: false })),
+    ...departedRows.map((row) => ({ row, swappedIn: false, departed: true })),
+  ];
+  function teamGameCounts(): { left: number; total: number } {
+    let left = 0;
+    let total = 0;
+    for (const r of countedRows) {
+      const c = gameCounts(r.row, r.swappedIn, r.departed);
+      left += c.left;
+      total += c.total;
+    }
+    return { left, total };
+  }
+  // Games that count (or will) on one day, across the whole team.
+  function teamGamesOn(day: string): number {
+    let n = 0;
+    for (const r of countedRows) {
+      const days = new Set((gamesByNBATeam.get(r.row.NBATeam) ?? []).map((g) => easternDateKey(g.Date)));
+      if (!days.has(day)) continue;
+      const state = gameState(r.row, day, r.swappedIn, r.departed);
+      if (state === "counted" || state === "upcoming" || state === "doubtful") n++;
+    }
+    return n;
+  }
+
+  function gameCell(row: RosterRankRow, day: string, swappedIn: boolean, departed: boolean, hasGame: boolean): ReactNode {
+    if (!hasGame) return <span className="text-muted-foreground/30">—</span>;
+    const state = gameState(row, day, swappedIn, departed);
+    return (
+      <span
+        className={cn("inline-block size-3.5 rounded-full align-middle", GAME_STATE_STYLE[state])}
+        role="img"
+        aria-label={GAME_STATE_LABEL[state]}
+        title={GAME_STATE_LABEL[state]}
+      />
+    );
   }
 
   function gamesLeftLabel(row: RosterRankRow): ReactNode {
@@ -649,7 +710,29 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                       {avgRankValue}
                     </TableCell>
                   )}
-                  <TableCell colSpan={colSpan} />
+                  {/* Team totals: games that count (played + still to
+                      come), including players who've left the roster. */}
+                  {scheduleLoading ? (
+                    <TableCell colSpan={colSpan} />
+                  ) : showFullWeek ? (
+                    weekDays.map((day) => {
+                      const n = teamGamesOn(day);
+                      return (
+                        <TableCell key={day} className="text-center font-mono font-bold tabular-nums text-primary" title={`${n} games that count`}>
+                          {n || "—"}
+                        </TableCell>
+                      );
+                    })
+                  ) : (
+                    (() => {
+                      const { left, total } = teamGameCounts();
+                      return (
+                        <TableCell className="text-right font-mono font-extrabold tabular-nums text-primary" title="Team games left / total this week">
+                          {left}/{total}
+                        </TableCell>
+                      );
+                    })()
+                  )}
                 </TableRow>
                 {sortedSlots.map((slot) => {
                   const row = slot.display;
@@ -787,26 +870,51 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                       ) : showFullWeek ? (
                         weekDays.map((day) => (
                           <TableCell key={day} className="text-center">
-                            {gameDaysThisWeek.has(day) ? (
-                              (() => {
-                                const state = gameState(row, day, isSwappedIn);
-                                return (
-                                  <span
-                                    className={cn("inline-block size-3.5 rounded-full align-middle", GAME_STATE_STYLE[state])}
-                                    role="img"
-                                    aria-label={GAME_STATE_LABEL[state]}
-                                    title={GAME_STATE_LABEL[state]}
-                                  />
-                                );
-                              })()
-                            ) : (
-                              <span className="text-muted-foreground/30">—</span>
-                            )}
+                            {gameCell(row, day, isSwappedIn, false, gameDaysThisWeek.has(day))}
                           </TableCell>
                         ))
                       ) : (
                         <TableCell className="text-right font-mono tabular-nums">
                           {remaining}/{totalThisWeek}
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  );
+                })}
+                {departedRows.map((row) => {
+                  const days = new Set((gamesByNBATeam.get(row.NBATeam) ?? []).map((g) => easternDateKey(g.Date)));
+                  const { left, total } = gameCounts(row, false, true);
+                  return (
+                    <TableRow key={`departed-${row.Player}`} className="text-muted-foreground [&>td]:opacity-60">
+                      <TableCell className="sticky left-0 z-10 bg-card font-sans font-semibold">
+                        <div className="flex items-center gap-1.5">
+                          {/* Keeps names aligned with the swappable rows. */}
+                          <span className="size-6 shrink-0" aria-hidden />
+                          <span className="max-sm:hidden">{row.Player}</span>
+                          <span className="sm:hidden">{shortName(row.Player)}</span>
+                          <span
+                            className="rounded-sm bg-muted px-1 font-sans text-[0.6875rem] font-bold text-muted-foreground"
+                            title="Was on this roster earlier this week: his games for the team still count"
+                          >
+                            Left roster
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className={cn(!showFullWeek && "max-sm:hidden")}>{row.NBATeam || "—"}</TableCell>
+                      {!showFullWeek && (
+                        <TableCell className="text-right font-mono tabular-nums">{Number.isFinite(row.Rank) ? row.Rank : "—"}</TableCell>
+                      )}
+                      {scheduleLoading ? (
+                        <TableCell colSpan={colSpan} />
+                      ) : showFullWeek ? (
+                        weekDays.map((day) => (
+                          <TableCell key={day} className="text-center">
+                            {gameCell(row, day, false, true, days.has(day))}
+                          </TableCell>
+                        ))
+                      ) : (
+                        <TableCell className="text-right font-mono tabular-nums">
+                          {left}/{total}
                         </TableCell>
                       )}
                     </TableRow>
@@ -823,7 +931,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                   ["missed", "Didn't count (bench, IR, off roster or didn't play)"],
                   ["upcoming", "Upcoming"],
                   ["doubtful", "Upcoming, day-to-day"],
-                  ["out", "Upcoming, on IR or injured"],
+                  ["out", "Upcoming, won't count (IR, injured or off the roster)"],
                 ] as const
               ).map(([state, label]) => (
                 <li key={state} className="flex items-center gap-1.5">
