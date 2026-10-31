@@ -37,6 +37,19 @@ import { OPTIMIZER_PHRASES } from "@/lib/loading-phrases";
 import { RosterCategoryOddsCard } from "@/components/roster-category-odds";
 import { cn, shortName } from "@/lib/utils";
 import {
+  departedRows as findDepartedRows,
+  easternDateKey,
+  gameDaysByNBATeam,
+  gameState as judgeGame,
+  isExpected,
+  rowGameCounts,
+  teamGameTotals,
+  teamWeek,
+  todayKey,
+  type CountedRow,
+  type GameState,
+} from "@/lib/game-states";
+import {
   getNBASchedule,
   getRosterWeekStatus,
   getRosterRanks,
@@ -58,28 +71,8 @@ const EASTERN_TZ = "America/New_York";
 // with a game is forced to sit), worth flagging.
 const MAX_STARTERS = 10;
 
-// The America/New_York calendar date a game falls on -- NOT the raw UTC
-// date. A 10PM ET tip-off is already "tomorrow" in UTC (e.g.
-// "2026-10-06T02:00Z" is really a Monday night game, Eastern time), so
-// grouping by UTC date would silently shift some games onto the wrong day
-// for this app's US-based audience. Matches this app's other US-Eastern
-// date logic (e.g. FeatureBot's weekly role sync).
-function easternDateKey(isoDate: string): string {
-  return new Date(isoDate).toLocaleDateString("en-CA", { timeZone: EASTERN_TZ });
-}
-
-// How one scheduled game shows on the full-week grid (user spec 2026-10-31):
-//   counted  -- past, he played in a lineup spot: stats counted (faded blue)
-//   missed   -- past, didn't count: not on the roster that day, on the bench
-//               or IR, or didn't play (grey)
-//   upcoming -- healthy and in the lineup (blue ring)
-//   doubtful -- upcoming, listed day-to-day (yellow ring; still counted)
-//   benched  -- upcoming, currently in a bench slot (grey ring; not counted)
-//   out      -- upcoming but on IR, injured, or no longer on the roster (red ring)
-// counted + upcoming + doubtful are this week's games; the rest aren't.
-// Blue rather than green per the user (2026-10-31).
-type GameState = "counted" | "missed" | "upcoming" | "doubtful" | "benched" | "out";
-
+// Circle per game state (rules: lib/game-states.ts, shared with the
+// Weekly Stats page). Blue rather than green per the user (2026-10-31).
 const GAME_STATE_STYLE: Record<GameState, string> = {
   // Slightly muted (it's in the past) but still clearly blue next to grey.
   counted: "bg-primary/75",
@@ -98,10 +91,6 @@ const GAME_STATE_LABEL: Record<GameState, string> = {
   benched: "Upcoming, on the bench: won't count",
   out: "Upcoming, won't count (IR, injured or off the roster)",
 };
-
-function todayKey(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: EASTERN_TZ });
-}
 
 // The league's day for week boundaries: the Eastern date, but until 2 AM ET
 // it's still the previous day (late West Coast games) -- same cutoff as the
@@ -450,51 +439,19 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
 
   // Days the lineup history covers -- on those, a player with no slot
   // wasn't on this roster.
-  const historyDays = useMemo(() => {
-    const days = new Set<string>();
-    for (const p of Object.values(weekStatus?.players ?? {})) for (const d of Object.keys(p.slots)) days.add(d);
-    return days;
-  }, [weekStatus]);
+  // This team's week, judged by the shared rules (lib/game-states.ts) --
+  // the Weekly Stats page's Games column uses the very same functions.
+  const tw = useMemo(
+    () => teamWeek(weekStatus?.players, weekStatus?.game_logs_through, today),
+    [weekStatus, today],
+  );
+  const daysByNBATeam = useMemo(() => gameDaysByNBATeam(scheduleGames), [scheduleGames]);
 
-  // `swappedIn`: a what-if player shown in another's slot -- judged as if
-  // he'd been added (IR status ignored for a player being activated).
-  // `departed`: on this roster earlier in the week, not anymore -- his
-  // upcoming games can't count.
   function gameState(row: RosterRankRow, day: string, swappedIn = false, departed = false): GameState {
-    const status = weekStatus?.players[row.Player];
-    const played = status?.played.includes(day) ?? false;
-    // Today's game counts as past once he's logged playing in it.
-    const past = day < today || (day === today && played);
-    if (past) {
-      if (!weekStatus || historyDays.size === 0) return "counted"; // no data: assume it counted
-      const slot = status?.slots[day];
-      if (historyDays.has(day) && !slot) return "missed"; // not on this roster that day
-      if (slot === "BE" || slot === "IR") return "missed";
-      const logsCover = weekStatus.game_logs_through != null && day <= weekStatus.game_logs_through;
-      if (logsCover && !played) return "missed"; // injured / 0 minutes
-      return "counted";
-    }
-    if (departed) return "out";
-    const slots = status ? Object.entries(status.slots).sort(([a], [b]) => a.localeCompare(b)) : [];
-    const latestSlot = slots.length ? slots[slots.length - 1][1] : row.LineupSlot;
-    if (status?.out || (!swappedIn && latestSlot === "IR")) return "out";
-    if (!swappedIn && latestSlot === "BE") return "benched";
-    if (status?.injury_status === "DAY_TO_DAY") return "doubtful";
-    return "upcoming";
+    return judgeGame(tw, row, day, { swappedIn, departed });
   }
-
-  // "left/total": games still to come that will count / every game this
-  // week that counted or will.
   function gameCounts(row: RosterRankRow, swappedIn = false, departed = false): { left: number; total: number } {
-    const days = new Set((gamesByNBATeam.get(row.NBATeam) ?? []).map((g) => easternDateKey(g.Date)));
-    let left = 0;
-    let total = 0;
-    for (const day of days) {
-      const state = gameState(row, day, swappedIn, departed);
-      if (state === "upcoming" || state === "doubtful") left++;
-      if (state === "upcoming" || state === "doubtful" || state === "counted") total++;
-    }
-    return { left, total };
+    return rowGameCounts(tw, row, daysByNBATeam.get(row.NBATeam), { swappedIn, departed });
   }
 
   // Players on this team at some point this week who aren't anymore
@@ -502,46 +459,27 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
   // they played for the team still count toward its totals.
   const departedRows = useMemo((): RosterRankRow[] => {
     if (!weekStatus) return [];
-    const current = new Set(teamRoster.map((r) => r.Player));
-    const byName = new Map(rosterRows.map((r) => [r.Player, r]));
-    return Object.keys(weekStatus.players)
-      .filter((name) => !current.has(name))
-      .map(
-        (name) =>
-          byName.get(name) ?? { Year: year, FantasyTeam: null, Player: name, NBATeam: "", Rank: NaN },
-      )
-      .sort((a, b) => a.Player.localeCompare(b.Player));
-  }, [weekStatus, teamRoster, rosterRows, year]);
+    return findDepartedRows(
+      tw,
+      new Set(teamRoster.map((r) => r.Player)),
+      new Map(rosterRows.map((r) => [r.Player, r])),
+      year,
+    );
+  }, [weekStatus, tw, teamRoster, rosterRows, year]);
 
   // Every row the grid shows, with how to judge it -- for the team totals.
-  const countedRows: { row: RosterRankRow; swappedIn: boolean; departed: boolean }[] = [
+  const countedRows: CountedRow[] = [
     ...sortedSlots
       .filter((s) => !s.removed)
       .map((s) => ({ row: s.display, swappedIn: s.display.Player !== s.originalPlayer, departed: false })),
     ...departedRows.map((row) => ({ row, swappedIn: false, departed: true })),
   ];
-  // played = games that already counted; total = played + upcoming games
-  // expected to count.
   function teamGameCounts(): { left: number; total: number; played: number } {
-    let left = 0;
-    let total = 0;
-    for (const r of countedRows) {
-      const c = gameCounts(r.row, r.swappedIn, r.departed);
-      left += c.left;
-      total += c.total;
-    }
-    return { left, total, played: total - left };
+    return teamGameTotals(tw, countedRows, daysByNBATeam);
   }
   // Games that count (or will) on one day, across the whole team.
   function teamGamesOn(day: string): number {
-    let n = 0;
-    for (const r of countedRows) {
-      const days = new Set((gamesByNBATeam.get(r.row.NBATeam) ?? []).map((g) => easternDateKey(g.Date)));
-      if (!days.has(day)) continue;
-      const state = gameState(r.row, day, r.swappedIn, r.departed);
-      if (state === "counted" || state === "upcoming" || state === "doubtful") n++;
-    }
-    return n;
+    return countedRows.filter((r) => daysByNBATeam.get(r.row.NBATeam)?.has(day) && isExpected(gameState(r.row, day, r.swappedIn, r.departed))).length;
   }
 
   function gameCell(row: RosterRankRow, day: string, swappedIn: boolean, departed: boolean, hasGame: boolean): ReactNode {

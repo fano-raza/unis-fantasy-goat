@@ -715,6 +715,17 @@ export interface RosterWeekStatus {
   players: Record<string, RosterWeekPlayer>;
 }
 
+// Every team's week at once (Weekly Stats page's Games column).
+export interface LeagueWeekStatus {
+  year: number;
+  today: string;
+  game_logs_through: string | null;
+  teams: Record<string, Record<string, RosterWeekPlayer>>;
+}
+
+export const getLeagueWeekStatus = (req: { year: number; start_date: string; end_date: string }) =>
+  post<LeagueWeekStatus>("/league/week_status", req);
+
 export const getRosterWeekStatus = (req: { year: number; team: string; start_date: string; end_date: string }) =>
   post<RosterWeekStatus>("/league/roster_week_status", req);
 

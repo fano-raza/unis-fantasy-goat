@@ -649,52 +649,68 @@ class LeagueStore:
         their current ESPN injury status. Missing files or a season without
         lineup history just yield fewer fields -- the grid then falls back to
         the plain schedule. Players are keyed by name, as on the Roster page."""
+        out = self._week_status(year, start_date, end_date, team)
+        teams = out.pop("teams")
+        return {**out, "team": team, "players": teams.get(team, {})}
+
+    def league_week_status(self, year: int, start_date: date, end_date: date) -> dict:
+        """roster_week_status for every team at once ({"teams": {team:
+        players}}) -- the Weekly Stats page's Games column, so its numbers
+        come from exactly the same data (and the same client-side rules,
+        web/src/lib/game-states.ts) as the Roster page's grid."""
+        return self._week_status(year, start_date, end_date, None)
+
+    def _week_status(self, year: int, start_date: date, end_date: date, only_team: str | None) -> dict:
         lo, hi = start_date.isoformat(), end_date.isoformat()
-        out: dict = {"year": year, "team": team, "today": _eastern_today().isoformat(),
-                     "game_logs_through": None, "players": {}}
+        out: dict = {"year": year, "today": _eastern_today().isoformat(), "game_logs_through": None, "teams": {}}
 
         history = self._read_ref_csv("lineup_history.csv")
         if history is None or history.empty:
             return out
         history = history[history["Year"] == year]
+        # Scoring period -> date from the whole season, before narrowing to a team.
         sp_dates = dict(zip(history["ScoringPeriod"].astype(int), history["Date"]))
-        week = history[(history["FantasyTeam"] == team) & (history["Date"] >= lo) & (history["Date"] <= hi)]
-        players: dict = {}
+        if only_team is not None:
+            history = history[history["FantasyTeam"] == only_team]
+        teams: dict[str, dict] = {}
+
+        def entry(team: str, row) -> dict:
+            return teams.setdefault(team, {}).setdefault(
+                row.Player, {"player_id": int(row.PlayerId), "injury_status": None, "slots": {}, "played": []})
+
+        week = history[(history["Date"] >= lo) & (history["Date"] <= hi)]
         for row in week.itertuples(index=False):
-            p = players.setdefault(row.Player, {"player_id": int(row.PlayerId), "injury_status": None,
-                                                "slots": {}, "played": []})
-            p["slots"][row.Date] = row.LineupSlot
+            entry(row.FantasyTeam, row)["slots"][row.Date] = row.LineupSlot
 
-        if year == self.meta()["current_year"]:
-            # Current roster too (e.g. a pickup made after the last export).
+        if year == self.meta()["current_year"] and not history.empty:
+            # Current rosters too (e.g. a pickup made after the last export).
             latest = history[history["ScoringPeriod"] == history["ScoringPeriod"].max()]
-            for row in latest[latest["FantasyTeam"] == team].itertuples(index=False):
-                players.setdefault(row.Player, {"player_id": int(row.PlayerId), "injury_status": None,
-                                                "slots": {}, "played": []})
+            for row in latest.itertuples(index=False):
+                entry(row.FantasyTeam, row)
 
+            players = [p for team_players in teams.values() for p in team_players.values()]
             logs = self._read_ref_csv("player_game_logs.csv")
             if logs is not None and not logs.empty:
-                through = sp_dates.get(int(logs["ScoringPeriod"].max()))
-                out["game_logs_through"] = through
-                ids = {p["player_id"] for p in players.values()}
+                out["game_logs_through"] = sp_dates.get(int(logs["ScoringPeriod"].max()))
+                ids = {p["player_id"] for p in players}
                 played = logs[logs["PlayerId"].isin(ids) & (logs["MIN"] > 0)]
                 by_id: dict[int, list[str]] = {}
                 for row in played.itertuples(index=False):
                     d = sp_dates.get(int(row.ScoringPeriod))
                     if d and lo <= d <= hi:
                         by_id.setdefault(int(row.PlayerId), []).append(d)
-                for p in players.values():
+                for p in players:
                     p["played"] = sorted(by_id.get(p["player_id"], []))
 
             proj = self._read_ref_csv("player_projections.csv")
             if proj is not None and "InjuryStatus" in proj:
                 status = dict(zip(proj["PlayerId"].astype(int), proj["InjuryStatus"].fillna("")))
-                for p in players.values():
+                for p in players:
                     s = status.get(p["player_id"]) or None
                     p["injury_status"] = s
                     p["out"] = s in self.OUT_STATUSES
 
-        out["players"] = players
+        out["teams"] = teams
         return out
 
     def _read_ref_csv(self, name: str) -> pd.DataFrame | None:

@@ -71,3 +71,21 @@ def test_endpoint(monkeypatch):
     r = TestClient(app_module.app).post("/league/roster_week_status",
                                         json={"year": 2027, "team": "Fano", "start_date": "2026-10-27", "end_date": "2026-11-02"})
     assert r.status_code == 200 and seen == [(2027, "Fano", date(2026, 10, 27), date(2026, 11, 2))]
+
+
+def test_league_week_status_all_teams(store):
+    out = store.league_week_status(2027, date(2026, 10, 27), date(2026, 11, 2))
+    assert set(out["teams"]) == {"Fano", "Amil"}
+    # Same per-player data as the single-team call.
+    single = store.roster_week_status(2027, "Fano", date(2026, 10, 27), date(2026, 11, 2))
+    assert out["teams"]["Fano"] == single["players"]
+    assert out["game_logs_through"] == single["game_logs_through"] == "2026-10-31"
+
+
+def test_league_week_status_endpoint(monkeypatch):
+    seen = []
+    monkeypatch.setattr(app_module.league_store, "league_week_status",
+                        lambda y, a, b: seen.append((y, a, b)) or {"teams": {}})
+    r = TestClient(app_module.app).post("/league/week_status",
+                                        json={"year": 2027, "start_date": "2026-10-26", "end_date": "2026-11-01"})
+    assert r.status_code == 200 and seen == [(2027, date(2026, 10, 26), date(2026, 11, 1))]

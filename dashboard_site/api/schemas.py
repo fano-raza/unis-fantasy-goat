@@ -123,6 +123,12 @@ class RosterRanksRequest(BaseModel):
     year: int
 
 
+class LeagueWeekStatusRequest(BaseModel):
+    year: int
+    start_date: date
+    end_date: date
+
+
 class RosterWeekStatusRequest(BaseModel):
     year: int
     team: str

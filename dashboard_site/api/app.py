@@ -37,6 +37,7 @@ from .schemas import (
     RosterOptimizerRequest,
     RosterRanksRequest,
     RosterWeekStatusRequest,
+    LeagueWeekStatusRequest,
     ScheduleSwapRequest,
     SeasonLeadersRequest,
     StandingsRequest,
@@ -453,6 +454,13 @@ def league_roster_week_status(req: RosterWeekStatusRequest) -> dict:
     """Per-day lineup slot / games played / injury status for one team's
     week -- the Roster page's full-week grid (scripts/export_lineup_history.py)."""
     return league_store.roster_week_status(req.year, req.team, req.start_date, req.end_date)
+
+
+@app.post("/league/week_status")
+def league_week_status(req: LeagueWeekStatusRequest) -> dict:
+    """roster_week_status for every team -- the Weekly Stats page's Games
+    column, computed with the same rules as the Roster page's grid."""
+    return league_store.league_week_status(req.year, req.start_date, req.end_date)
 
 
 @app.post("/league/roster_ranks")

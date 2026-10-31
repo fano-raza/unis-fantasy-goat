@@ -20,6 +20,7 @@ import { WEEKLY_VIEW_OPTIONS, WEEKLY_VIEW_PATHS } from "@/lib/section-nav";
 import { useSelectedTeam } from "@/lib/use-selected-team";
 import {
   API_BASE_URL,
+  getLeagueWeekStatus,
   getNBASchedule,
   getRosterRanks,
   getWeekCalendar,
@@ -28,6 +29,7 @@ import {
   getWeeklyRecap,
   getWeeklyStatsBootstrap,
   type LeagueMeta,
+  type LeagueWeekStatus,
   type NBAScheduleGame,
   type RosterRankRow,
   type SeasonWeeks,
@@ -39,6 +41,7 @@ import type { GamesProgress } from "@/components/stat-table";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { LoadingOverlay } from "@/components/loading-overlay";
 import { cn } from "@/lib/utils";
+import { departedRows, gameDaysByNBATeam, teamGameTotals, teamWeek, todayKey } from "@/lib/game-states";
 
 // Standard competition ranking (ties share a rank) over just the rows
 // actually shown, using each row's rating -- NOT the backend's raw `rank`.
@@ -97,6 +100,9 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
   // regardless of which week the user is browsing.
   const [gamesRoster, setGamesRoster] = useState<RosterRankRow[]>([]);
   const [gamesSchedule, setGamesSchedule] = useState<NBAScheduleGame[]>([]);
+  // Lineups / games played / injuries for every team this week -- with
+  // these, the Games column uses exactly the Roster page's rules.
+  const [gamesStatus, setGamesStatus] = useState<LeagueWeekStatus | null>(null);
   const [gamesDataLoading, setGamesDataLoading] = useState(true);
   // Bootstrap fetches meta + the current week's rows in one round-trip; this
   // flags that the next [year, week] effect run is that same initial pair,
@@ -190,16 +196,24 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
         const [roster, weeks] = await Promise.all([getRosterRanks({ year }), getWeekCalendar({ year })]);
         if (cancelled) return;
         const currentWeekRow = weeks.find((w) => w.Week === week);
-        const games = currentWeekRow
-          ? await getNBASchedule({ start_date: currentWeekRow.StartDate, end_date: currentWeekRow.EndDate })
-          : [];
+        const [games, status] = currentWeekRow
+          ? await Promise.all([
+              getNBASchedule({ start_date: currentWeekRow.StartDate, end_date: currentWeekRow.EndDate }),
+              // Optional: without it the column falls back to the schedule alone.
+              getLeagueWeekStatus({ year, start_date: currentWeekRow.StartDate, end_date: currentWeekRow.EndDate }).catch(
+                () => null,
+              ),
+            ])
+          : [[], null];
         if (cancelled) return;
         setGamesRoster(roster);
         setGamesSchedule(games);
+        setGamesStatus(status);
       } catch {
         if (!cancelled) {
           setGamesRoster([]);
           setGamesSchedule([]);
+          setGamesStatus(null);
         }
       } finally {
         if (!cancelled) setGamesDataLoading(false);
@@ -300,32 +314,33 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
     [rows, displayRanks],
   );
 
-  // Per fantasy team: how many of this week's scheduled games (across every
-  // active, non-IR rostered player's real NBA team) have already tipped off.
-  // A player on an NBA team playing twice this week counts twice -- this is
-  // "total possible games across the roster," the same convention already
-  // used per-player on the Team page's Roster sub-view (roster-view.tsx's
-  // gamesLeftLabel), not a starting-lineup-capped count.
+  // Per fantasy team: games played (counted so far) / expected this week --
+  // computed by the same shared rules as the Roster page's grid and its
+  // "played / expected" total (lib/game-states.ts; user request 2026-10-31:
+  // the two pages must match exactly): bench / IR / didn't-play days don't
+  // count, upcoming bench / IR / injured games aren't expected, and players
+  // who left a roster mid-week still count for the games they played there.
   const gamesProgress = useMemo(() => {
-    const gamesByNBATeam = new Map<string, NBAScheduleGame[]>();
-    for (const game of gamesSchedule) {
-      for (const abbr of [game.HomeTeam, game.AwayTeam]) {
-        if (!gamesByNBATeam.has(abbr)) gamesByNBATeam.set(abbr, []);
-        gamesByNBATeam.get(abbr)!.push(game);
-      }
-    }
-    const now = Date.now();
+    const daysByNBATeam = gameDaysByNBATeam(gamesSchedule);
+    const byName = new Map(gamesRoster.map((r) => [r.Player, r]));
+    const today = todayKey();
     const progress: Record<string, GamesProgress> = {};
-    for (const row of gamesRoster) {
-      if (!row.FantasyTeam || row.LineupSlot === "IR") continue;
-      const games = gamesByNBATeam.get(row.NBATeam) ?? [];
-      const entry = progress[row.FantasyTeam] ?? { played: 0, total: 0 };
-      entry.total += games.length;
-      entry.played += games.filter((g) => new Date(g.Date).getTime() <= now).length;
-      progress[row.FantasyTeam] = entry;
+    const teams = new Set(gamesRoster.map((r) => r.FantasyTeam).filter((t): t is string => !!t));
+    for (const team of teams) {
+      const current = gamesRoster.filter((r) => r.FantasyTeam === team);
+      const tw = teamWeek(gamesStatus?.teams[team], gamesStatus?.game_logs_through, today);
+      const departed = gamesStatus
+        ? departedRows(tw, new Set(current.map((r) => r.Player)), byName, meta?.current_year ?? 0)
+        : [];
+      const { played, total } = teamGameTotals(
+        tw,
+        [...current.map((row) => ({ row })), ...departed.map((row) => ({ row, departed: true }))],
+        daysByNBATeam,
+      );
+      progress[team] = { played, total };
     }
     return progress;
-  }, [gamesRoster, gamesSchedule]);
+  }, [gamesRoster, gamesSchedule, gamesStatus, meta?.current_year]);
   const isCurrentWeek = meta != null && year === meta.current_year && week === meta.current_week;
 
   // Default (and re-default, if the current focus team disappears from a
