@@ -690,6 +690,32 @@ export const getTeamSummary = (req: TeamSummaryRequest = {}, init?: RequestInit)
 export const getRosterRanks = (req: RosterRanksRequest) =>
   post<RosterRankRow[]>("/league/roster_ranks", req);
 
+// One player's week on the Roster page's full-week grid.
+export interface RosterWeekPlayer {
+  player_id: number;
+  // ESPN injury status ("ACTIVE", "OUT", "DAY_TO_DAY", ...); null = unknown.
+  injury_status: string | null;
+  // True when injury_status means he won't play (OUT / IR / suspended).
+  out?: boolean;
+  // Date (YYYY-MM-DD, ET) -> lineup slot that day ("BE" bench, "IR",
+  // otherwise a starting slot). Days he wasn't on this roster are absent.
+  slots: Record<string, string>;
+  // Days he actually played (minutes > 0).
+  played: string[];
+}
+
+export interface RosterWeekStatus {
+  year: number;
+  team: string;
+  today: string;
+  // Latest day the game logs cover -- "didn't play" is only known up to here.
+  game_logs_through: string | null;
+  players: Record<string, RosterWeekPlayer>;
+}
+
+export const getRosterWeekStatus = (req: { year: number; team: string; start_date: string; end_date: string }) =>
+  post<RosterWeekStatus>("/league/roster_week_status", req);
+
 export const getNBASchedule = (req: NBAScheduleRequest) =>
   post<NBAScheduleGame[]>("/league/nba_schedule", req);
 

@@ -123,6 +123,14 @@ class RosterRanksRequest(BaseModel):
     year: int
 
 
+class RosterWeekStatusRequest(BaseModel):
+    year: int
+    team: str
+    # The week's first and last day (ET, YYYY-MM-DD).
+    start_date: date
+    end_date: date
+
+
 class RosterOptimizerPasswordRequest(BaseModel):
     password: str
 

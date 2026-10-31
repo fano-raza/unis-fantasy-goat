@@ -55,6 +55,7 @@ from scripts.export_roster_ranks import (  # noqa: E402
     main as export_roster_ranks,
 )
 from scripts.export_nba_schedule import main as export_nba_schedule  # noqa: E402
+from scripts.export_lineup_history import main as export_lineup_history  # noqa: E402
 from Models.Draft import Draft  # noqa: E402
 from Models.League import fantasyLeague  # noqa: E402
 from discord.discord_messages import notify_milestones  # noqa: E402
@@ -179,6 +180,14 @@ def run_updater() -> None:
                     export_roster_ranks([year])
                 except Exception as roster_ranks_exc:
                     print(f"roster_ranks export warning: {roster_ranks_exc}")
+
+                # Roster page full-week grid: every team's lineup slot per
+                # day (bench/IR days don't count). Incremental -- only new
+                # days plus yesterday/today, ~2 ESPN requests per cycle.
+                try:
+                    export_lineup_history(year)
+                except Exception as lineup_exc:
+                    print(f"lineup_history export warning: {lineup_exc}")
 
                 # Once-per-week player/team rank history snapshots -- both
                 # no-op if this (year, currentWeek) is already recorded, so

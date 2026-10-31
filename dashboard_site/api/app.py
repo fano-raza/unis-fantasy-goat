@@ -36,6 +36,7 @@ from .schemas import (
     RosterOptimizerPasswordRequest,
     RosterOptimizerRequest,
     RosterRanksRequest,
+    RosterWeekStatusRequest,
     ScheduleSwapRequest,
     SeasonLeadersRequest,
     StandingsRequest,
@@ -445,6 +446,13 @@ def league_analysis_rows(req: AggregateRequest) -> list[dict]:
 @app.post("/league/team_summary")
 def league_team_summary(req: TeamSummaryRequest) -> list[dict]:
     return league_store.team_summary(teams=req.teams)
+
+
+@app.post("/league/roster_week_status")
+def league_roster_week_status(req: RosterWeekStatusRequest) -> dict:
+    """Per-day lineup slot / games played / injury status for one team's
+    week -- the Roster page's full-week grid (scripts/export_lineup_history.py)."""
+    return league_store.roster_week_status(req.year, req.team, req.start_date, req.end_date)
 
 
 @app.post("/league/roster_ranks")

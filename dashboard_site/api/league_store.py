@@ -638,6 +638,73 @@ class LeagueStore:
         df = df.where(pd.notnull(df), None)
         return df.to_dict(orient="records")
 
+    # ESPN injury statuses that mean "won't play" (DAY_TO_DAY = might).
+    OUT_STATUSES = frozenset({"OUT", "INJURY_RESERVE", "SUSPENSION"})
+
+    def roster_week_status(self, year: int, team: str, start_date: date, end_date: date) -> dict:
+        """What the Roster page's full-week grid needs beyond the NBA
+        schedule, for one team's week: each player's lineup slot on each day
+        (Ref/lineup_history.csv -- "BE"/"IR" days don't count), the days they
+        actually played (Ref/player_game_logs.csv rows with minutes > 0) and
+        their current ESPN injury status. Missing files or a season without
+        lineup history just yield fewer fields -- the grid then falls back to
+        the plain schedule. Players are keyed by name, as on the Roster page."""
+        lo, hi = start_date.isoformat(), end_date.isoformat()
+        out: dict = {"year": year, "team": team, "today": _eastern_today().isoformat(),
+                     "game_logs_through": None, "players": {}}
+
+        history = self._read_ref_csv("lineup_history.csv")
+        if history is None or history.empty:
+            return out
+        history = history[history["Year"] == year]
+        sp_dates = dict(zip(history["ScoringPeriod"].astype(int), history["Date"]))
+        week = history[(history["FantasyTeam"] == team) & (history["Date"] >= lo) & (history["Date"] <= hi)]
+        players: dict = {}
+        for row in week.itertuples(index=False):
+            p = players.setdefault(row.Player, {"player_id": int(row.PlayerId), "injury_status": None,
+                                                "slots": {}, "played": []})
+            p["slots"][row.Date] = row.LineupSlot
+
+        if year == self.meta()["current_year"]:
+            # Current roster too (e.g. a pickup made after the last export).
+            latest = history[history["ScoringPeriod"] == history["ScoringPeriod"].max()]
+            for row in latest[latest["FantasyTeam"] == team].itertuples(index=False):
+                players.setdefault(row.Player, {"player_id": int(row.PlayerId), "injury_status": None,
+                                                "slots": {}, "played": []})
+
+            logs = self._read_ref_csv("player_game_logs.csv")
+            if logs is not None and not logs.empty:
+                through = sp_dates.get(int(logs["ScoringPeriod"].max()))
+                out["game_logs_through"] = through
+                ids = {p["player_id"] for p in players.values()}
+                played = logs[logs["PlayerId"].isin(ids) & (logs["MIN"] > 0)]
+                by_id: dict[int, list[str]] = {}
+                for row in played.itertuples(index=False):
+                    d = sp_dates.get(int(row.ScoringPeriod))
+                    if d and lo <= d <= hi:
+                        by_id.setdefault(int(row.PlayerId), []).append(d)
+                for p in players.values():
+                    p["played"] = sorted(by_id.get(p["player_id"], []))
+
+            proj = self._read_ref_csv("player_projections.csv")
+            if proj is not None and "InjuryStatus" in proj:
+                status = dict(zip(proj["PlayerId"].astype(int), proj["InjuryStatus"].fillna("")))
+                for p in players.values():
+                    s = status.get(p["player_id"]) or None
+                    p["injury_status"] = s
+                    p["out"] = s in self.OUT_STATUSES
+
+        out["players"] = players
+        return out
+
+    def _read_ref_csv(self, name: str) -> pd.DataFrame | None:
+        """A Ref/ export, read once per LeagueStore (rebuilt every reload)."""
+        cache = self.__dict__.setdefault("_ref_csv_cache", {})
+        if name not in cache:
+            path = self._ref_path(name)
+            cache[name] = pd.read_csv(path) if path is not None and path.exists() else None
+        return cache[name]
+
     def _ensure_roster_ranks_df(self) -> pd.DataFrame:
         if self._roster_ranks_df is not None:
             return self._roster_ranks_df
