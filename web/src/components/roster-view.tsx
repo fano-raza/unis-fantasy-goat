@@ -73,14 +73,16 @@ function easternDateKey(isoDate: string): string {
 //   missed   -- past, didn't count: not on the roster that day, on the bench
 //               or IR, or didn't play (grey)
 //   upcoming -- healthy and on the roster, bench included (green ring)
+//   doubtful -- upcoming, listed day-to-day (yellow ring; still counted)
 //   out      -- upcoming but on IR or injured (red ring)
-// counted + upcoming are this week's games; missed + out aren't.
-type GameState = "counted" | "missed" | "upcoming" | "out";
+// counted + upcoming + doubtful are this week's games; missed + out aren't.
+type GameState = "counted" | "missed" | "upcoming" | "doubtful" | "out";
 
 const GAME_STATE_STYLE: Record<GameState, string> = {
   counted: "bg-win opacity-45",
   missed: "bg-muted-foreground/45",
   upcoming: "border-2 border-win",
+  doubtful: "border-2 border-yellow-500",
   out: "border-2 border-loss",
 };
 
@@ -88,6 +90,7 @@ const GAME_STATE_LABEL: Record<GameState, string> = {
   counted: "Played, counted",
   missed: "Didn't count",
   upcoming: "Upcoming game",
+  doubtful: "Upcoming, day-to-day",
   out: "Upcoming, on IR or injured: won't count",
 };
 
@@ -467,6 +470,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
     const slots = status ? Object.entries(status.slots).sort(([a], [b]) => a.localeCompare(b)) : [];
     const latestSlot = slots.length ? slots[slots.length - 1][1] : row.LineupSlot;
     if (status?.out || (!swappedIn && latestSlot === "IR")) return "out";
+    if (status?.injury_status === "DAY_TO_DAY") return "doubtful";
     return "upcoming";
   }
 
@@ -478,8 +482,8 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
     let total = 0;
     for (const day of days) {
       const state = gameState(row, day, swappedIn);
-      if (state === "upcoming") left++;
-      if (state === "upcoming" || state === "counted") total++;
+      if (state === "upcoming" || state === "doubtful") left++;
+      if (state === "upcoming" || state === "doubtful" || state === "counted") total++;
     }
     return { left, total };
   }
@@ -818,6 +822,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
                   ["counted", "Played, counted"],
                   ["missed", "Didn't count (bench, IR, off roster or didn't play)"],
                   ["upcoming", "Upcoming"],
+                  ["doubtful", "Upcoming, day-to-day"],
                   ["out", "Upcoming, on IR or injured"],
                 ] as const
               ).map(([state, label]) => (
