@@ -121,8 +121,16 @@ def _yahoo_week_calendar_from_file(year: int) -> list[dict]:
 
 
 def rows_for_year(year: int) -> list[dict]:
-    is_espn = seasonInfo[year][1]
-    if is_espn:
+    # A season with a real {year}_matchup_cal.csv uses it, ESPN or Yahoo:
+    # it's what stat_updater.py itself files stats by. 2027 (ESPN) has one,
+    # and the rule-based ESPN heuristic got it wrong -- it can't see ESPN's
+    # two-week All-Star matchup (M18 = Feb 15-28, the heuristic said
+    # Feb 15-21 and shifted every later week; user report 2026-10-31,
+    # confirmed against ESPN's own matchup membership). The heuristic now
+    # only covers the old ESPN seasons that have no file (2019-2023).
+    if Path(calendar_csv_path(year)).exists():
+        return _yahoo_week_calendar_from_file(year)
+    if seasonInfo[year][1]:
         return _espn_week_calendar(year)
     return _yahoo_week_calendar_from_file(year)
 
