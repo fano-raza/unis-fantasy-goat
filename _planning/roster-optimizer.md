@@ -29,7 +29,7 @@ Every time it runs, it goes through six steps:
    Production × games = each player's expected contribution.
 2. **Add up every team.** Totals each fantasy team's expected production in all 9 categories.
 3. **Turn the gaps into win chances.** For each category against each opponent: how often would you win it in a typical week? A big lead wins it most weeks; a small lead is close to a coin flip, because categories swing week to week (blocks a lot, points less).
-4. **Give your team one score:** half is your chance of winning a weekly matchup (5 of 9 categories), half is the share of categories you'd win, averaged across every team in the league. Turnovers are always a 50/50 coin flip, so it never chases them.
+4. **Give your team one score:** half is your chance of winning a weekly matchup (5 of 9 categories), half is the share of categories you'd win, averaged across every team in the league. Turnovers count like any other category, fewer is better (since 2026-11-01; before that they were a fixed 50/50 coin flip).
 5. **Try every possible swap:** each of your players out, each available free agent in. It skips free agents who are injured, unsigned, or haven't played in two weeks, and rescores your team for every combination.
 6. **Make the best swap, then repeat.** It takes the swap that raises your score the most, as long as it improves your weekly win chances by at least 1 percentage point, then looks for the next-best one, up to the weekly limit. If nothing clears the bar, it recommends no move.
 
@@ -55,7 +55,7 @@ Everything lives in [`shared/roster_optimizer.py`](../shared/roster_optimizer.py
 
 - Team totals = sum of each player's per-game line × availability, scaled to the league's most common roster size (so a 14th player isn't a built-in edge).
 - Per category vs each opponent: `P(win) = Φ(gap / (σ·√2))`, where σ is the category's week-to-week variability, measured from every recorded season's CompStats (2019–2026): coefficient of variation PTS 12.3%, REB 13.6%, AST 14.9%, 3PTM 18.3%, STL 20.1%, BLK 24.7%, TO 16.0%; absolute SD FG% 2.4 points, FT% 3.65 points.
-- **Objective `standings`:** 0.5 × P(win ≥ 5 of 9 categories) (Poisson-binomial over the 9) + 0.5 × expected share of categories won, averaged over opponents. TO is fixed at 0.5 (user decision: never optimize turnovers — historically they run inversely to team strength).
+- **Objective `standings`:** 0.5 × P(win ≥ 5 of 9 categories) (Poisson-binomial over the 9) + 0.5 × expected share of categories won, averaged over opponents. TO counted like every other category since 2026-11-01 (`OPTIMIZER_IGNORED_CATS = ()` in `league_store.py`); it was fixed at 0.5 before that. The Trade Finder still treats TO as 0.5 (ro's default `ignored_cats`), untested with TO.
 - **Search:** greedy. Only the team's original players can be dropped (each swap is one real move), an added player can't be added twice, and the search stops when the best remaining swap gains less than 0.01 (1 percentage point of weekly win probability).
 - Other objectives kept for comparison: `ratings` (the original min-max design), `category_wins` (target-5 framework), `matchup_wins`.
 
@@ -120,7 +120,7 @@ Weekly use with the standings objective: +0.73 matchup wins per case [+0.46, +1.
 
 - Pool = free agents only (not on any fantasy roster). Any player for any player; no position constraints.
 - No games-per-week factor — it's a season-long tool.
-- Ignore turnovers entirely (never a target; zero weight; hidden from results).
+- ~~Ignore turnovers entirely~~ → **count turnovers** (user decision 2026-11-01, after the backtest in [Counting turnovers](#counting-turnovers-tested-2026-11-01)). Optimizer + Roster page category odds only; Trade Hub unchanged.
 - Injured players: excluded from pickups; rostered injured players weighted by season-long availability (not a flat penalty, which made it cut injured stars like LeBron and Curry).
 - Don't show tiny swaps.
 - Same best free agents for every team is fine — it's a single-team tool.
@@ -192,7 +192,7 @@ User question: how much would the optimizer change if turnovers were counted aga
 
 - **Live (2026-11-01, 3 swaps):** different picks for all 10 teams. Ignoring TO, the top free-agent add for 8 of 10 teams is Jeremiah Fears, and every team's TO win chance drops 1–7 points; counting TO, most of those become Andrew Wiggins / Brook Lopez instead. Saamrit gets no move at all with TO counted (the Gobert → Fears swap only looked good because its TO cost was hidden). Scored with TO counted, the live picks raise matchup win chance +2.3 points on average vs +3.7 for the TO-counted picks (circular: the second set was optimized for that score).
 - **Backtest (weekly from week 1, up to 3 swaps, 46 team-seasons, same setup as "Weekly use from week 1"):** TO ignored +2.60 wins vs standing pat (reproduces the documented number); TO counted **+3.04 [+2.39, +3.75]**. Paired difference **+0.45 wins/season [−0.01, +0.94]**, +1.0 category wins, +1.9 TO category wins; better in 50% of team-seasons, worse in 33%. By year: 2019 +0.62, 2020 0.00, 2021 +1.33, 2022 +0.65, 2023 −0.30. ~1 more swap a season (16.8 vs 15.6). Ignoring TO costs 1.4 TO category wins a season vs standing pat.
-- **Takeaway:** the original "TO runs inversely to team strength" concern holds for whole teams, but at the margin (one free agent for one player) ignoring TO just lets the optimizer pick high-turnover players for free. Counting it looks better, borderline significant. Not switched on; awaiting the user. Script: `scratchpad` one-off built on `scripts/backtest_weekly_strategies.py` with the `rolling_roster` config swapped.
+- **Takeaway:** the original "TO runs inversely to team strength" concern holds for whole teams, but at the margin (one free agent for one player) ignoring TO just lets the optimizer pick high-turnover players for free. Counting it looks better, borderline significant. **Switched on 2026-11-01** (user decision) for the optimizer and the Roster page's category odds; the Trade Hub still ignores TO. Script: `scratchpad` one-off built on `scripts/backtest_weekly_strategies.py` with the `rolling_roster` config swapped.
 
 ## Ideas not yet tested
 

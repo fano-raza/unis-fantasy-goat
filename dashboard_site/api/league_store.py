@@ -28,6 +28,11 @@ from .query_engine import StatsStore
 # as an import-time side effect that has nothing to do with this data path.
 MAIN_CATS = ["FG%", "FT%", "3PTM", "REB", "AST", "STL", "BLK", "TO", "PTS"]
 NEG_CATS = ["TO"]
+# Roster Optimizer + its per-category odds count turnovers like any other
+# category (user decision 2026-11-01; weekly backtest 2019-23: +3.04 wins/season
+# vs standing pat, vs +2.60 ignoring TO -- _planning/roster-optimizer.md).
+# The Trade Finder still uses ro's default (TO ignored); it wasn't retested.
+OPTIMIZER_IGNORED_CATS: tuple[str, ...] = ()
 PCT_CATS = ["FG%", "FT%"]
 SUM_CATS = ["3PTM", "REB", "AST", "STL", "BLK", "TO", "PTS"]
 RATING_COLS = [f"{c}_rating" for c in MAIN_CATS]
@@ -887,7 +892,7 @@ class LeagueStore:
             raise OpponentSelectionError("pick at least one team to optimize against")
 
         max_swaps = max(1, min(int(max_swaps), len(rosters[team])))
-        config = ro.recommended_config(max_swaps=max_swaps)
+        config = ro.recommended_config(max_swaps=max_swaps, ignored_cats=OPTIMIZER_IGNORED_CATS)
         result = ro.optimize(team, players, rosters, free_agents, config, ignore_opponents=frozenset(ignored))
 
         def player_card(pid) -> dict:
@@ -904,6 +909,7 @@ class LeagueStore:
                     "PTS": round(float(p["PTS"]), 1), "REB": round(float(p["REB"]), 1),
                     "AST": round(float(p["AST"]), 1), "3PTM": round(float(p["3PTM"]), 1),
                     "STL": round(float(p["STL"]), 1), "BLK": round(float(p["BLK"]), 1),
+                    "TO": round(float(p["TO"]), 1),
                     "FG%": round(float(p["FGM"] / fga), 3) if fga else None,
                     "FT%": round(float(p["FTM"] / fta), 3) if fta else None,
                 },
@@ -967,7 +973,7 @@ class LeagueStore:
         year, rosters, free_agents, players, name_to_id = self._optimizer_inputs()
         if team not in rosters:
             raise KeyError(f"no {year} roster found for team {team!r}")
-        config = ro.recommended_config(max_swaps=0)
+        config = ro.recommended_config(max_swaps=0, ignored_cats=OPTIMIZER_IGNORED_CATS)
         cats = [c for c in ro.MAIN_CATS if c not in config.ignored_cats]
 
         def evaluate(roster_ids: list) -> tuple[dict, float, list[str]]:

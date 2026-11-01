@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 import dashboard_site.api.app as app_module
 from dashboard_site.api.league_store import LeagueStore
+from shared import roster_optimizer as ro
 
 client = TestClient(app_module.app)
 URL = "/league/roster_optimizer"
@@ -125,7 +126,7 @@ def store(tmp_path, monkeypatch):
 def test_store_response_shape(store):
     out = store.roster_optimizer("T", max_swaps=3)
     assert out["team"] == "T" and out["roster_size"] == 4 and out["max_swaps"] == 3
-    assert "TO" not in out["categories"] and len(out["categories"]) == 8
+    assert out["categories"] == ro.MAIN_CATS  # TO counted (2026-11-01)
     assert set(out["start"]) == set(out["categories"]) == set(out["end"])
     assert 0 <= out["start_matchup_win"] <= 1 and 0 <= out["end_matchup_win"] <= 1
     assert len(out["swaps"]) <= 3

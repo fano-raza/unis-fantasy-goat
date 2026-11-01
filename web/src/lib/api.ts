@@ -380,7 +380,8 @@ export const getLeagueMeta = (init?: RequestInit) => apiFetch<LeagueMeta>("/leag
 
 // --- Roster Optimizer (password-gated; see _planning/roster-optimizer.md) ---
 
-export type OptimizerCategory = "FG%" | "FT%" | "3PTM" | "REB" | "AST" | "STL" | "BLK" | "PTS";
+// TO is included by the optimizer and roster odds (since 2026-11-01), not by the Trade Hub.
+export type OptimizerCategory = "FG%" | "FT%" | "3PTM" | "REB" | "AST" | "STL" | "BLK" | "TO" | "PTS";
 
 export interface OptimizerPlayer {
   id: number;

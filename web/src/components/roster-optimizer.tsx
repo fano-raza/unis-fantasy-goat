@@ -344,8 +344,8 @@ export function OptimizerResults({
 
       <p className="text-xs text-muted-foreground">
         {result.ignored_opponents?.length
-          ? `Win probabilities are against an average of the teams you picked (leaving out ${listNames(result.ignored_opponents)}), and turnovers are left out.`
-          : "Win probabilities are against an average opponent in this league, and turnovers are left out."}{" "}
+          ? `Win probabilities are against an average of the teams you picked (leaving out ${listNames(result.ignored_opponents)}).`
+          : "Win probabilities are against an average opponent in this league."}{" "}
         Stats as of{" "}
         {formatAsOf(result.data_as_of.player_stats)}; rosters and projections refresh daily.
       </p>

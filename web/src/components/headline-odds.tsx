@@ -11,11 +11,11 @@ const pct = (x: number) => `${Math.round(x * 100)}%`;
 
 /**
  * Expected categories won in a typical week: the sum of the per-category
- * win probabilities, plus 0.5 for turnovers (the premium tools treat TO as
- * a coin flip and leave it out of the per-category numbers).
+ * win probabilities, plus 0.5 for turnovers when they're left out (the Trade
+ * Hub treats TO as a coin flip; the optimizer and roster odds count it).
  */
 export function expectedCategories(perCategory: Record<string, number>): number {
-  return Object.values(perCategory).reduce((sum, p) => sum + p, 0) + 0.5;
+  return Object.values(perCategory).reduce((sum, p) => sum + p, 0) + ("TO" in perCategory ? 0 : 0.5);
 }
 
 /**

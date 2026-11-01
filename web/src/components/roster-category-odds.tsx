@@ -24,6 +24,7 @@ const PREVIEW = [
   ["AST", 0.44],
   ["STL", 0.58],
   ["BLK", 0.3],
+  ["TO", 0.47],
   ["PTS", 0.66],
 ] as const;
 
