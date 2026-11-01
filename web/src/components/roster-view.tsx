@@ -528,16 +528,17 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
     <div className="flex flex-col gap-4">
       <Card variant="plain">
         <CardContent className="flex flex-wrap items-center gap-6">
-          <SteppableSelect label="Season" value={year} onValueChange={setYear} options={meta.years} />
+          <SteppableSelect label="Season" value={year} onValueChange={setYear} options={meta.years} stackOnMobile />
           <LabeledSelect
+            stackOnMobile
             label="Team"
             value={team}
             onValueChange={setTeam}
             options={meta.members.map((m) => ({ value: m, label: m }))}
           />
           {weekOptions.length > 0 && week != null && (
-            <div className="flex items-center gap-2">
-              <SteppableSelect label="Week" value={week} onValueChange={setWeek} options={weekOptions} />
+            <div className="flex items-end gap-2 sm:items-center">
+              <SteppableSelect label="Week" value={week} onValueChange={setWeek} options={weekOptions} stackOnMobile />
               <Button
                 type="button"
                 variant="outline"

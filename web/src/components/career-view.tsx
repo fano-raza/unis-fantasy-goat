@@ -179,7 +179,7 @@ export function CareerStatsView({ initialBootstrap }: CareerStatsViewProps) {
               <span className="text-muted-foreground">Rating</span>
             </label>
             <LabeledSelect
-              label="Focus team"
+              label="Team"
               value={focusTeam}
               onValueChange={setFocusTeam}
               options={[

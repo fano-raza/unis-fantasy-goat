@@ -1,4 +1,4 @@
-import type { ArrowToggleOption } from "@/components/arrow-toggle";
+import type { ViewTabOption } from "@/components/view-tabs";
 
 // Canonical sub-page lists for the top-level sections that have more than
 // one page. Each list is shared by every page in that section's
@@ -12,7 +12,7 @@ import type { ArrowToggleOption } from "@/components/arrow-toggle";
 // moved into it from Team (League's list replaces standings-nav.ts). Old
 // URLs redirect in next.config.ts.
 
-export const WEEKLY_VIEW_OPTIONS: ArrowToggleOption[] = [
+export const WEEKLY_VIEW_OPTIONS: ViewTabOption[] = [
   { value: "weekly", label: "Weekly Stats" },
   { value: "ultra", label: "Ultra" },
 ];
@@ -22,7 +22,7 @@ export const WEEKLY_VIEW_PATHS: Record<string, string> = {
   ultra: "/weekly-stats/ultra",
 };
 
-export const TEAM_VIEW_OPTIONS: ArrowToggleOption[] = [
+export const TEAM_VIEW_OPTIONS: ViewTabOption[] = [
   { value: "roster", label: "Roster" },
   { value: "trade", label: "Trade Hub" },
 ];
@@ -32,7 +32,7 @@ export const TEAM_VIEW_PATHS: Record<string, string> = {
   trade: "/team/trade-hub",
 };
 
-export const LEAGUE_VIEW_OPTIONS: ArrowToggleOption[] = [
+export const LEAGUE_VIEW_OPTIONS: ViewTabOption[] = [
   { value: "1v1", label: "Season Standings" },
   { value: "league_wins", label: "League Wins" },
   { value: "ratings", label: "Ratings" },
@@ -46,7 +46,7 @@ export const LEAGUE_VIEW_PATHS: Record<string, string> = {
   draft: "/league/draft-hub",
 };
 
-export const CAREER_VIEW_OPTIONS: ArrowToggleOption[] = [
+export const CAREER_VIEW_OPTIONS: ViewTabOption[] = [
   { value: "profile", label: "Profile" },
   { value: "comparison", label: "Comparison" },
   { value: "stats", label: "Career Stats" },

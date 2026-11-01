@@ -136,7 +136,7 @@ export function UltraView({ initialBootstrap }: UltraViewProps) {
             <RoutedViewSwitcher options={WEEKLY_VIEW_OPTIONS} current="ultra" paths={WEEKLY_VIEW_PATHS} />
             <SteppableSelect label="Season" value={year} onValueChange={setYear} options={meta.years} />
             <LabeledSelect
-              label="Focus team"
+              label="Team"
               value={focusTeam}
               onValueChange={setFocusTeam}
               options={[

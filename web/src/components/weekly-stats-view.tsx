@@ -11,7 +11,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { Button } from "@/components/ui/button";
 import { StatTable } from "@/components/stat-table";
 import { LabeledSelect, NO_FOCUS_TEAM } from "@/components/labeled-select";
 import { SteppableSelect } from "@/components/steppable-select";
@@ -388,33 +387,23 @@ function WeeklyStatsPageInner({ initialBootstrap }: WeeklyStatsViewProps) {
       <Card variant="plain">
         <CardContent
           className={cn(
-            "flex flex-wrap items-center gap-4",
+            "flex flex-wrap items-center gap-4 max-sm:items-end",
             isPlayoffWeek && "rounded-md border border-gold/50 bg-gold/[0.06] p-3",
           )}
         >
           <RoutedViewSwitcher options={WEEKLY_VIEW_OPTIONS} current="weekly" paths={WEEKLY_VIEW_PATHS} />
-          <SteppableSelect label="Season" value={year} onValueChange={handleYearChange} options={meta.years} />
-          <div className="flex items-center gap-1">
-            <SteppableSelect label="Week" value={week} onValueChange={setWeek} options={weekOptions} />
+          <SteppableSelect label="Season" value={year} onValueChange={handleYearChange} options={meta.years} stackOnMobile />
+          <div className="flex items-end gap-1 sm:items-center">
+            <SteppableSelect label="Week" value={week} onValueChange={setWeek} options={weekOptions} stackOnMobile />
             {isPlayoffWeek && (
               <span className="rounded-sm bg-gold/15 px-1.5 py-0.5 text-xs font-semibold text-gold">
                 Playoffs
               </span>
             )}
           </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={year === meta.current_year && week === meta.current_week}
-            onClick={() => {
-              setYear(meta.current_year);
-              setWeek(meta.current_week);
-            }}
-          >
-            Current Week
-          </Button>
           <LabeledSelect
-            label="Focus team"
+            stackOnMobile
+            label="Team"
             value={focusTeam}
             onValueChange={setFocusTeam}
             options={[

@@ -17,6 +17,7 @@ export function LabeledSelect({
   onValueChange,
   options,
   className,
+  stackOnMobile = false,
 }: {
   label: string;
   value: string;
@@ -26,9 +27,11 @@ export function LabeledSelect({
   // selector (e.g. a highlighted border) without changing every other
   // page's LabeledSelect usage.
   className?: string;
+  // Below `sm`: label above the dropdown instead of beside it.
+  stackOnMobile?: boolean;
 }) {
   return (
-    <label className={cn("flex items-center gap-2", className)}>
+    <label className={cn("flex items-center gap-2", stackOnMobile && "max-sm:flex-col max-sm:items-start max-sm:gap-1", className)}>
       <span className="label">
         {label}
       </span>

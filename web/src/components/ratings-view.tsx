@@ -104,7 +104,6 @@ function RatingsPageInner({ initialBootstrap }: RatingsViewProps) {
   const [meta, setMeta] = useState<LeagueMeta | null>(initialBootstrap?.meta ?? null);
   const [year, setYear] = useState<number | null>(null);
   const [weekRange, setWeekRange] = useState<[number, number] | null>(null);
-  const [showGraph, setShowGraph] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -267,8 +266,6 @@ function RatingsPageInner({ initialBootstrap }: RatingsViewProps) {
         weekRange={weekRange}
         onWeekRangeChange={setWeekRange}
         maxWeek={maxWeek}
-        showGraph={showGraph}
-        onShowGraphChange={setShowGraph}
       />
 
       <Card>
@@ -307,7 +304,7 @@ function RatingsPageInner({ initialBootstrap }: RatingsViewProps) {
               </label>
             </div>
             <LabeledSelect
-              label="Focus team"
+              label="Team"
               value={ratingsFocusTeam}
               onValueChange={setRatingsFocusTeam}
               options={[
@@ -368,7 +365,7 @@ function RatingsPageInner({ initialBootstrap }: RatingsViewProps) {
         </CardContent>
       </Card>
 
-      {showGraph && !error && (
+      {!error && (
         <Card>
           <CardHeader>
             <CardTitle>Rating Over Time</CardTitle>

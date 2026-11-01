@@ -55,7 +55,7 @@ import { cn } from "@/lib/utils";
 import { ProfileHistoryChart } from "@/components/profile-history-chart";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
 import { LoadingOverlay } from "@/components/loading-overlay";
-import { buildBadges, POSITIVE_BADGE_TYPES } from "@/lib/badges";
+import { buildBadges, POSITIVE_BADGE_TYPES, seasonProgress } from "@/lib/badges";
 import { TeamBadges } from "@/components/team-badges";
 import { BadgeDrawer } from "@/components/badge-drawer";
 import { SELECTED_TEAM_STORAGE_KEY } from "@/lib/use-selected-team";
@@ -286,9 +286,9 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
   const badgesLoading = !profile || !categoryHistory || !brackets;
 
   const badges = useMemo(() => {
-    if (!team || !profile || !categoryHistory) return { positive: [], negative: [] };
-    return buildBadges(team, profile, categoryHistory, meta?.goat, brackets);
-  }, [team, profile, categoryHistory, meta?.goat, brackets]);
+    if (!team || !profile || !categoryHistory || !meta) return { positive: [], negative: [] };
+    return buildBadges(team, profile, categoryHistory, seasonProgress(meta, brackets), meta.goat, brackets);
+  }, [team, profile, categoryHistory, meta, brackets]);
 
   const uniquePositiveCount = new Set(badges.positive.map((b) => b.type)).size;
 
@@ -396,7 +396,19 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
               putting CardTitle in column 2 instead of stacking it under
               CardDescription in column 1. */}
           <div>
-            <CardTitle className="text-[clamp(2.25rem,7vw,3.25rem)]! font-black uppercase">{team}</CardTitle>
+            {/* Mobile: Show Badges sits top right, level with the team name
+                (user spec 2026-11-01); desktop shows the badges themselves
+                in CardAction instead. */}
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle className="text-[clamp(2.25rem,7vw,3.25rem)]! font-black uppercase">{team}</CardTitle>
+              <div className="shrink-0 sm:hidden">
+                {badgesLoading ? (
+                  <span className="text-sm text-muted-foreground">Loading badges…</span>
+                ) : (
+                  <BadgeDrawer positive={badges.positive} negative={badges.negative} />
+                )}
+              </div>
+            </div>
             <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
               {badgesLoading
                 ? "Loading badges…"
@@ -411,13 +423,6 @@ function ProfilePageInner({ initialBootstrap }: ProfileViewProps) {
             )}
           </CardAction>
         </CardHeader>
-        <CardContent className="sm:hidden">
-          {badgesLoading ? (
-            <span className="text-sm text-muted-foreground">Loading badges…</span>
-          ) : (
-            <BadgeDrawer positive={badges.positive} negative={badges.negative} />
-          )}
-        </CardContent>
       </Card>
 
       <LoadingOverlay active={!profile} hasContent={false} label="Loading">

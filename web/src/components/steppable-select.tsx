@@ -3,6 +3,7 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LabeledSelect } from "@/components/labeled-select";
+import { cn } from "@/lib/utils";
 
 // Steps to the previous/next value in an ordered option list, clamped at
 // either end (no wraparound).
@@ -47,11 +48,15 @@ export function SteppableSelect({
   value,
   onValueChange,
   options,
+  stackOnMobile = false,
 }: {
   label: string;
   value: number;
   onValueChange: (value: number) => void;
   options: number[];
+  // Below `sm`: label above the dropdown and no step arrows (user spec
+  // 2026-11-01 -- mobile filters were too busy).
+  stackOnMobile?: boolean;
 }) {
   const idx = options.indexOf(value);
   return (
@@ -61,7 +66,9 @@ export function SteppableSelect({
         value={String(value)}
         onValueChange={(v) => onValueChange(Number(v))}
         options={options.map((o) => ({ value: String(o), label: String(o) }))}
+        stackOnMobile={stackOnMobile}
       />
+      <div className={cn("flex items-center gap-1", stackOnMobile && "max-sm:hidden")}>
       <StepButton
         direction="prev"
         label={`Previous ${label.toLowerCase()}`}
@@ -74,6 +81,7 @@ export function SteppableSelect({
         disabled={idx === -1 || idx >= options.length - 1}
         onClick={() => onValueChange(step(options, value, 1))}
       />
+      </div>
     </div>
   );
 }

@@ -2,9 +2,36 @@ import {
   MAIN_CATS,
   type Category,
   type CategoryHistoryResponse,
+  type LeagueMeta,
   type PlayoffBracketsResponse,
   type TeamSummary,
 } from "./api";
+
+// Which seasons have earned their badges yet (user spec 2026-11-01): no
+// badges from a season until its regular season is over, and no playoff
+// badges until its playoffs are over -- so an in-progress season's current
+// leader never shows up as an MVP/RS 1st/category badge.
+export interface SeasonProgress {
+  rsFinished: (year: number) => boolean;
+  playoffsFinished: (year: number) => boolean;
+}
+
+export function seasonProgress(
+  meta: Pick<LeagueMeta, "current_year" | "current_week" | "rs_week_count">,
+  brackets?: PlayoffBracketsResponse | null,
+): SeasonProgress {
+  // Past seasons are done; the current one once its last RS week is behind us.
+  const rsFinished = (year: number) =>
+    year < meta.current_year ||
+    (year === meta.current_year && meta.current_week > (meta.rs_week_count[String(year)] ?? Infinity));
+  // A bracket says so directly; without one (no playoffs that year, e.g.
+  // 2020, or brackets unavailable) only a past season counts as finished.
+  const playoffsFinished = (year: number) => {
+    const bracket = brackets?.[String(year)];
+    return bracket ? bracket.status === "Complete" : year < meta.current_year;
+  };
+  return { rsFinished, playoffsFinished };
+}
 
 // Sentinel for badges rendered with a real lucide icon component instead of
 // an emoji glyph -- there's no podium emoji in standard Unicode, but lucide
@@ -86,10 +113,11 @@ function parseYears(value: string | number | null | undefined): number[] {
 // Per-category league leader/lowest badges, one instance per (category,
 // year) the team actually led or was lowest in -- a team with several such
 // years gets several badges, not one badge with a count.
-function categoryBadges(team: string, history: CategoryHistoryResponse): BadgeInstance[] {
+function categoryBadges(team: string, history: CategoryHistoryResponse, progress: SeasonProgress): BadgeInstance[] {
   const badges: BadgeInstance[] = [];
   for (const [yearStr, cats] of Object.entries(history)) {
     const year = Number(yearStr);
+    if (!progress.rsFinished(year)) continue;
     for (const cat of MAIN_CATS) {
       const entry = cats[cat];
       if (!entry) continue;
@@ -111,19 +139,21 @@ function categoryBadges(team: string, history: CategoryHistoryResponse): BadgeIn
 // year -- sourced from team_summary.csv fields already on the profile row.
 // Runner-Up isn't its own team_summary column: "Finals Years" includes both
 // the champion and the runner-up year, so it's Finals minus Championship.
-function otherBadges(profile: TeamSummary): BadgeInstance[] {
+function otherBadges(profile: TeamSummary, progress: SeasonProgress): BadgeInstance[] {
   const badges: BadgeInstance[] = [];
-  const champYears = new Set(parseYears(profile["Championship Years"]));
-  const runnerUpYears = parseYears(profile["Finals Years"]).filter((y) => !champYears.has(y));
+  const po = (field: string) => parseYears(profile[field]).filter(progress.playoffsFinished);
+  const rs = (field: string) => parseYears(profile[field]).filter(progress.rsFinished);
+  const champYears = new Set(po("Championship Years"));
+  const runnerUpYears = po("Finals Years").filter((y) => !champYears.has(y));
 
   for (const y of champYears) badges.push({ id: `champ-${y}`, icon: "🏆", label: "Championship", year: y, positive: true, type: "Championship" });
   for (const y of runnerUpYears) badges.push({ id: `runnerup-${y}`, icon: "🥈", label: "Runner-Up", year: y, positive: true, type: "Runner-Up" });
-  for (const y of parseYears(profile["MVP Years"])) badges.push({ id: `mvp-${y}`, icon: "⭐", label: "MVP", year: y, positive: true, type: "MVP" });
-  for (const y of parseYears(profile["RS 1st Years"])) badges.push({ id: `rs1st-${y}`, icon: PODIUM_ICON_MARKER, label: "RS 1st Place", year: y, positive: true, type: "RS 1st Place" });
+  for (const y of rs("MVP Years")) badges.push({ id: `mvp-${y}`, icon: "⭐", label: "MVP", year: y, positive: true, type: "MVP" });
+  for (const y of rs("RS 1st Years")) badges.push({ id: `rs1st-${y}`, icon: PODIUM_ICON_MARKER, label: "RS 1st Place", year: y, positive: true, type: "RS 1st Place" });
 
   // Single all-time badge (like GOAT), not one per year -- unlocked once a
   // team has made the playoffs PLAYOFF_APPEARANCES_THRESHOLD times.
-  const playoffAppearances = parseYears(profile["Playoff Years"]).length;
+  const playoffAppearances = po("Playoff Years").length;
   if (playoffAppearances >= PLAYOFF_APPEARANCES_THRESHOLD) {
     badges.push({
       id: "playoff-appearances",
@@ -136,8 +166,8 @@ function otherBadges(profile: TeamSummary): BadgeInstance[] {
     });
   }
 
-  for (const y of parseYears(profile["Worst Rating Years"])) badges.push({ id: `worstrating-${y}`, icon: "🗑️", label: "Worst Rating", year: y, positive: false, type: "Worst Rating" });
-  for (const y of parseYears(profile["RS Last Years"])) badges.push({ id: `rslast-${y}`, icon: "L", label: "RS Last Place", year: y, positive: false, type: "RS Last Place" });
+  for (const y of rs("Worst Rating Years")) badges.push({ id: `worstrating-${y}`, icon: "🗑️", label: "Worst Rating", year: y, positive: false, type: "Worst Rating" });
+  for (const y of rs("RS Last Years")) badges.push({ id: `rslast-${y}`, icon: "L", label: "RS Last Place", year: y, positive: false, type: "RS Last Place" });
 
   return badges;
 }
@@ -169,12 +199,13 @@ export function buildBadges(
   team: string,
   profile: TeamSummary,
   history: CategoryHistoryResponse,
+  progress: SeasonProgress,
   goatTeam?: string | null,
   brackets?: PlayoffBracketsResponse | null,
 ): { positive: BadgeInstance[]; negative: BadgeInstance[] } {
   const all = [
-    ...categoryBadges(team, history),
-    ...otherBadges(profile),
+    ...categoryBadges(team, history, progress),
+    ...otherBadges(profile, progress),
     ...(brackets ? thirdPlaceBadges(team, brackets) : []),
   ];
   if (goatTeam && team === goatTeam) {

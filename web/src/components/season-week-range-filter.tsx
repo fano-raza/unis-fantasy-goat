@@ -22,8 +22,9 @@ export function SeasonWeekRangeFilter({
   weekRange: [number, number];
   onWeekRangeChange: (value: [number, number]) => void;
   maxWeek: number;
-  showGraph: boolean;
-  onShowGraphChange: (value: boolean) => void;
+  // Omit both to leave out the Show Graph switch (Ratings: graph always on).
+  showGraph?: boolean;
+  onShowGraphChange?: (value: boolean) => void;
 }) {
   return (
     <Card variant="plain">
@@ -42,11 +43,13 @@ export function SeasonWeekRangeFilter({
             thumbLabels={[`Week ${weekRange[0]}`, `Week ${weekRange[1]}`]}
           />
         </div>
-        <label className="flex items-center gap-2 self-start label text-foreground">
-          <span className="text-muted-foreground">Hide Graph</span>
-          <Switch checked={showGraph} onCheckedChange={onShowGraphChange} />
-          <span className="text-muted-foreground">Show Graph</span>
-        </label>
+        {showGraph !== undefined && onShowGraphChange && (
+          <label className="flex items-center gap-2 self-start label text-foreground">
+            <span className="text-muted-foreground">Hide Graph</span>
+            <Switch checked={showGraph} onCheckedChange={onShowGraphChange} />
+            <span className="text-muted-foreground">Show Graph</span>
+          </label>
+        )}
       </CardContent>
     </Card>
   );
