@@ -186,6 +186,14 @@ User request: an extra screen in the Optimize flow asking which teams to optimiz
 - Every number in the response (start/end win probability, category shares) is then against the average of the picked teams only; the results footnote says which teams were left out.
 - Tests: `test_store_ignore_opponents`, `test_store_ignore_opponents_validated`, `test_bad_opponent_picks_are_422`, plus the pass-through in `test_correct_password_runs`.
 
+## Counting turnovers (tested 2026-11-01)
+
+User question: how much would the optimizer change if turnovers were counted again (`ignored_cats=()` instead of `("TO",)`; TO then scored like every other category, lower is better)?
+
+- **Live (2026-11-01, 3 swaps):** different picks for all 10 teams. Ignoring TO, the top free-agent add for 8 of 10 teams is Jeremiah Fears, and every team's TO win chance drops 1–7 points; counting TO, most of those become Andrew Wiggins / Brook Lopez instead. Saamrit gets no move at all with TO counted (the Gobert → Fears swap only looked good because its TO cost was hidden). Scored with TO counted, the live picks raise matchup win chance +2.3 points on average vs +3.7 for the TO-counted picks (circular: the second set was optimized for that score).
+- **Backtest (weekly from week 1, up to 3 swaps, 46 team-seasons, same setup as "Weekly use from week 1"):** TO ignored +2.60 wins vs standing pat (reproduces the documented number); TO counted **+3.04 [+2.39, +3.75]**. Paired difference **+0.45 wins/season [−0.01, +0.94]**, +1.0 category wins, +1.9 TO category wins; better in 50% of team-seasons, worse in 33%. By year: 2019 +0.62, 2020 0.00, 2021 +1.33, 2022 +0.65, 2023 −0.30. ~1 more swap a season (16.8 vs 15.6). Ignoring TO costs 1.4 TO category wins a season vs standing pat.
+- **Takeaway:** the original "TO runs inversely to team strength" concern holds for whole teams, but at the margin (one free agent for one player) ignoring TO just lets the optimizer pick high-turnover players for free. Counting it looks better, borderline significant. Not switched on; awaiting the user. Script: `scratchpad` one-off built on `scripts/backtest_weekly_strategies.py` with the `rolling_roster` config swapped.
+
 ## Ideas not yet tested
 
 - **Remaining-schedule weighting:** weight opponents by how often you still face them. Still season-long; probably the more promising variant.
