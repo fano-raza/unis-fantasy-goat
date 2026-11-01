@@ -170,7 +170,6 @@ export function UltraView({ initialBootstrap }: UltraViewProps) {
                   mode="stat"
                   focusTeam={focusTeam === NO_FOCUS_TEAM ? undefined : focusTeam}
                   showFocusScore
-                  pinFocusRow
                   stickyHeaderOffset={0}
                   highlightClose
                 />

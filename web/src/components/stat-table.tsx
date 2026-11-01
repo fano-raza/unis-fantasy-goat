@@ -43,11 +43,6 @@ interface StatTableProps {
   // category W-L-T against each other row's raw stats. Off by default so
   // Career Stats/Profile's StatTable usages are unaffected.
   showFocusScore?: boolean;
-  // Ultra page only -- keeps the focus team's row pinned at index 0
-  // regardless of the active column sort. Off by default so every other
-  // page's StatTable usage (which sorts the focus row like any other row)
-  // is unaffected.
-  pinFocusRow?: boolean;
   // Ultra page only -- when set (a pixel offset, typically the height of
   // the page's own sticky filter bar, measured via useElementHeight rather
   // than hardcoded -- see that hook's comment for why), the header row
@@ -179,7 +174,6 @@ export function StatTable({
   mode,
   focusTeam,
   showFocusScore,
-  pinFocusRow,
   stickyHeaderOffset,
   highlightClose,
   gamesProgress,
@@ -297,19 +291,6 @@ export function StatTable({
     });
   }, [rows, sort, mode, baseline, gamesProgress]);
 
-  // Ultra's pinned focus row: pulled to index 0 after the normal sort runs,
-  // rather than baked into sortValue -- keeps the sort itself (and every
-  // other page's unpinned usage) exactly as before.
-  const displayRows = useMemo(() => {
-    if (!pinFocusRow || !focusTeam) return sortedRows;
-    const idx = sortedRows.findIndex((r) => r.team === focusTeam);
-    if (idx <= 0) return sortedRows;
-    const copy = [...sortedRows];
-    const [pinned] = copy.splice(idx, 1);
-    copy.unshift(pinned);
-    return copy;
-  }, [sortedRows, pinFocusRow, focusTeam]);
-
   return (
     <Table>
       <TableHeader>
@@ -373,7 +354,7 @@ export function StatTable({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {displayRows.map((row, i) => {
+        {sortedRows.map((row, i) => {
           const source = mode === "stat" ? row.stats : row.ratings;
           const baseSource = baseline ? (mode === "stat" ? baseline.stats : baseline.ratings) : undefined;
           const isFocus = row.team === focusTeam;
