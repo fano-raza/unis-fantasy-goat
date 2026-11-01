@@ -132,10 +132,11 @@ export function UltraView({ initialBootstrap }: UltraViewProps) {
 
       <div className="flex flex-1 flex-col gap-4">
         <Card variant="plain">
-          <CardContent className="flex flex-wrap items-center gap-6">
+          <CardContent className="flex flex-wrap items-center gap-6 max-sm:items-end max-sm:gap-4">
             <RoutedViewSwitcher options={WEEKLY_VIEW_OPTIONS} current="ultra" paths={WEEKLY_VIEW_PATHS} />
-            <SteppableSelect label="Season" value={year} onValueChange={setYear} options={meta.years} />
+            <SteppableSelect label="Season" value={year} onValueChange={setYear} options={meta.years} stackOnMobile />
             <LabeledSelect
+              stackOnMobile
               label="Team"
               value={focusTeam}
               onValueChange={setFocusTeam}
