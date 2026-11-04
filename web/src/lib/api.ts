@@ -378,6 +378,35 @@ function post<T>(path: string, body: unknown, init?: RequestInit): Promise<T> {
 
 export const getLeagueMeta = (init?: RequestInit) => apiFetch<LeagueMeta>("/league/meta", init);
 
+// Trade Log: every trade offer in league history (scripts/export_trades.py).
+export type TradeStatus = "Completed" | "Declined" | "Canceled" | "Vetoed" | "Not processed" | "Pending" | "Expired";
+
+export interface TradeRow {
+  id: string;
+  year: number;
+  platform: "ESPN" | "Yahoo";
+  proposed_date: string | null;
+  // When it was completed/declined/cancelled; null while pending.
+  resolved_date: string | null;
+  status: TradeStatus;
+  // null when details_available is false (ESPN kept only who declined).
+  proposer: string | null;
+  // "A; B" for a multi-team offer.
+  partner: string | null;
+  proposer_gives: string[];
+  partner_gives: string[];
+  veto_votes: number;
+  details_available: boolean;
+}
+
+export interface TradesResponse {
+  trades: TradeRow[];
+  // Seasons where only completed trades are known (Yahoo).
+  no_rejected_data_years: number[];
+}
+
+export const getTrades = (init?: RequestInit) => apiFetch<TradesResponse>("/league/trades", init);
+
 // --- Roster Optimizer (password-gated; see _planning/roster-optimizer.md) ---
 
 // TO is included by the optimizer and roster odds (since 2026-11-01), not by the Trade Hub.

@@ -50,10 +50,12 @@ export const CAREER_VIEW_OPTIONS: ViewTabOption[] = [
   { value: "profile", label: "Profile" },
   { value: "comparison", label: "Comparison" },
   { value: "stats", label: "Career Stats" },
+  { value: "trade-log", label: "Trade Log" },
 ];
 
 export const CAREER_VIEW_PATHS: Record<string, string> = {
   profile: "/career/profile",
   comparison: "/career/comparison",
   stats: "/career/stats",
+  "trade-log": "/career/trade-log",
 };

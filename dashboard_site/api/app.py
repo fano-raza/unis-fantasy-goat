@@ -365,6 +365,14 @@ def league_playoff_brackets() -> dict:
     return league_store.playoff_brackets()
 
 
+@app.get("/league/trades")
+def league_trades() -> dict:
+    try:
+        return league_store.trades()
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @app.get("/league/player_stats")
 def league_player_stats() -> list[dict]:
     try:

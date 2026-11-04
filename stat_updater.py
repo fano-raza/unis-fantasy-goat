@@ -56,6 +56,7 @@ from scripts.export_roster_ranks import (  # noqa: E402
 )
 from scripts.export_nba_schedule import main as export_nba_schedule  # noqa: E402
 from scripts.export_lineup_history import main as export_lineup_history  # noqa: E402
+from scripts.export_trades import main as export_trades  # noqa: E402
 from Models.Draft import Draft  # noqa: E402
 from Models.League import fantasyLeague  # noqa: E402
 from discord.discord_messages import notify_milestones  # noqa: E402
@@ -65,6 +66,24 @@ EASTERN_TZ = ZoneInfo("America/New_York")
 
 job_lock = threading.Lock()
 job_thread = None
+
+# Trade Log: during game hours, a quick scan of the last few days' trade
+# records every TRADES_QUICK_SCAN_SECONDS (the daytime cycle does a full
+# scan hourly). Frequent snapshots keep an offer's players after ESPN deletes
+# its proposal on decline -- see scripts/export_trades.py.
+TRADES_QUICK_SCAN_SECONDS = 10 * 60
+_last_trades_scan = 0.0
+
+
+def _quick_trades_scan(year: int) -> None:
+    global _last_trades_scan
+    if time.monotonic() - _last_trades_scan < TRADES_QUICK_SCAN_SECONDS:
+        return
+    _last_trades_scan = time.monotonic()
+    try:
+        export_trades([year], recent_days=2)
+    except Exception as trades_exc:
+        print(f"trades quick-scan warning: {trades_exc}")
 
 
 def ensure_updater_running():
@@ -129,6 +148,7 @@ def run_updater() -> None:
                 updateStatCSV(year)
             except Exception as e:
                 print(f"Stat refresh (game-hours) error: {e}")
+            _quick_trades_scan(year)
             time.sleep(120)
         else:
             try:
@@ -188,6 +208,13 @@ def run_updater() -> None:
                     export_lineup_history(year)
                 except Exception as lineup_exc:
                     print(f"lineup_history export warning: {lineup_exc}")
+
+                # Trade Log: full scan of this season's trade offers (hourly,
+                # with this cycle). Past seasons' rows are kept as stored.
+                try:
+                    export_trades([year])
+                except Exception as trades_exc:
+                    print(f"trades export warning: {trades_exc}")
 
                 # Once-per-week player/team rank history snapshots -- both
                 # no-op if this (year, currentWeek) is already recorded, so
