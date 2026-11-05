@@ -11,14 +11,15 @@ import { cn } from "@/lib/utils";
 
 const ALL = "__all__";
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-// "2026-11-03" -> "Nov 3, 2026" (no Date parsing, so no timezone shift).
+// "2026-11-03" -> "11/03/2026" (no Date parsing, so no timezone shift).
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
-  const [y, m, d] = iso.split("-").map(Number);
-  return `${MONTHS[m - 1]} ${d}, ${y}`;
+  const [y, m, d] = iso.split("-");
+  return `${m}/${d}/${y}`;
 }
+
+// A season is named by the year it ends: 2025 -> "24/25".
+const seasonLabel = (year: number) => `${String(year - 1).slice(-2)}/${String(year).slice(-2)}`;
 
 // What one team got in a trade: the other side's players, each with the
 // games he played for this team afterwards (when values are known).
@@ -56,7 +57,6 @@ function Got({ trade, team }: { trade: TradeRow; team: string }) {
   );
 }
 
-const valueOf = (t: TradeRow, team: string) => (team === t.proposer ? t.proposer_value : t.partner_value);
 const winsOf = (t: TradeRow, team: string) => (team === t.proposer ? t.proposer_wins_added : t.partner_wins_added);
 
 // A player's wins added, e.g. "+1.3 W" / "−2.0 C": green up, red down.
@@ -83,7 +83,7 @@ function wins(x: number): string {
 
 // Team name, marked when it won the trade, with the value it got.
 function TeamSide({ trade, team }: { trade: TradeRow; team: string }) {
-  const value = valueOf(trade, team);
+  const added = winsOf(trade, team);
   const won = trade.winner === team;
   return (
     <div className="flex flex-col gap-0.5">
@@ -91,12 +91,7 @@ function TeamSide({ trade, team }: { trade: TradeRow; team: string }) {
         <span className="team-name">{team}</span>
         {won && <span className="rounded-sm bg-win/15 px-1 py-0.5 text-[10px] font-bold text-win">WON</span>}
       </span>
-      {value != null && (
-        <span className="text-xs text-muted-foreground tabular-nums">
-          Value {Math.round(value)}
-          {winsOf(trade, team) != null && <> · {wins(winsOf(trade, team)!)}</>}
-        </span>
-      )}
+      {added != null && <span className="text-xs text-muted-foreground tabular-nums">{wins(added)}</span>}
     </div>
   );
 }
@@ -166,7 +161,7 @@ export function TradeLog({
             label="Season"
             value={season}
             onValueChange={setSeason}
-            options={[{ value: ALL, label: "All" }, ...years.map((y) => ({ value: String(y), label: String(y) }))]}
+            options={[{ value: ALL, label: "All" }, ...years.map((y) => ({ value: String(y), label: seasonLabel(y) }))]}
           />
           <LabeledSelect
             stackOnMobile
@@ -206,7 +201,7 @@ export function TradeLog({
                     <TableRow key={`${t.year}-${t.id}`} className="align-top">
                       <TableCell className="whitespace-nowrap tabular-nums">
                         {formatDate(t.date)}
-                        <span className="block text-xs text-muted-foreground">{t.year} season</span>
+                        <span className="block text-xs text-muted-foreground">{seasonLabel(t.year)}</span>
                       </TableCell>
                       <TableCell>
                         <TeamSide trade={t} team={t.proposer} />
@@ -232,7 +227,7 @@ export function TradeLog({
                   <li key={`${t.year}-${t.id}`} className="flex flex-col gap-2 py-3 first:pt-0">
                     <span className="flex items-center justify-between gap-2 text-xs text-muted-foreground tabular-nums">
                       <span>
-                        {formatDate(t.date)} · {t.year} season
+                        {formatDate(t.date)} · {seasonLabel(t.year)}
                       </span>
                       {t.winner === "Even" && <span>Even</span>}
                     </span>
