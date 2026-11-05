@@ -97,6 +97,7 @@ class LeagueStore:
         self._team_summary_df: pd.DataFrame | None = None
         self._player_stats_df: pd.DataFrame | None = None
         self._roster_ranks_df: pd.DataFrame | None = None
+        self._roster_win_probability_df: pd.DataFrame | None = None
         self._player_projections_df: pd.DataFrame | None = None
         self._player_game_logs_df: pd.DataFrame | None = None
         self._minutes_prior_df: pd.DataFrame | None = None
@@ -1040,12 +1041,16 @@ class LeagueStore:
             "unknown": unknown,
         }
 
-    def roster_win_probabilities(self) -> dict:
-        """Premium: every team's weekly win probability against the rest of
-        the league with its real active roster (Roster Rankings' "Win
-        probability" sub-tab). Same scoring and scaling as the Roster
-        Optimizer's own start_matchup_win for each team, just computed for
-        the whole league at once instead of one team at a time."""
+    def compute_roster_win_probabilities(self) -> dict:
+        """Every team's weekly win probability against the rest of the
+        league with its real active roster. Same scoring and scaling as the
+        Roster Optimizer's own start_matchup_win for each team, just computed
+        for the whole league at once instead of one team at a time. This is
+        the live computation scripts/export_roster_win_probability.py runs
+        daily into Ref/roster_win_probability.csv -- the app itself reads
+        that cached snapshot (roster_win_probabilities() below) rather than
+        paying this cost on every premium page load, since the inputs
+        (rosters/projections) only change once a day anyway."""
         year, rosters, free_agents, players, _ = self._optimizer_inputs()
         config = ro.recommended_config(max_swaps=0, ignored_cats=OPTIMIZER_IGNORED_CATS)
         cats = [c for c in ro.MAIN_CATS if c not in config.ignored_cats]
@@ -1058,6 +1063,38 @@ class LeagueStore:
                 "categories": {c: round(result.start_ratings[c], 4) for c in cats},
             })
         return {"year": year, "categories": cats, "teams": teams}
+
+    def _ensure_roster_win_probability_df(self) -> pd.DataFrame:
+        if self._roster_win_probability_df is not None:
+            return self._roster_win_probability_df
+        path = self._ref_path("roster_win_probability.csv")
+        if path is None or not path.exists():
+            raise ValueError(
+                "roster_win_probability.csv not found -- run scripts/export_roster_win_probability.py first"
+            )
+        self._roster_win_probability_df = pd.read_csv(path)
+        return self._roster_win_probability_df
+
+    def roster_win_probabilities(self) -> dict:
+        """Premium: every team's weekly win probability with its real roster
+        (Roster Rankings' "Win probability" sub-tab). Reads the daily cached
+        snapshot instead of rerunning compute_roster_win_probabilities() on
+        every request."""
+        df = self._ensure_roster_win_probability_df()
+        year = self.meta().get("current_year")
+        df = df[df["Year"] == year]
+        if df.empty:
+            raise ValueError(f"no cached roster_win_probability rows for {year}")
+        cats = [c for c in MAIN_CATS if c in df.columns]
+        teams = [
+            {
+                "team": row["Team"],
+                "matchup_win": float(row["MatchupWin"]),
+                "categories": {c: float(row[c]) for c in cats},
+            }
+            for _, row in df.iterrows()
+        ]
+        return {"year": int(year), "categories": cats, "teams": teams}
 
     # ------------------------------------------------------------------
     # Trade Hub, premium (see _planning/trade-recommender.md)

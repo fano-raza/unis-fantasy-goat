@@ -119,6 +119,7 @@ def store(tmp_path, monkeypatch):
     s = LeagueStore.__new__(LeagueStore)
     s.store = FakeStats()
     s._player_stats_df = s._roster_ranks_df = s._player_projections_df = s._week_calendar_df = None
+    s._roster_win_probability_df = None
     monkeypatch.setattr(s, "meta", lambda: {"current_year": 2027})
     return s
 
@@ -246,6 +247,7 @@ def test_ir_players_left_out_of_active_rosters(tmp_path, monkeypatch):
     s = LeagueStore.__new__(LeagueStore)
     s.store = FakeStats()
     s._player_stats_df = s._roster_ranks_df = s._player_projections_df = s._week_calendar_df = None
+    s._roster_win_probability_df = None
     monkeypatch.setattr(s, "meta", lambda: {"current_year": 2027})
     _, rosters, free_agents, _, name_to_id = s._optimizer_inputs()
     assert name_to_id["P16"] not in rosters["T"] and len(rosters["T"]) == 3
@@ -277,8 +279,8 @@ def test_win_probability_endpoint_is_password_gated(monkeypatch):
     assert client.post("/league/roster_win_probability", json=body).status_code == 200 and called == [1]
 
 
-def test_store_win_probabilities_covers_every_team_matches_optimizer(store):
-    out = store.roster_win_probabilities()
+def test_store_compute_win_probabilities_covers_every_team_matches_optimizer(store):
+    out = store.compute_roster_win_probabilities()
     assert out["year"] == 2027 and out["categories"] == ro.MAIN_CATS
     rows = {row["team"]: row for row in out["teams"]}
     assert set(rows) == {"A", "B", "C", "T"}
@@ -289,3 +291,37 @@ def test_store_win_probabilities_covers_every_team_matches_optimizer(store):
     opt = store.roster_optimizer("T", max_swaps=1)
     assert rows["T"]["matchup_win"] == opt["start_matchup_win"]
     assert rows["T"]["categories"] == opt["start"]
+
+
+def test_store_win_probabilities_missing_cache_is_422(store):
+    with pytest.raises(ValueError, match="roster_win_probability.csv"):
+        store.roster_win_probabilities()
+
+
+def test_store_win_probabilities_reads_cached_export(store, tmp_path):
+    computed = store.compute_roster_win_probabilities()
+    rows = [
+        {"Year": computed["year"], "Team": row["team"], "MatchupWin": row["matchup_win"], **row["categories"]}
+        for row in computed["teams"]
+    ]
+    pd.DataFrame(rows).to_csv(tmp_path / "roster_win_probability.csv", index=False)
+
+    served = store.roster_win_probabilities()
+    assert served["year"] == computed["year"] and served["categories"] == computed["categories"]
+    assert {r["team"]: r["matchup_win"] for r in served["teams"]} == {
+        r["team"]: r["matchup_win"] for r in computed["teams"]
+    }
+    assert {r["team"]: r["categories"] for r in served["teams"]} == {
+        r["team"]: r["categories"] for r in computed["teams"]
+    }
+
+
+def test_win_probability_endpoint_404s_on_missing_cache(monkeypatch):
+    monkeypatch.setenv("ROSTER_OPTIMIZER_PASSWORD", "secret")
+
+    def boom():
+        raise ValueError("roster_win_probability.csv not found")
+
+    monkeypatch.setattr(app_module.league_store, "roster_win_probabilities", boom)
+    r = client.post("/league/roster_win_probability", json={"password": "secret"})
+    assert r.status_code == 404

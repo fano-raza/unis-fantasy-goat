@@ -518,9 +518,13 @@ def league_roster_category_odds(req: RosterCategoryOddsRequest) -> dict:
 @app.post("/league/roster_win_probability")
 def league_roster_win_probability(req: RosterWinProbabilityRequest) -> dict:
     """Premium: every team's weekly win probability with its real roster --
-    the Roster Rankings card's "Win probability" sub-tab."""
+    the Roster Rankings card's "Win probability" sub-tab. Reads the daily
+    cached snapshot (scripts/export_roster_win_probability.py)."""
     _check_roster_optimizer_password(req.password)
-    return league_store.roster_win_probabilities()
+    try:
+        return league_store.roster_win_probabilities()
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post("/league/trade_odds")

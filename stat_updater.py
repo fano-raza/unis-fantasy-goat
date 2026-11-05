@@ -54,6 +54,7 @@ from scripts.export_roster_ranks import (  # noqa: E402
     append_team_roster_history,
     main as export_roster_ranks,
 )
+from scripts.export_roster_win_probability import main as export_roster_win_probability  # noqa: E402
 from scripts.export_nba_schedule import main as export_nba_schedule  # noqa: E402
 from scripts.export_lineup_history import main as export_lineup_history  # noqa: E402
 from scripts.export_trades import main as export_trades  # noqa: E402
@@ -181,6 +182,16 @@ def run_updater() -> None:
                     export_roster_ranks([year])
                 except Exception as roster_ranks_exc:
                     print(f"roster_ranks export warning: {roster_ranks_exc}")
+
+                # Roster Rankings' premium "Win probability" sub-tab: cached
+                # daily so the page reads a precomputed snapshot instead of
+                # rerunning the optimizer's scoring on every request. Needs
+                # player_stats/player_projections/roster_ranks, all exported
+                # above this point in the cycle.
+                try:
+                    export_roster_win_probability()
+                except Exception as win_prob_exc:
+                    print(f"roster_win_probability export warning: {win_prob_exc}")
 
                 # Roster page full-week grid: every team's lineup slot per
                 # day (bench/IR days don't count). Incremental -- only new
