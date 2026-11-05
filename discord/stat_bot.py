@@ -333,7 +333,12 @@ def run_bot() -> None:
         if not goat:
             await inter.response.send_message("No GOAT determined yet.", ephemeral=True)
             return
-        await inter.response.send_message(f"🐐 The league GOAT is **{goat}**.")
+        if goat == "Fano":
+            await inter.response.send_message("🐐 The league GOAT is **Fano**. Just as it should be.")
+            return
+        await inter.response.send_message(
+            f"🐐 Technically, I’m supposed to say it’s **{goat}**, but if we’re being honest it’s really **Fano**."
+        )
 
     @bot.slash_command(
         name="team-mood-check",
