@@ -15,7 +15,9 @@ def store(tmp_path):
         {"Year": 2027, "Platform": "ESPN", "TradeId": "x", "Date": "2026-11-03", "Proposer": "Rohil",
          "Partner": "Fano", "ProposerGives": "A; B", "PartnerGives": "C"},
         {"Year": 2025, "Platform": "Yahoo", "TradeId": "z", "Date": "2024-11-23", "Proposer": "Fano",
-         "Partner": "Ange", "ProposerGives": "D", "PartnerGives": "E; F"},
+         "Partner": "Ange", "ProposerGives": "D", "PartnerGives": "E; F", "ProposerValue": 120.5,
+         "PartnerValue": 80.0, "Winner": "Fano",
+         "ValueDetail": '[{"player": "E", "team": "Fano", "games": 30, "value": 120.5}]'},
     ]).to_csv(tmp_path / "trades.csv", index=False)
 
     class FakeStats:
@@ -24,14 +26,20 @@ def store(tmp_path):
     s = LeagueStore.__new__(LeagueStore)
     s.store = FakeStats()
     s._trades = None
+    s.meta = lambda: {"current_year": 2027}
     return s
 
 
 def test_store_trades(store):
     x, z = store.trades()
     assert x == {"id": "x", "year": 2027, "platform": "ESPN", "date": "2026-11-03", "proposer": "Rohil",
-                 "partner": "Fano", "proposer_gives": ["A", "B"], "partner_gives": ["C"]}
+                 "partner": "Fano", "proposer_gives": ["A", "B"], "partner_gives": ["C"],
+                 "proposer_value": None, "partner_value": None, "winner": None,
+                 "proposer_wins_added": None, "partner_wins_added": None, "top_player": None,
+                 "top_player_team": None, "top_player_wins_added": None, "players": [], "final": False}
     assert z["platform"] == "Yahoo" and z["partner_gives"] == ["E", "F"]
+    assert (z["proposer_value"], z["partner_value"], z["winner"]) == (120.5, 80.0, "Fano")
+    assert z["players"] == [{"player": "E", "team": "Fano", "games": 30, "value": 120.5}]
 
 
 def test_endpoint(monkeypatch):
@@ -66,9 +74,10 @@ def test_team_trade_stats(tmp_path):
     s.store = FakeStats()
     s._trades = None
     s._team_summary_df = None
+    s.meta = lambda: {"current_year": 2027}
     stats = s.team_trade_stats()
     assert stats["Juan"] == {
-        "Trades": 5, "Most Trades in a Season": 2, "Most Trades in a Season Years": "2020",
+        "Trades": 5, "Trades Won": 0, "Most Trades in a Season": 2, "Most Trades in a Season Years": "2020",
         "Consecutive Seasons with a Trade": 3, "Consecutive Seasons with a Trade Years": "2019–2021",
     }
     # Each team in a multi-team trade counts it; ties list every run.

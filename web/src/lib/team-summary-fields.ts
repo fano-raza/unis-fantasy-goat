@@ -75,6 +75,7 @@ const FIELD_DIRECTIONS: Record<string, Direction> = {
   // Trade Log stats (computed by the API from Ref/trades.csv; "higher"
   // here just means "most", for ranking -- trading isn't good or bad).
   Trades: "higher",
+  "Trades Won": "higher",
   "Most Trades in a Season": "higher",
   "Most Trades in a Season Years": "skip",
   "Consecutive Seasons with a Trade": "higher",

@@ -390,6 +390,24 @@ export interface TradeRow {
   partner: string;
   proposer_gives: string[];
   partner_gives: string[];
+  // Who won: fantasy value each side RECEIVED after the trade (games played
+  // for the new team until the player left it or the season ended), and the
+  // team with more ("Even" within 5%). null on data without values yet.
+  proposer_value: number | null;
+  partner_value: number | null;
+  winner: string | null;
+  // Matchup wins each side's new players added (its real matchups re-scored
+  // without them), and the one player who added the most (null if nobody did).
+  proposer_wins_added: number | null;
+  partner_wins_added: number | null;
+  top_player: string | null;
+  top_player_team: string | null;
+  top_player_wins_added: number | null;
+  // Per received player: the team that got him, games counted, his value
+  // and the matchup/category wins he added.
+  players: { player: string; team: string; games: number; value: number; wins_added?: number; cat_wins_added?: number }[];
+  // Past seasons are final; the current season's numbers are so far.
+  final: boolean;
 }
 
 export const getTrades = (init?: RequestInit) => apiFetch<TradeRow[]>("/league/trades", init);

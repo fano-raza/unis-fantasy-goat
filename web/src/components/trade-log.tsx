@@ -5,7 +5,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { LabeledSelect } from "@/components/labeled-select";
 import { LoadingBasketballs } from "@/components/loading-basketballs";
+import { Star } from "lucide-react";
 import { getLeagueMeta, getTrades, type LeagueMeta, type TradeRow } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 const ALL = "__all__";
 
@@ -18,14 +20,62 @@ function formatDate(iso: string | null): string {
   return `${MONTHS[m - 1]} ${d}, ${y}`;
 }
 
-function Players({ names }: { names: string[] }) {
+// What one team got in a trade: the other side's players, each with the
+// games he played for this team afterwards (when values are known).
+function Got({ trade, team }: { trade: TradeRow; team: string }) {
+  const names = team === trade.proposer ? trade.partner_gives : trade.proposer_gives;
   if (names.length === 0) return <span className="text-muted-foreground">—</span>;
+  // `?? []`: a cached response from before values existed has no players.
+  const info = new Map((trade.players ?? []).filter((p) => p.team === team).map((p) => [p.player, p]));
   return (
     <ul className="flex flex-col gap-0.5">
-      {names.map((n) => (
-        <li key={n}>{n}</li>
-      ))}
+      {names.map((n) => {
+        const p = info.get(n);
+        const top = trade.top_player === n && trade.top_player_team === team;
+        return (
+          <li key={n}>
+            <span className={cn(top && "font-semibold text-gold")}>{n}</span>
+            {top && <Star className="ml-1 inline size-3 fill-current align-[-1px] text-gold" aria-label="Added the most wins" />}
+            {p && (
+              <span className="block text-xs text-muted-foreground tabular-nums">
+                {p.games} {p.games === 1 ? "game" : "games"}
+                {p.wins_added != null && p.wins_added !== 0 && <> · {wins(p.wins_added)}</>}
+              </span>
+            )}
+          </li>
+        );
+      })}
     </ul>
+  );
+}
+
+const valueOf = (t: TradeRow, team: string) => (team === t.proposer ? t.proposer_value : t.partner_value);
+const winsOf = (t: TradeRow, team: string) => (team === t.proposer ? t.proposer_wins_added : t.partner_wins_added);
+
+// "+1.5 wins" / "−1 win" / "0 wins" (matchup wins).
+function wins(x: number): string {
+  const n = Number.isInteger(x) ? String(Math.abs(x)) : Math.abs(x).toFixed(1);
+  const sign = x > 0 ? "+" : x < 0 ? "−" : "";
+  return `${sign}${n} ${Math.abs(x) === 1 ? "win" : "wins"}`;
+}
+
+// Team name, marked when it won the trade, with the value it got.
+function TeamSide({ trade, team }: { trade: TradeRow; team: string }) {
+  const value = valueOf(trade, team);
+  const won = trade.winner === team;
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="flex items-center gap-1.5">
+        <span className="team-name">{team}</span>
+        {won && <span className="rounded-sm bg-win/15 px-1 py-0.5 text-[10px] font-bold text-win">WON</span>}
+      </span>
+      {value != null && (
+        <span className="text-xs text-muted-foreground tabular-nums">
+          Value {Math.round(value)}
+          {winsOf(trade, team) != null && <> · {wins(winsOf(trade, team)!)}</>}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -110,7 +160,10 @@ export function TradeLog({
         <CardHeader>
           <CardTitle>Trade Log</CardTitle>
           <CardDescription>
-            {filtered.length} completed {filtered.length === 1 ? "trade" : "trades"}
+            {filtered.length} completed {filtered.length === 1 ? "trade" : "trades"}. The winner is the team whose new
+            players produced more fantasy value for it, from the day after the trade until each player left the team or
+            the season ended (within 5% is even). Wins are the matchups each team would have lost without its new
+            players&apos; games; the starred player added the most. This season&apos;s numbers are so far.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -125,9 +178,9 @@ export function TradeLog({
                     <TableHead>Date</TableHead>
                     <TableHead>Season</TableHead>
                     <TableHead>Team</TableHead>
-                    <TableHead>Gave</TableHead>
+                    <TableHead>Got</TableHead>
                     <TableHead>Team</TableHead>
-                    <TableHead>Gave</TableHead>
+                    <TableHead>Got</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -135,14 +188,19 @@ export function TradeLog({
                     <TableRow key={`${t.year}-${t.id}`} className="align-top">
                       <TableCell className="whitespace-nowrap tabular-nums">{formatDate(t.date)}</TableCell>
                       <TableCell className="tabular-nums">{t.year}</TableCell>
-                      <TableCell className="team-name">{t.proposer}</TableCell>
                       <TableCell>
-                        <Players names={t.proposer_gives} />
+                        <TeamSide trade={t} team={t.proposer} />
                       </TableCell>
-                      <TableCell className="team-name">{t.partner}</TableCell>
                       <TableCell>
-                        <Players names={t.partner_gives} />
+                        <Got trade={t} team={t.proposer} />
                       </TableCell>
+                      <TableCell>
+                        <TeamSide trade={t} team={t.partner} />
+                      </TableCell>
+                      <TableCell>
+                        <Got trade={t} team={t.partner} />
+                      </TableCell>
+
                     </TableRow>
                   ))}
                 </TableBody>
@@ -152,20 +210,20 @@ export function TradeLog({
               <ul className="flex flex-col divide-y divide-border sm:hidden">
                 {filtered.map((t) => (
                   <li key={`${t.year}-${t.id}`} className="flex flex-col gap-2 py-3 first:pt-0">
-                    <span className="text-xs text-muted-foreground tabular-nums">
-                      {formatDate(t.date)} · {t.year} season
+                    <span className="flex items-center justify-between gap-2 text-xs text-muted-foreground tabular-nums">
+                      <span>
+                        {formatDate(t.date)} · {t.year} season
+                      </span>
+                      {t.winner === "Even" && <span>Even</span>}
                     </span>
                     <div className="grid grid-cols-2 gap-3 text-sm">
-                      <div className="flex flex-col gap-1">
-                        <span className="team-name">{t.proposer}</span>
-                        <span className="label">Gave</span>
-                        <Players names={t.proposer_gives} />
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        <span className="team-name">{t.partner}</span>
-                        <span className="label">Gave</span>
-                        <Players names={t.partner_gives} />
-                      </div>
+                      {[t.proposer, t.partner].map((team) => (
+                        <div key={team} className="flex flex-col gap-1">
+                          <TeamSide trade={t} team={team} />
+                          <span className="label">Got</span>
+                          <Got trade={t} team={team} />
+                        </div>
+                      ))}
                     </div>
                   </li>
                 ))}

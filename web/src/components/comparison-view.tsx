@@ -173,7 +173,7 @@ const COMPARISON_GROUPS: { title: string; fields: string[] }[] = [
   },
   {
     title: "Trades",
-    fields: ["Trades", "Most Trades in a Season", "Consecutive Seasons with a Trade"],
+    fields: ["Trades", "Trades Won", "Most Trades in a Season", "Consecutive Seasons with a Trade"],
   },
 ];
 

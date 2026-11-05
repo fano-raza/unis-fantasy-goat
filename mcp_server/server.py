@@ -458,8 +458,8 @@ def standings(year: int | None = None, from_week: int = 1, to_week: int | None =
 def team_profile(teams: list[str] | None = None) -> dict:
     """Career profile per team: championships, finals, playoff appearances, MVPs, regular-season
     1st/last-place finishes, career W/L and category records (RS and PO), win/loss streaks, best
-    ratings, draft scores, and trades (total, most in one season, longest run of consecutive
-    seasons with a trade), each with the years. Omit teams for every team."""
+    ratings, draft scores, and trades (total, trades won, most in one season, longest run of
+    consecutive seasons with a trade), each with the years. Omit teams for every team."""
     rows = _post("/league/team_summary", {"teams": _teams(teams)})
     return _rnd({"teams": [{k: v for k, v in r.items() if v not in (None, "", 0)} | {"Team": r["Team"]} for r in rows]})
 
@@ -564,10 +564,22 @@ def trades(
     what each team gave. Filters combine: `team` (involved in the trade), `other_team` (trades
     between `team` and this team), `player` (traded player; case/accent-insensitive, partial names
     OK, e.g. "luka" or "Doncic"), `year` (season). Omit everything for every trade. Also returns
-    per-team counts for the matching trades. Only completed trades are tracked (no declined or
-    vetoed offers). For a few older trades the offering team isn't known, so "team_a" is not
-    necessarily who proposed it. Career trade stats (total trades, most in a season, longest run
-    of consecutive seasons with a trade) are also in team_profile."""
+    per-team counts (trades, trades won) for the matching trades. Only completed trades are tracked
+    (no declined or vetoed offers; a trade reversed within a day is left out). For a few older
+    trades the offering team isn't known, so "team_a" is not necessarily who proposed it.
+
+    Who won: each side's "value_received" is the fantasy value its new players produced FOR IT,
+    from the day after the trade until each player left the team (dropped/traded away) or the
+    season ended: a 9-category total where each category is scaled by how much it varies between
+    fantasy-relevant players that season, turnovers count against, FG%/FT% count as makes above
+    the league rate. "winner" is the side with more ("Even" within 5%). "*_wins_added": matchup
+    wins each side's new players added -- its real matchups re-scored without their games (only
+    games they were in the active lineup; Yahoo seasons 2024-26 have no lineup history so every
+    game on the roster counts, and their FG/FT attempts are estimated). "top_player" is the single
+    received player who added the most wins. "players" lists each received player's games, value,
+    wins_added and cat_wins_added. Past seasons are final; current-season numbers are so far. Career trade stats
+    (total trades, trades won, most in a season, consecutive seasons with a trade) are also in
+    team_profile."""
     rows = _cached("trades", lambda: _get("/league/trades"))
     a = _team(team) if team else None
     b = _team(other_team) if other_team else None
@@ -587,17 +599,31 @@ def trades(
         out.append({
             "date": t["date"], "season": t["year"],
             "team_a": t["proposer"], "team_a_gave": sides[t["proposer"]],
+            "team_a_value_received": t.get("proposer_value"),
             "team_b": t["partner"], "team_b_gave": sides[t["partner"]],
+            "team_b_value_received": t.get("partner_value"),
+            "winner": t.get("winner"),
+            "team_a_wins_added": t.get("proposer_wins_added"),
+            "team_b_wins_added": t.get("partner_wins_added"),
+            "top_player": t.get("top_player"),
+            "top_player_team": t.get("top_player_team"),
+            "top_player_wins_added": t.get("top_player_wins_added"),
+            "final": t.get("final"),
+            "players": t.get("players", []),
         })
     per_team: dict[str, int] = defaultdict(int)
+    won: dict[str, int] = defaultdict(int)
     for t in out:
         for name in {t["team_a"], *t["team_b"].split("; ")}:
             per_team[name] += 1
-    return {
+        if t["winner"] and t["winner"] != "Even":
+            won[t["winner"]] += 1
+    return _rnd({
         "count": len(out),
         "trades_per_team": dict(sorted(per_team.items(), key=lambda kv: -kv[1])),
+        "trades_won_per_team": dict(sorted(won.items(), key=lambda kv: -kv[1])),
         "trades": out,
-    }
+    })
 
 
 @mcp.tool(annotations=RO)

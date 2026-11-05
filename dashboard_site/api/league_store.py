@@ -592,7 +592,7 @@ class LeagueStore:
 
     @staticmethod
     def _empty_trade_stats() -> dict:
-        return {"Trades": 0, "Most Trades in a Season": 0, "Most Trades in a Season Years": None,
+        return {"Trades": 0, "Trades Won": 0, "Most Trades in a Season": 0, "Most Trades in a Season Years": None,
                 "Consecutive Seasons with a Trade": 0, "Consecutive Seasons with a Trade Years": None}
 
     def team_trade_stats(self) -> dict[str, dict]:
@@ -603,7 +603,10 @@ class LeagueStore:
         progress with no trade yet doesn't end a run -- it just isn't part
         of it."""
         per_year: dict[str, dict[int, int]] = {}
+        won: dict[str, int] = {}
         for t in self.trades():
+            if t["winner"] and t["winner"] != "Even":
+                won[t["winner"]] = won.get(t["winner"], 0) + 1
             for team in {t["proposer"], *t["partner"].split("; ")} - {""}:
                 years = per_year.setdefault(team, {})
                 years[t["year"]] = years.get(t["year"], 0) + 1
@@ -619,6 +622,7 @@ class LeagueStore:
             longest = max(b - a + 1 for a, b in runs)
             out[team] = {
                 "Trades": sum(years.values()),
+                "Trades Won": won.get(team, 0),
                 "Most Trades in a Season": most,
                 "Most Trades in a Season Years": ", ".join(str(y) for y in sorted(years) if years[y] == most),
                 "Consecutive Seasons with a Trade": longest,
@@ -825,7 +829,10 @@ class LeagueStore:
 
     def trades(self) -> list[dict]:
         """Every completed trade in league history, newest first, from
-        scripts/export_trades.py's Ref/trades.csv."""
+        scripts/export_trades.py's Ref/trades.csv -- with who won it: the
+        value each side received after the trade (shared/trade_value.py),
+        "Even" within 5%, and per-player games/value. Value fields are None
+        on an older trades.csv without them."""
         if self._trades is not None:
             return self._trades
         path = self._ref_path("trades.csv")
@@ -836,19 +843,38 @@ class LeagueStore:
         def players(cell: str) -> list[str]:
             return [p for p in cell.split("; ") if p]
 
-        self._trades = [
-            {
-                "id": r.TradeId,
-                "year": int(r.Year),
-                "platform": r.Platform,
-                "date": r.Date or None,
-                "proposer": r.Proposer,
-                "partner": r.Partner,
-                "proposer_gives": players(r.ProposerGives),
-                "partner_gives": players(r.PartnerGives),
+        def num(cell) -> float | None:
+            return float(cell) if cell not in (None, "") else None
+
+        def row(r: dict) -> dict:
+            return {
+                "id": r["TradeId"],
+                "year": int(r["Year"]),
+                "platform": r["Platform"],
+                "date": r["Date"] or None,
+                "proposer": r["Proposer"],
+                "partner": r["Partner"],
+                "proposer_gives": players(r["ProposerGives"]),
+                "partner_gives": players(r["PartnerGives"]),
+                # Value each side RECEIVED after the trade.
+                "proposer_value": num(r.get("ProposerValue")),
+                "partner_value": num(r.get("PartnerValue")),
+                "winner": r.get("Winner") or None,
+                # Matchup wins each side's new players added (re-scoring its
+                # real matchups without them), and the single player who
+                # added the most.
+                "proposer_wins_added": num(r.get("ProposerWinsAdded")),
+                "partner_wins_added": num(r.get("PartnerWinsAdded")),
+                "top_player": r.get("TopPlayer") or None,
+                "top_player_team": r.get("TopPlayerTeam") or None,
+                "top_player_wins_added": num(r.get("TopPlayerWinsAdded")),
+                "players": json.loads(r["ValueDetail"]) if r.get("ValueDetail") else [],
+                # Past seasons are final (cached once); the current one updates.
+                "final": int(r["Year"]) < current_year,
             }
-            for r in df.itertuples()
-        ]
+
+        current_year = int(self.meta().get("current_year") or 0)
+        self._trades = [row(r) for r in df.to_dict(orient="records")]
         return self._trades
 
     # ------------------------------------------------------------------

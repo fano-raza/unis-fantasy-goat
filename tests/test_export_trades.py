@@ -41,6 +41,7 @@ def espn(monkeypatch):
     monkeypatch.setattr(et, "_session", lambda: None)
     monkeypatch.setattr(et, "_espn_trade_records", lambda s, y: records)
     monkeypatch.setattr(et, "_espn_player_names", lambda s, y, ids: {i: f"P{i}" for i in ids})
+    monkeypatch.setattr(et, "_add_espn_values", lambda s, y, rows: [r.pop(k, None) for r in rows for k in ("_sp", "_got")])
 
 
 def test_only_completed_trades(espn):
