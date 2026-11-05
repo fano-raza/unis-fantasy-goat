@@ -1053,6 +1053,25 @@ class LeagueStore:
             "unknown": unknown,
         }
 
+    def roster_win_probabilities(self) -> dict:
+        """Premium: every team's weekly win probability against the rest of
+        the league with its real active roster (Roster Rankings' "Win
+        probability" sub-tab). Same scoring and scaling as the Roster
+        Optimizer's own start_matchup_win for each team, just computed for
+        the whole league at once instead of one team at a time."""
+        year, rosters, free_agents, players, _ = self._optimizer_inputs()
+        config = ro.recommended_config(max_swaps=0, ignored_cats=OPTIMIZER_IGNORED_CATS)
+        cats = [c for c in ro.MAIN_CATS if c not in config.ignored_cats]
+        teams = []
+        for team in rosters:
+            result = ro.optimize(team, players, rosters, free_agents, config)
+            teams.append({
+                "team": team,
+                "matchup_win": round(result.start_matchup_win, 4),
+                "categories": {c: round(result.start_ratings[c], 4) for c in cats},
+            })
+        return {"year": year, "categories": cats, "teams": teams}
+
     # ------------------------------------------------------------------
     # Trade Hub, premium (see _planning/trade-recommender.md)
     # ------------------------------------------------------------------

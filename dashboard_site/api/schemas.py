@@ -172,6 +172,10 @@ class RosterCategoryOddsRequest(BaseModel):
     roster: list[str] | None = Field(None, max_length=30)
 
 
+class RosterWinProbabilityRequest(BaseModel):
+    password: str
+
+
 class RosterOptimizerRequest(BaseModel):
     team: str
     password: str

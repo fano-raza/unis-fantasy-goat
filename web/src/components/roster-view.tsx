@@ -35,6 +35,7 @@ import { LoadingOverlay } from "@/components/loading-overlay";
 import { OPTIMIZER_PHRASE_MS, OptimizerResults, RosterOptimizerButton } from "@/components/roster-optimizer";
 import { OPTIMIZER_PHRASES } from "@/lib/loading-phrases";
 import { RosterCategoryOddsCard } from "@/components/roster-category-odds";
+import { RosterWinProbabilityTab } from "@/components/roster-win-probability";
 import { cn, shortName } from "@/lib/utils";
 import {
   departedRows as findDepartedRows,
@@ -63,7 +64,7 @@ import {
 } from "@/lib/api";
 import { useSelectedTeam } from "@/lib/use-selected-team";
 import { ordinal } from "@/lib/team-summary-fields";
-import { ArrowDown, ArrowLeftRight, ArrowUp, RotateCcw, TriangleAlert, X } from "lucide-react";
+import { ArrowDown, ArrowLeftRight, ArrowUp, Crown, RotateCcw, TriangleAlert, X } from "lucide-react";
 
 const EASTERN_TZ = "America/New_York";
 // This league starts 10 players -- a day where more than 10 of a team's
@@ -145,6 +146,14 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
   const [team, setTeam] = useSelectedTeam(meta.members[0] ?? "");
   const [week, setWeek] = useState<number | null>(null);
   const [showFullWeek, setShowFullWeek] = useState(false);
+  // Roster Rankings sub-tab (user request): average player rank, or the
+  // premium win-probability ranking. The latter needs live rosters, so it
+  // only applies to the current season -- switching years away from it
+  // falls back to Average Rank.
+  const [rankingsTab, setRankingsTab] = useState<"avg" | "winprob">("avg");
+  useEffect(() => {
+    if (year !== meta.current_year) setRankingsTab("avg");
+  }, [year, meta.current_year]);
 
   const [rosterRows, setRosterRows] = useState<RosterRankRow[]>([]);
   const [rosterLoading, setRosterLoading] = useState(true);
@@ -916,9 +925,31 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
       <Card>
         <CardHeader>
           <CardTitle>Roster Rankings</CardTitle>
-          <CardDescription>Every team&apos;s roster, ordered by average player rank (lower is better)</CardDescription>
+          <CardDescription>
+            {rankingsTab === "avg"
+              ? "Every team's roster, ordered by average player rank (lower is better)"
+              : "Every team's real roster, ordered by weekly matchup win probability (higher is better)"}
+          </CardDescription>
+          {year === meta.current_year && (
+            <CardAction>
+              <label className="flex items-center gap-2 label text-foreground">
+                <span className={cn("text-muted-foreground", rankingsTab === "winprob" && "opacity-50")}>Average Rank</span>
+                <Switch
+                  checked={rankingsTab === "winprob"}
+                  onCheckedChange={(checked) => setRankingsTab(checked ? "winprob" : "avg")}
+                />
+                <span className={cn("flex items-center gap-1 text-muted-foreground", rankingsTab === "avg" && "opacity-50")}>
+                  <Crown className="size-3.5 text-gold" aria-hidden />
+                  Win Probability
+                </span>
+              </label>
+            </CardAction>
+          )}
         </CardHeader>
         <CardContent>
+          {rankingsTab === "winprob" && year === meta.current_year ? (
+            <RosterWinProbabilityTab team={team} format={meta.season_format[String(year)] ?? "wl"} />
+          ) : (
           <LoadingOverlay active={rosterLoading} hasContent={rosterRows.length > 0} label="Loading">
             <Table>
               <TableHeader>
@@ -961,6 +992,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
               </TableBody>
             </Table>
           </LoadingOverlay>
+          )}
         </CardContent>
       </Card>
     </div>

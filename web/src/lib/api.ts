@@ -493,6 +493,23 @@ export interface RosterCategoryOdds {
 export const getRosterCategoryOdds = (req: { team: string; password: string; roster?: string[] }) =>
   post<RosterCategoryOdds>("/league/roster_category_odds", req);
 
+// Premium: every team's weekly win probability with its real roster --
+// Roster Rankings' "Win probability" sub-tab (an alternative to Average Rank).
+export interface RosterWinProbabilityRow {
+  team: string;
+  matchup_win: number;
+  categories: Record<OptimizerCategory, number>;
+}
+
+export interface RosterWinProbabilities {
+  year: number;
+  categories: OptimizerCategory[];
+  teams: RosterWinProbabilityRow[];
+}
+
+export const getRosterWinProbabilities = (req: { password: string }) =>
+  post<RosterWinProbabilities>("/league/roster_win_probability", req);
+
 // Trade Hub (premium): both teams' weekly win probabilities before and after a
 // trade. See dashboard_site/api/league_store.py::trade_odds.
 export interface TradeOddsSide {

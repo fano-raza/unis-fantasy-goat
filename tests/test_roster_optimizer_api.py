@@ -263,3 +263,29 @@ def test_ir_players_left_out_of_active_rosters(tmp_path, monkeypatch):
 def test_store_category_odds_unknown_team(store):
     with pytest.raises(KeyError):
         store.roster_category_odds("Nobody")
+
+
+# --- Roster Rankings "Win probability" sub-tab (premium) ------------------
+
+def test_win_probability_endpoint_is_password_gated(monkeypatch):
+    monkeypatch.setenv("ROSTER_OPTIMIZER_PASSWORD", "secret")
+    called = []
+    monkeypatch.setattr(app_module.league_store, "roster_win_probabilities", lambda: called.append(1) or {})
+    body = {"password": "wrong"}
+    assert client.post("/league/roster_win_probability", json=body).status_code == 401 and not called
+    body["password"] = "secret"
+    assert client.post("/league/roster_win_probability", json=body).status_code == 200 and called == [1]
+
+
+def test_store_win_probabilities_covers_every_team_matches_optimizer(store):
+    out = store.roster_win_probabilities()
+    assert out["year"] == 2027 and out["categories"] == ro.MAIN_CATS
+    rows = {row["team"]: row for row in out["teams"]}
+    assert set(rows) == {"A", "B", "C", "T"}
+    for row in rows.values():
+        assert 0 <= row["matchup_win"] <= 1
+        assert set(row["categories"]) == set(out["categories"])
+    # Same number the Roster page's own card/optimizer would show for T.
+    opt = store.roster_optimizer("T", max_swaps=1)
+    assert rows["T"]["matchup_win"] == opt["start_matchup_win"]
+    assert rows["T"]["categories"] == opt["start"]

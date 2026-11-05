@@ -37,6 +37,7 @@ from .schemas import (
     RosterOptimizerRequest,
     RosterRanksRequest,
     RosterWeekStatusRequest,
+    RosterWinProbabilityRequest,
     LeagueWeekStatusRequest,
     ScheduleSwapRequest,
     SeasonLeadersRequest,
@@ -512,6 +513,14 @@ def league_roster_category_odds(req: RosterCategoryOddsRequest) -> dict:
         raise HTTPException(status_code=404, detail=str(exc.args[0])) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/league/roster_win_probability")
+def league_roster_win_probability(req: RosterWinProbabilityRequest) -> dict:
+    """Premium: every team's weekly win probability with its real roster --
+    the Roster Rankings card's "Win probability" sub-tab."""
+    _check_roster_optimizer_password(req.password)
+    return league_store.roster_win_probabilities()
 
 
 @app.post("/league/trade_odds")
