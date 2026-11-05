@@ -257,6 +257,7 @@ def run_bot() -> None:
             "🤖 **StatBot commands:**\n\n"
             "**Fantasy Commands:**\n"
             "`/standings-check [year]` — league standings for a season\n"
+            "`/current-champ` — who's the reigning league champion?\n"
             "`/champ-check [user]` — has this team ever won a title?\n"
             "`/mvp-check [user]` — has this team ever won MVP?\n"
             "`/l-check [user]` — has this team ever finished dead last?\n"
@@ -395,6 +396,18 @@ def run_bot() -> None:
             await inter.followup.send(f"⚠️ Backfill failed: {exc}")
             return
         await inter.followup.send(f"✅ Team-mood backfill complete -- {total} new row(s) added.")
+
+    @bot.slash_command(name="current-champ", description="Who's the reigning league champion?", **slash_kwargs)
+    async def current_champ(inter: disnake.ApplicationCommandInteraction):
+        # Most recent COMPLETE bracket -- a season whose playoffs are still
+        # running (or haven't started) never counts.
+        brackets = await _api_get("/league/playoff_brackets")
+        done = [(int(y), b["champion"]) for y, b in brackets.items() if b.get("status") == "Complete" and b.get("champion")]
+        if not done:
+            await inter.response.send_message("No champion crowned yet.", ephemeral=True)
+            return
+        year, champ = max(done)
+        await inter.response.send_message(f"🏆 The reigning champion is **{champ}** ({year - 1}-{str(year)[-2:]} season).")
 
     @bot.slash_command(name="champ-check", description="Has this user's team ever won a championship?", **slash_kwargs)
     async def champ_check(
