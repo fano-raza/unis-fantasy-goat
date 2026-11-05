@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import csv
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -747,12 +747,19 @@ def run_bot() -> None:
         inter: disnake.ApplicationCommandInteraction,
         game: str,
         rank_raw: Optional[str],
+        days: Optional[int] = None,
     ) -> None:
         try:
             rank, rank_label = daily_games.parse_rank_arg(rank_raw)
         except ValueError as e:
             await inter.response.send_message(f"⚠️ {e}", ephemeral=True)
             return
+        if days is not None and days < 1:
+            await inter.response.send_message("⚠️ `days` must be 1 or more (leave it out for all-time).", ephemeral=True)
+            return
+        # days=7 -> today plus the previous 6 days (Eastern), all-time if omitted.
+        since = datetime.now(EASTERN).date() - timedelta(days=days - 1) if days else None
+        period = f"last {days} day{'s' if days != 1 else ''}" if days else "all-time"
 
         # Deferred for the same reason as _game_leaderboard/_top_scores_leaderboard.
         await inter.response.defer()
@@ -762,14 +769,16 @@ def run_bot() -> None:
         except Exception as exc:
             print(f"Daily games freshness check failed, showing cached data: {exc}")
 
-        board = daily_games.champion_counts(game, rank)
+        board = daily_games.champion_counts(game, rank, since=since)
         label = daily_games.GAME_LABELS[game]
         if not board:
-            await inter.followup.send(f"No {label} data recorded yet.")
+            await inter.followup.send(
+                f"No {label} data recorded in the {period}." if days else f"No {label} data recorded yet."
+            )
             return
 
         display_names = daily_games.load_display_names()
-        lines = [f"🏆 **{label} — {rank_label} Place Champions** (all-time)"]
+        lines = [f"🏆 **{label} — {rank_label} Place Champions** ({period})"]
         for i, entry in enumerate(board, start=1):
             name = display_names.get(str(entry["uid"]), f"<@{entry['uid']}>")
             lines.append(f"{i}. **{name}** — {entry['count']} time{'s' if entry['count'] != 1 else ''}")
@@ -778,7 +787,8 @@ def run_bot() -> None:
     # One /champ-<game> slash command per daily_games.TOP_SCORE_GAMES entry
     # -- counts how many days each player has recorded the Nth-best score
     # of the day (default: 1st/highest, over all recorded history; optional
-    # `rank` of 1, 2, or "last" -- see daily_games.parse_rank_arg).
+    # `rank` of 1, 2, or "last" -- see daily_games.parse_rank_arg; optional
+    # `days` look-back, e.g. 7 = the last week, all-time if omitted).
     for _champ_game in daily_games.TOP_SCORE_GAMES:
 
         def _register_champ(game: str = _champ_game) -> None:
@@ -793,8 +803,9 @@ def run_bot() -> None:
             async def _champion_command(
                 inter: disnake.ApplicationCommandInteraction,
                 rank: Optional[str] = None,
+                days: Optional[int] = None,
             ):
-                await _champion_leaderboard(inter, game, rank)
+                await _champion_leaderboard(inter, game, rank, days)
 
         _register_champ()
 

@@ -867,7 +867,7 @@ def parse_rank_arg(raw: Optional[str]) -> tuple[int | str, str]:
     return n, RANK_LABELS[n]
 
 
-def champion_counts(game: str, rank: int | str) -> list[dict]:
+def champion_counts(game: str, rank: int | str, since: Optional[date] = None) -> list[dict]:
     """[{uid, count}] -- for every day game was played, finds the distinct
     score at the requested rank (1 = that day's highest score, 2 = that
     day's second-highest *distinct* score, "last" = that day's lowest
@@ -887,7 +887,10 @@ def champion_counts(game: str, rank: int | str) -> list[dict]:
     top_scores(), this has no raw= option; MapTap's raw/final score split
     isn't meaningful for "who had the best day" in the same way it is for
     a single best play. Only valid for TOP_SCORE_GAMES, same as
-    top_scores() -- raises ValueError for any other game."""
+    top_scores() -- raises ValueError for any other game.
+
+    since: only days on or after this date count (None = all history) --
+    /champ-<game>'s optional `days` look-back."""
     if game not in TOP_SCORE_GAMES:
         raise ValueError(
             f'"{GAME_LABELS.get(game, game)}" tracks number of tries, not a score -- no champion count for it.'
@@ -896,6 +899,8 @@ def champion_counts(game: str, rank: int | str) -> list[dict]:
     by_date: dict[str, list[tuple[int, float]]] = {}
     for r in rows:
         if r.get("score") in ("", None):
+            continue
+        if since is not None and date.fromisoformat(r["date"]) < since:
             continue
         by_date.setdefault(r["date"], []).append((int(r["discord_user_id"]), float(r["score"])))
 
