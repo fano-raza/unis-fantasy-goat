@@ -13,7 +13,9 @@ list.
 Writes Ref/trades.csv:
   Year, Platform, TradeId, Date, Proposer, Partner, ProposerGives, PartnerGives
 (Date = when the trade went through, ET YYYY-MM-DD; players joined with "; ";
-Proposer = the team that offered it, when known).
+Proposer = the team that offered it, when known). A trade reversed within a
+day (same two teams, same players swapped back) is dropped along with its
+reversal -- it doesn't count (user decision 2026-11-04).
 
 Some completed ESPN trades (most of 2020, much of 2021) have no player list
 left in any record. Those are rebuilt from ESPN's day-by-day rosters: players
@@ -260,8 +262,47 @@ def yahoo_trades(year: int) -> list[dict]:
     return rows
 
 
+REVERSAL_MAX_DAYS = 1
+
+
+def _sides(row: dict) -> dict[str, frozenset]:
+    """Team -> players it gave (as a set) for one trade row."""
+    return {row["Proposer"]: frozenset(p for p in row["ProposerGives"].split("; ") if p),
+            row["Partner"]: frozenset(p for p in row["PartnerGives"].split("; ") if p)}
+
+
+def drop_reversed(rows: list[dict]) -> list[dict]:
+    """Drop a trade AND its reversal when the same two teams swap the exact
+    same players back within REVERSAL_MAX_DAYS (user decision 2026-11-04:
+    a trade undone within a day doesn't count). E.g. 2022: Gary Trent Jr.
+    went Zahir -> Juan for Hamidou Diallo, and back the next day."""
+    def day(row: dict) -> datetime.date | None:
+        return datetime.date.fromisoformat(row["Date"]) if row["Date"] else None
+
+    dropped: set[int] = set()
+    for i, a in enumerate(rows):
+        for j in range(i + 1, len(rows)):
+            b = rows[j]
+            if i in dropped or j in dropped or a["Year"] != b["Year"]:
+                continue
+            da, db = day(a), day(b)
+            if da is None or db is None or abs((da - db).days) > REVERSAL_MAX_DAYS:
+                continue
+            sa, sb = _sides(a), _sides(b)
+            if set(sa) != set(sb) or len(sa) != 2:
+                continue
+            t1, t2 = sorted(sa)
+            # Reversal: what t1 gave in one is what t2 gave in the other.
+            if sa[t1] == sb[t2] and sa[t2] == sb[t1]:
+                dropped |= {i, j}
+                print(f"trades {a['Year']}: dropped reversed trade {t1} <-> {t2} ({a['Date']}, {b['Date']})",
+                      file=sys.stderr)
+    return [r for k, r in enumerate(rows) if k not in dropped]
+
+
 def season_trades(year: int) -> list[dict]:
-    return espn_trades(year) if seasonInfoDict[year]["is_espn"] else yahoo_trades(year)
+    rows = espn_trades(year) if seasonInfoDict[year]["is_espn"] else yahoo_trades(year)
+    return drop_reversed(rows)
 
 
 def main(years: list[int] | None = None) -> pd.DataFrame:

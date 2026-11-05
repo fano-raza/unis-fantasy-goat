@@ -51,3 +51,17 @@ def test_only_completed_trades(espn):
     assert r["TradeId"] == "p1" and r["Date"]
     assert (r["Proposer"], r["Partner"]) == ("Saamrit", "Ange")
     assert r["ProposerGives"] == "P10" and r["PartnerGives"] == "P11"  # the drop isn't part of the deal
+
+
+def test_reversed_within_a_day_dropped():
+    def row(date, a, b, a_gives, b_gives):
+        return {"Year": 2022, "Date": date, "Proposer": a, "Partner": b, "ProposerGives": a_gives, "PartnerGives": b_gives}
+    trade = row("2022-02-01", "Zahir", "Juan", "Gary Trent Jr.", "Hamidou Diallo")
+    back = row("2022-02-02", "Juan", "Zahir", "Gary Trent Jr.", "Hamidou Diallo")
+    later_back = row("2022-02-05", "Juan", "Zahir", "Gary Trent Jr.", "Hamidou Diallo")
+    other = row("2022-02-02", "Fano", "Juan", "A", "B")
+    assert et.drop_reversed([trade, back, other]) == [other]
+    # Undone after more than a day: both count.
+    assert et.drop_reversed([trade, later_back]) == [trade, later_back]
+    # Same players, same direction again isn't a reversal.
+    assert len(et.drop_reversed([trade, row("2022-02-02", "Zahir", "Juan", "Gary Trent Jr.", "Hamidou Diallo")])) == 2
