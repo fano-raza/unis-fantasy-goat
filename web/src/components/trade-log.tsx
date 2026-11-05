@@ -182,11 +182,7 @@ export function TradeLog({
         <CardHeader>
           <CardTitle>Trade Log</CardTitle>
           <CardDescription>
-            {filtered.length} completed {filtered.length === 1 ? "trade" : "trades"}. The winner is the team whose new
-            players produced more fantasy value for it, from the day after the trade until each player left the team or
-            the season ended (within 5% is even). Wins are the matchups each team would have lost without its new
-            players&apos; games. Beside each player: matchup wins (W) and category wins (C) he added for his new team;
-            the starred player added the most. This season&apos;s numbers are so far.
+            {filtered.length} completed {filtered.length === 1 ? "trade" : "trades"} · W = matchup wins, C = category wins
           </CardDescription>
         </CardHeader>
         <CardContent>
