@@ -328,15 +328,18 @@ def run_bot() -> None:
 
     @bot.slash_command(name="goat-check", description="Who's the league GOAT?", **slash_kwargs)
     async def goat_check(inter: disnake.ApplicationCommandInteraction):
+        # Deferred: the API call can take over Discord's 3-second limit
+        # (it timed out right after a deploy, 2026-11-05).
+        await inter.response.defer()
         meta = await _api_get("/league/meta")
         goat = meta.get("goat")
         if not goat:
-            await inter.response.send_message("No GOAT determined yet.", ephemeral=True)
+            await inter.followup.send("No GOAT determined yet.")
             return
         if goat == "Fano":
-            await inter.response.send_message("🐐 The league GOAT is **Fano**. Just as it should be.")
+            await inter.followup.send("🐐 The league GOAT is **Fano**. Just as it should be.")
             return
-        await inter.response.send_message(
+        await inter.followup.send(
             f"🐐 Technically, I’m supposed to say it’s **{goat}**, but if we’re being honest it’s really **Fano**."
         )
 
@@ -405,14 +408,15 @@ def run_bot() -> None:
     @bot.slash_command(name="current-champ", description="Who's the reigning league champion?", **slash_kwargs)
     async def current_champ(inter: disnake.ApplicationCommandInteraction):
         # Most recent COMPLETE bracket -- a season whose playoffs are still
-        # running (or haven't started) never counts.
+        # running (or haven't started) never counts. Deferred like goat_check.
+        await inter.response.defer()
         brackets = await _api_get("/league/playoff_brackets")
         done = [(int(y), b["champion"]) for y, b in brackets.items() if b.get("status") == "Complete" and b.get("champion")]
         if not done:
-            await inter.response.send_message("No champion crowned yet.", ephemeral=True)
+            await inter.followup.send("No champion crowned yet.")
             return
         year, champ = max(done)
-        await inter.response.send_message(f"🏆 The reigning champion is **{champ}** ({year - 1}-{str(year)[-2:]} season).")
+        await inter.followup.send(f"🏆 The reigning champion is **{champ}** ({year - 1}-{str(year)[-2:]} season).")
 
     @bot.slash_command(name="champ-check", description="Has this user's team ever won a championship?", **slash_kwargs)
     async def champ_check(
