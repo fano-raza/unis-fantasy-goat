@@ -104,7 +104,7 @@ class LeagueStore:
         self._week_calendar_df: pd.DataFrame | None = None
         self._weekly_recaps_df: pd.DataFrame | None = None
         self._playoff_recaps_df: pd.DataFrame | None = None
-        self._trades: dict | None = None
+        self._trades: list[dict] | None = None
         self._category_history: dict | None = None
         self._rs_finish_history: dict | None = None
         self._po_lookup = self._load_po_real_matchup_lookup()
@@ -773,13 +773,9 @@ class LeagueStore:
         self._week_calendar_df = pd.read_csv(path)
         return self._week_calendar_df
 
-    def trades(self) -> dict:
-        """Every trade offer in league history, newest first, from
-        scripts/export_trades.py's Ref/trades.csv -- completed, declined,
-        cancelled, vetoed and still-pending offers. `no_rejected_data_years`:
-        seasons where only completed trades are known (Yahoo's API returns
-        nothing else). Rows with details_available=False are offers ESPN only
-        kept the decline record of (no proposer or players)."""
+    def trades(self) -> list[dict]:
+        """Every completed trade in league history, newest first, from
+        scripts/export_trades.py's Ref/trades.csv."""
         if self._trades is not None:
             return self._trades
         path = self._ref_path("trades.csv")
@@ -790,28 +786,19 @@ class LeagueStore:
         def players(cell: str) -> list[str]:
             return [p for p in cell.split("; ") if p]
 
-        def flag(cell: str) -> bool:
-            return cell.strip().lower() == "true"
-
-        rows = [
+        self._trades = [
             {
                 "id": r.TradeId,
                 "year": int(r.Year),
                 "platform": r.Platform,
-                "proposed_date": r.ProposedDate or None,
-                "resolved_date": r.ResolvedDate or None,
-                "status": r.Status,
-                "proposer": r.Proposer or None,
-                "partner": r.Partner or None,
+                "date": r.Date or None,
+                "proposer": r.Proposer,
+                "partner": r.Partner,
                 "proposer_gives": players(r.ProposerGives),
                 "partner_gives": players(r.PartnerGives),
-                "veto_votes": int(r.VetoVotes or 0),
-                "details_available": flag(r.DetailsAvailable),
             }
             for r in df.itertuples()
         ]
-        no_rejected = sorted({int(r.Year) for r in df.itertuples() if not flag(r.HasRejectedData)})
-        self._trades = {"trades": rows, "no_rejected_data_years": no_rejected}
         return self._trades
 
     # ------------------------------------------------------------------

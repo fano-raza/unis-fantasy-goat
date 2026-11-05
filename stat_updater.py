@@ -67,24 +67,6 @@ EASTERN_TZ = ZoneInfo("America/New_York")
 job_lock = threading.Lock()
 job_thread = None
 
-# Trade Log: during game hours, a quick scan of the last few days' trade
-# records every TRADES_QUICK_SCAN_SECONDS (the daytime cycle does a full
-# scan hourly). Frequent snapshots keep an offer's players after ESPN deletes
-# its proposal on decline -- see scripts/export_trades.py.
-TRADES_QUICK_SCAN_SECONDS = 10 * 60
-_last_trades_scan = 0.0
-
-
-def _quick_trades_scan(year: int) -> None:
-    global _last_trades_scan
-    if time.monotonic() - _last_trades_scan < TRADES_QUICK_SCAN_SECONDS:
-        return
-    _last_trades_scan = time.monotonic()
-    try:
-        export_trades([year], recent_days=2)
-    except Exception as trades_exc:
-        print(f"trades quick-scan warning: {trades_exc}")
-
 
 def ensure_updater_running():
     global job_thread
@@ -148,7 +130,6 @@ def run_updater() -> None:
                 updateStatCSV(year)
             except Exception as e:
                 print(f"Stat refresh (game-hours) error: {e}")
-            _quick_trades_scan(year)
             time.sleep(120)
         else:
             try:
@@ -209,8 +190,8 @@ def run_updater() -> None:
                 except Exception as lineup_exc:
                     print(f"lineup_history export warning: {lineup_exc}")
 
-                # Trade Log: full scan of this season's trade offers (hourly,
-                # with this cycle). Past seasons' rows are kept as stored.
+                # Trade Log: this season's completed trades (hourly, with
+                # this cycle). Past seasons' rows are kept as stored.
                 try:
                     export_trades([year])
                 except Exception as trades_exc:

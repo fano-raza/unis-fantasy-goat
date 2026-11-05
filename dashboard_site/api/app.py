@@ -367,7 +367,7 @@ def league_playoff_brackets() -> dict:
 
 
 @app.get("/league/trades")
-def league_trades() -> dict:
+def league_trades() -> list[dict]:
     try:
         return league_store.trades()
     except ValueError as exc:
