@@ -28,18 +28,25 @@ function Got({ trade, team }: { trade: TradeRow; team: string }) {
   // `?? []`: a cached response from before values existed has no players.
   const info = new Map((trade.players ?? []).filter((p) => p.team === team).map((p) => [p.player, p]));
   return (
-    <ul className="flex flex-col gap-0.5">
+    <ul className="flex flex-col gap-1">
       {names.map((n) => {
         const p = info.get(n);
         const top = trade.top_player === n && trade.top_player_team === team;
         return (
-          <li key={n}>
-            <span className={cn(top && "font-semibold text-gold")}>{n}</span>
-            {top && <Star className="ml-1 inline size-3 fill-current align-[-1px] text-gold" aria-label="Added the most wins" />}
-            {p && (
-              <span className="block text-xs text-muted-foreground tabular-nums">
-                {p.games} {p.games === 1 ? "game" : "games"}
-                {p.wins_added != null && p.wins_added !== 0 && <> · {wins(p.wins_added)}</>}
+          <li key={n} className="flex items-start justify-between gap-3">
+            <span className="min-w-0">
+              <span className={cn(top && "font-semibold text-gold")}>{n}</span>
+              {top && <Star className="ml-1 inline size-3 fill-current align-[-1px] text-gold" aria-label="Added the most wins" />}
+              {p && (
+                <span className="block text-xs text-muted-foreground tabular-nums">
+                  {p.games} {p.games === 1 ? "game" : "games"}
+                </span>
+              )}
+            </span>
+            {p?.wins_added != null && (
+              <span className="flex shrink-0 gap-2 pt-0.5 text-xs tabular-nums">
+                <Delta value={p.wins_added} unit="W" title="Matchup wins added" />
+                {p.cat_wins_added != null && <Delta value={p.cat_wins_added} unit="C" title="Category wins added" />}
               </span>
             )}
           </li>
@@ -51,6 +58,21 @@ function Got({ trade, team }: { trade: TradeRow; team: string }) {
 
 const valueOf = (t: TradeRow, team: string) => (team === t.proposer ? t.proposer_value : t.partner_value);
 const winsOf = (t: TradeRow, team: string) => (team === t.proposer ? t.proposer_wins_added : t.partner_wins_added);
+
+// A player's wins added, e.g. "+1.3 W" / "−2.0 C": green up, red down.
+function Delta({ value, unit, title }: { value: number; unit: string; title: string }) {
+  const sign = value > 0 ? "+" : value < 0 ? "−" : "";
+  return (
+    <span
+      title={title}
+      className={cn("text-right font-semibold", value > 0 ? "text-win" : value < 0 ? "text-loss" : "text-muted-foreground")}
+    >
+      {sign}
+      {Math.abs(value).toFixed(1)}
+      <span className="ml-0.5 font-normal text-muted-foreground">{unit}</span>
+    </span>
+  );
+}
 
 // "+1.5 wins" / "−1 win" / "0 wins" (matchup wins).
 function wins(x: number): string {
@@ -163,7 +185,8 @@ export function TradeLog({
             {filtered.length} completed {filtered.length === 1 ? "trade" : "trades"}. The winner is the team whose new
             players produced more fantasy value for it, from the day after the trade until each player left the team or
             the season ended (within 5% is even). Wins are the matchups each team would have lost without its new
-            players&apos; games; the starred player added the most. This season&apos;s numbers are so far.
+            players&apos; games. Beside each player: matchup wins (W) and category wins (C) he added for his new team;
+            the starred player added the most. This season&apos;s numbers are so far.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -176,7 +199,6 @@ export function TradeLog({
                 <TableHeader>
                   <TableRow>
                     <TableHead>Date</TableHead>
-                    <TableHead>Season</TableHead>
                     <TableHead>Team</TableHead>
                     <TableHead>Got</TableHead>
                     <TableHead>Team</TableHead>
@@ -186,8 +208,10 @@ export function TradeLog({
                 <TableBody>
                   {filtered.map((t) => (
                     <TableRow key={`${t.year}-${t.id}`} className="align-top">
-                      <TableCell className="whitespace-nowrap tabular-nums">{formatDate(t.date)}</TableCell>
-                      <TableCell className="tabular-nums">{t.year}</TableCell>
+                      <TableCell className="whitespace-nowrap tabular-nums">
+                        {formatDate(t.date)}
+                        <span className="block text-xs text-muted-foreground">{t.year} season</span>
+                      </TableCell>
                       <TableCell>
                         <TeamSide trade={t} team={t.proposer} />
                       </TableCell>
@@ -216,7 +240,7 @@ export function TradeLog({
                       </span>
                       {t.winner === "Even" && <span>Even</span>}
                     </span>
-                    <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="flex flex-col gap-3 text-sm">
                       {[t.proposer, t.partner].map((team) => (
                         <div key={team} className="flex flex-col gap-1">
                           <TeamSide trade={t} team={team} />
