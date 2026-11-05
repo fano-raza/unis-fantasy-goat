@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Crown } from "lucide-react";
+import { ArrowDown, ArrowUp, Crown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -16,13 +16,18 @@ import { expectedCategories, type SeasonFormat } from "@/components/headline-odd
 import { usePremium } from "@/components/premium";
 import {
   ApiError,
+  getRosterCategoryOdds,
   getRosterWinProbabilities,
+  type RosterCategoryOdds,
   type RosterWinProbabilities,
-  type RosterWinProbabilityRow,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
+
+// Waits for a burst of manual swaps to settle before asking the server --
+// same reasoning and value as the "Win probability by category" card.
+const DEBOUNCE_MS = 300;
 
 // Decorative placeholder ranking for the locked preview -- roughly the
 // shape of a real 10-team spread, nothing more.
@@ -30,18 +35,30 @@ const PREVIEW_PLACES = [0.71, 0.64, 0.58, 0.55, 0.51, 0.47, 0.43, 0.38, 0.32, 0.
 
 /**
  * Roster Rankings' "Win probability" sub-tab (premium, user request): every
- * team ranked by its real roster's weekly matchup win probability instead of
- * average player rank. Same underlying number as the Roster Optimizer and
- * the "Win probability by category" card's start_matchup_win, just for the
- * whole league at once. Current season only -- it scores live rosters.
+ * team ranked by weekly matchup win probability instead of average player
+ * rank. Every team but the one on screen reads the daily cached snapshot
+ * (Ref/roster_win_probability.csv); the on-screen team's own number is
+ * recomputed live when the Roster page has an active what-if (swaps,
+ * removals, players brought back from IR) -- same one-sided simulation as
+ * the Average Rank sub-tab, just slower to settle since it's a live call
+ * instead of a client-side recompute. `roster`: the simulated ACTIVE
+ * roster's names, or null for no what-if.
  */
-export function RosterWinProbabilityTab({ team, format }: { team: string; format: SeasonFormat }) {
+export function RosterWinProbabilityTab({
+  team,
+  roster,
+  format,
+}: {
+  team: string;
+  roster: string[] | null;
+  format: SeasonFormat;
+}) {
   const premium = usePremium();
   if (!premium.unlocked || !premium.password) {
     return <LockedPreview onUnlock={() => premium.requireUnlock()} />;
   }
   return (
-    <UnlockedRanking team={team} format={format} password={premium.password} onRejected={premium.lock} />
+    <UnlockedRanking team={team} roster={roster} format={format} password={premium.password} onRejected={premium.lock} />
   );
 }
 
@@ -74,11 +91,13 @@ function LockedPreview({ onUnlock }: { onUnlock: () => void }) {
 
 function UnlockedRanking({
   team,
+  roster,
   format,
   password,
   onRejected,
 }: {
   team: string;
+  roster: string[] | null;
   format: SeasonFormat;
   password: string;
   onRejected: () => void;
@@ -110,12 +129,56 @@ function UnlockedRanking({
     };
   }, [password, onRejected]);
 
+  // This team's own live recompute while a what-if is active. Every other
+  // team keeps its cached number -- a one-sided simulation, same as the
+  // Average Rank sub-tab.
+  const [simOdds, setSimOdds] = useState<RosterCategoryOdds | null>(null);
+  const [simLoading, setSimLoading] = useState(false);
+  const simulating = roster != null;
+  const rosterKey = JSON.stringify(roster);
+
+  useEffect(() => {
+    if (!simulating) {
+      setSimOdds(null);
+      setSimLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setSimLoading(true);
+    const id = setTimeout(() => {
+      const names: string[] = JSON.parse(rosterKey);
+      getRosterCategoryOdds({ team, password, roster: names })
+        .then((res) => {
+          if (cancelled) return;
+          setSimOdds(res);
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          if (err instanceof ApiError && err.status === 401) onRejected();
+        })
+        .finally(() => !cancelled && setSimLoading(false));
+    }, DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(id);
+    };
+  }, [simulating, rosterKey, team, password, onRejected]);
+
   if (error && !data) return <p className="text-sm text-muted-foreground">{error}</p>;
 
   const cats = format === "cats";
-  const metric = (row: RosterWinProbabilityRow) => (cats ? expectedCategories(row.categories) : row.matchup_win);
   const fmt = (x: number) => (cats ? x.toFixed(1) : pct(x));
-  const sorted = data ? [...data.teams].sort((a, b) => metric(b) - metric(a)) : [];
+  const metric = (matchupWin: number, categories: Record<string, number>) =>
+    cats ? expectedCategories(categories) : matchupWin;
+
+  const rows = data
+    ? data.teams.map((row) => {
+        const realValue = metric(row.matchup_win, row.categories);
+        if (row.team !== team || !simOdds) return { team: row.team, value: realValue, realValue };
+        return { team: row.team, value: metric(simOdds.current_matchup_win, simOdds.current), realValue };
+      })
+    : [];
+  const sorted = [...rows].sort((a, b) => b.value - a.value);
 
   return (
     <LoadingOverlay active={loading} hasContent={data != null} label="Calculating win probabilities">
@@ -129,16 +192,33 @@ function UnlockedRanking({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sorted.map((row, i) => (
-              <TableRow key={row.team} className={cn(row.team === team && "bg-focus-row")}>
-                <TableCell>{i + 1}</TableCell>
-                <TableCell className="team-name">{row.team}</TableCell>
-                <TableCell className="text-right font-mono tabular-nums">
-                  {fmt(metric(row))}
-                  {cats && <span className="ml-1 font-sans text-xs text-muted-foreground">of 9</span>}
-                </TableCell>
-              </TableRow>
-            ))}
+            {sorted.map((row, i) => {
+              const onTeam = simulating && row.team === team;
+              return (
+                <TableRow key={row.team} className={cn(row.team === team && "bg-focus-row")}>
+                  <TableCell>{i + 1}</TableCell>
+                  <TableCell className={cn("team-name", onTeam && "text-yellow-500")}>{row.team}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">
+                    {onTeam && simLoading && (
+                      <span className="mr-2 font-sans text-xs text-muted-foreground">recalculating…</span>
+                    )}
+                    {onTeam && simOdds && (
+                      <span className="mr-2 font-sans text-xs text-muted-foreground">was {fmt(row.realValue)}</span>
+                    )}
+                    {onTeam && simOdds && row.value !== row.realValue && (
+                      // Higher win probability is better, so a rise is an improvement.
+                      row.value > row.realValue ? (
+                        <ArrowUp className="mr-1 inline size-3.5 align-[-2px] text-win" aria-label="Improved" />
+                      ) : (
+                        <ArrowDown className="mr-1 inline size-3.5 align-[-2px] text-loss" aria-label="Worse" />
+                      )
+                    )}
+                    {fmt(row.value)}
+                    {cats && <span className="ml-1 font-sans text-xs text-muted-foreground">of 9</span>}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       )}

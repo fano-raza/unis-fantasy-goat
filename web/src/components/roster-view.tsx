@@ -373,6 +373,16 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
     ];
   }, [optResult, rosterRows, teamRoster]);
 
+  // What the premium Win Probability sub-tab recomputes live for this team
+  // -- an optimizer answer takes precedence over manual swaps, same
+  // precedence teamAverages below gives Average Rank. The optimizer never
+  // touches IR players, so its roster is already the active one; manual
+  // swaps use activeRoster (IR already excluded there too).
+  const winProbabilityRoster = useMemo(
+    () => (optimizedRoster ? optimizedRoster.map((r) => r.Player) : simulatedActiveNames),
+    [optimizedRoster, simulatedActiveNames],
+  );
+
   const teamAverages = useMemo(() => {
     const byTeam = new Map<string, number[]>();
     for (const row of rosterRows) {
@@ -928,7 +938,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
           <CardDescription>
             {rankingsTab === "avg"
               ? "Every team's roster, ordered by average player rank (lower is better)"
-              : "Every team's real roster, ordered by weekly matchup win probability (higher is better)"}
+              : "Every team's roster, ordered by weekly matchup win probability (higher is better)"}
           </CardDescription>
           {year === meta.current_year && (
             <CardAction>
@@ -948,7 +958,7 @@ export function RosterView({ meta }: { meta: LeagueMeta }) {
         </CardHeader>
         <CardContent>
           {rankingsTab === "winprob" && year === meta.current_year ? (
-            <RosterWinProbabilityTab team={team} format={meta.season_format[String(year)] ?? "wl"} />
+            <RosterWinProbabilityTab team={team} roster={winProbabilityRoster} format={meta.season_format[String(year)] ?? "wl"} />
           ) : (
           <LoadingOverlay active={rosterLoading} hasContent={rosterRows.length > 0} label="Loading">
             <Table>
