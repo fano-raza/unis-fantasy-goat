@@ -72,6 +72,13 @@ const FIELD_DIRECTIONS: Record<string, Direction> = {
   "Best Draft Season": "skip",
   "Worst Draft Score": "higher",
   "Worst Draft Season": "skip",
+  // Trade Log stats (computed by the API from Ref/trades.csv; "higher"
+  // here just means "most", for ranking -- trading isn't good or bad).
+  Trades: "higher",
+  "Most Trades in a Season": "higher",
+  "Most Trades in a Season Years": "skip",
+  "Consecutive Seasons with a Trade": "higher",
+  "Consecutive Seasons with a Trade Years": "skip",
 };
 
 export function directionFor(field: string): Direction {
@@ -128,6 +135,8 @@ export const PAIRED_YEARS_FIELD: Record<string, string> = {
   "Longest Last Streak": "Longest Last Streak Years",
   "Longest #1 Rating Streak": "Longest #1 Rating Streak Years",
   "Longest Last Rating Streak": "Longest Last Rating Streak Years",
+  "Most Trades in a Season": "Most Trades in a Season Years",
+  "Consecutive Seasons with a Trade": "Consecutive Seasons with a Trade Years",
 };
 
 // Every non-"Team" key on the exported team_summary rows, in export order.

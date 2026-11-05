@@ -45,3 +45,33 @@ def test_endpoint_missing_file(monkeypatch):
         raise ValueError("trades.csv not found")
     monkeypatch.setattr(app_module.league_store, "trades", boom)
     assert TestClient(app_module.app).get("/league/trades").status_code == 404
+
+
+def test_team_trade_stats(tmp_path):
+    rows = [  # (year, proposer, partner)
+        (2019, "Fano", "Juan"), (2020, "Juan", "Amil"), (2020, "Juan", "Fano"),
+        (2021, "Ange", "Juan"), (2023, "Juan", "Amil; Ange"),
+    ]
+    pd.DataFrame([
+        {"Year": y, "Platform": "ESPN", "TradeId": str(i), "Date": f"{y}-01-01", "Proposer": a, "Partner": b,
+         "ProposerGives": "X", "PartnerGives": "Y"}
+        for i, (y, a, b) in enumerate(rows)
+    ]).to_csv(tmp_path / "trades.csv", index=False)
+    pd.DataFrame([{"Team": "Juan"}, {"Team": "Sai"}]).to_csv(tmp_path / "team_summary.csv", index=False)
+
+    class FakeStats:
+        ref_dir = str(tmp_path)
+
+    s = LeagueStore.__new__(LeagueStore)
+    s.store = FakeStats()
+    s._trades = None
+    s._team_summary_df = None
+    stats = s.team_trade_stats()
+    assert stats["Juan"] == {
+        "Trades": 5, "Most Trades in a Season": 2, "Most Trades in a Season Years": "2020",
+        "Consecutive Seasons with a Trade": 3, "Consecutive Seasons with a Trade Years": "2019–2021",
+    }
+    # Each team in a multi-team trade counts it; ties list every run.
+    assert stats["Ange"]["Trades"] == 2 and stats["Ange"]["Consecutive Seasons with a Trade Years"] == "2021, 2023"
+    juan, sai = s.team_summary()
+    assert juan["Trades"] == 5 and sai["Trades"] == 0 and sai["Most Trades in a Season Years"] is None

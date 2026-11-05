@@ -576,7 +576,56 @@ class LeagueStore:
         if teams:
             df = df[df["Team"].isin(teams)]
         df = df.where(pd.notnull(df), None)
-        return df.to_dict(orient="records")
+        rows = df.to_dict(orient="records")
+        # Trade Log stats (user request 2026-11-04), computed live from
+        # Ref/trades.csv -- appended last so they're the last rows of the
+        # Comparison table and part of League Top 3. Left out entirely if
+        # the trades export hasn't run yet.
+        try:
+            trade_stats = self.team_trade_stats()
+        except ValueError:
+            trade_stats = {}
+        if trade_stats:
+            for row in rows:
+                row.update(trade_stats.get(row["Team"], self._empty_trade_stats()))
+        return rows
+
+    @staticmethod
+    def _empty_trade_stats() -> dict:
+        return {"Trades": 0, "Most Trades in a Season": 0, "Most Trades in a Season Years": None,
+                "Consecutive Seasons with a Trade": 0, "Consecutive Seasons with a Trade Years": None}
+
+    def team_trade_stats(self) -> dict[str, dict]:
+        """Per team, from every completed trade (either side, incl. each
+        team of a multi-team trade): total trades, most in one season (and
+        which seasons), and the longest run of consecutive seasons with at
+        least one trade ("2020-2022"; ties joined with ", "). A season in
+        progress with no trade yet doesn't end a run -- it just isn't part
+        of it."""
+        per_year: dict[str, dict[int, int]] = {}
+        for t in self.trades():
+            for team in {t["proposer"], *t["partner"].split("; ")} - {""}:
+                years = per_year.setdefault(team, {})
+                years[t["year"]] = years.get(t["year"], 0) + 1
+        out = {}
+        for team, years in per_year.items():
+            most = max(years.values())
+            runs: list[tuple[int, int]] = []
+            for y in sorted(years):
+                if runs and y == runs[-1][1] + 1:
+                    runs[-1] = (runs[-1][0], y)
+                else:
+                    runs.append((y, y))
+            longest = max(b - a + 1 for a, b in runs)
+            out[team] = {
+                "Trades": sum(years.values()),
+                "Most Trades in a Season": most,
+                "Most Trades in a Season Years": ", ".join(str(y) for y in sorted(years) if years[y] == most),
+                "Consecutive Seasons with a Trade": longest,
+                "Consecutive Seasons with a Trade Years": ", ".join(
+                    str(a) if a == b else f"{a}–{b}" for a, b in runs if b - a + 1 == longest),
+            }
+        return out
 
     # Comma-joined year lists -- forced to string dtype so a column doesn't
     # silently come back as int64 whenever every row this refresh happens to

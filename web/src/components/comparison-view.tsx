@@ -109,7 +109,7 @@ const highlightClass: Record<BestWorst, string> = {
   neutral: "",
 };
 
-// Comparison table's 4 subcategory sections. Every non-excluded
+// Comparison table's subcategory sections. Every non-excluded
 // team_summary column (see COMPARISON_EXCLUDED_FIELDS) should appear in
 // exactly one of these -- "Regular Season" was the user's own anchor
 // ("MVP, all ratings, RS standings placement"); the other 3 buckets follow
@@ -170,6 +170,10 @@ const COMPARISON_GROUPS: { title: string; fields: string[] }[] = [
   {
     title: "Draft",
     fields: ["Career Draft Score", "Avg Draft Score", "Best Draft Score", "Worst Draft Score"],
+  },
+  {
+    title: "Trades",
+    fields: ["Trades", "Most Trades in a Season", "Consecutive Seasons with a Trade"],
   },
 ];
 
